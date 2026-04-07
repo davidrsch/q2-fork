@@ -1,29 +1,80 @@
-## Wasm builds
+# WASM in the Quarto Rust Monorepo
 
+## Architecture
+
+`wasm-quarto-hub-client` wraps `pampa` + `quarto-core` for the hub-client web app.
+It compiles to a WASM module that runs in the browser, providing live preview rendering.
+
+The crate is **excluded from the default workspace** (`Cargo.toml` `exclude` list) because
+it requires `--target wasm32-unknown-unknown` and `-Zbuild-std=std,panic_unwind`.
+
+## Build
+
+The production WASM build is handled by `hub-client/scripts/build-wasm.js`:
+
+```bash
+cd hub-client
+npm run build:wasm    # WASM module only
+npm run build:all     # WASM + TypeScript
 ```
-cd crates/wasm-qmd-parser
 
-# To work around this error, because Apple Clang doesn't work with wasm32-unknown-unknown?
-# I believe this is not required on a Linux machine.
-# Requires `brew install llvm`.
-# https://github.com/briansmith/ring/issues/1824
-# error: unable to create target: 'No available targets are compatible with triple "wasm32-unknown-unknown"'
-export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+The build script runs:
+1. `cargo build -p wasm-quarto-hub-client --target wasm32-unknown-unknown`
+   with `-Zbuild-std=std,panic_unwind` (via `crates/wasm-quarto-hub-client/.cargo/config.toml`)
+2. `wasm-bindgen` CLI to generate JS/TS bindings
 
-# To tell rustc to include our C shims located in `wasm-sysroot`, which we eventually compile into the project
-# with `c_shim.rs`.
-# https://github.com/tree-sitter/tree-sitter/discussions/1550#discussioncomment-8445285
-#
-# It also seems like we need to define HAVE_ENDIAN_H to tell tree-sitter we have `endian.h`
-# as it doesn't seem to pick up on that automatically?
-# https://github.com/tree-sitter/tree-sitter/blob/0be215e152d58351d2691484b4398ceff041f2fb/lib/src/portable/endian.h#L18
-export CFLAGS_wasm32_unknown_unknown="-I$(pwd)/wasm-sysroot -Wbad-function-cast -Wcast-function-type -fno-builtin -DHAVE_ENDIAN_H"
+### Why not wasm-pack?
 
-# To just build the wasm-qmd-parser crate
-# cargo build --target wasm32-unknown-unknown
+This project uses `cargo build` + `wasm-bindgen` CLI directly because:
+- `-Zbuild-std=std,panic_unwind` is required for Lua error handling (setjmp/longjmp to
+  panic/catch_unwind). wasm-pack doesn't support `-Zbuild-std`.
+- wasm-pack is deprecated (rustwasm org sunset September 2025).
 
-# To build the wasm-pack bundle
-# Note that you'll need `opt-level = "s"` in your `profile.dev` cargo profile
-# otherwise you can get a "too many locals" error.
-wasm-pack build --target web --dev
+### C toolchain requirement
+
+`pampa` with `lua-filter` pulls in `mlua` → `lua-src-wasm`, which compiles Lua from C source
+via the `cc` crate. When targeting wasm32, this requires Clang with wasm32 support:
+
+```bash
+# Set by build-wasm.js automatically for production builds.
+# For manual builds or tests:
+export CC_wasm32_unknown_unknown=clang
+export CFLAGS_wasm32_unknown_unknown="-isystem crates/wasm-quarto-hub-client/wasm-sysroot -fno-builtin"
 ```
+
+## Testing
+
+### Native tests (all platforms)
+
+Native Rust tests (`cargo nextest run`) test filter and shortcode logic using `Lua::new()`
+with the full C stdlib. These run on all platforms including Windows.
+
+### WASM smoke tests (Linux CI)
+
+`crates/pampa/tests/wasm_lua.rs` contains smoke tests that compile and run on the real
+`wasm32-unknown-unknown` target. They verify the WASM-specific Lua VM setup:
+- Restricted stdlib creation (`Lua::new_with()`)
+- Synthetic `io`/`os` module registration
+- Filter and shortcode execution through the WASM code path
+- Error handling (`panic_unwind` works correctly)
+
+Run locally (Linux/macOS with LLVM):
+```bash
+CC_wasm32_unknown_unknown=clang \
+CFLAGS_wasm32_unknown_unknown="-isystem crates/wasm-quarto-hub-client/wasm-sysroot -fno-builtin" \
+cargo test -p pampa --test wasm_lua --target wasm32-unknown-unknown \
+  --no-default-features --features lua-filter -Zbuild-std=std,panic_unwind
+```
+
+**Important:** You must use `--test wasm_lua` to select only the WASM test file.
+Running `cargo test -p pampa --target wasm32` without `--test` will fail because
+native tests can't compile for wasm32.
+
+WASM tests are **not** part of `cargo xtask verify` — they require nightly + Clang with
+wasm32 support, which is Linux/macOS only. They run in the `wasm-tests` CI job.
+
+### Hub-client integration tests
+
+The hub-client test suite (`npm run test:ci`) tests the compiled WASM module through
+JavaScript, covering rendering, templates, and format detection. These complement
+the Rust-level WASM smoke tests.
