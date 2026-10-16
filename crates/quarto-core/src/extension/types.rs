@@ -93,6 +93,12 @@ pub struct Contributes {
     /// Engine contributions: paths to TS engine modules or engine name
     /// strings for reordering.
     pub engines: Vec<EngineContribution>,
+
+    /// `contributes: modules: true`: the extension ships Lua or lmd
+    /// modules for `require("<name>/module")` (bd-76ogq4ew, phase 3). Every
+    /// discovered extension is addressable that way; this flag lets an
+    /// extension that contributes nothing else say so and pass validation.
+    pub modules: bool,
 }
 
 /// An engine contributed by an extension.

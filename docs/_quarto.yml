@@ -464,6 +464,7 @@ website:
             - errors/lmd/Q-26-6.qmd
             - errors/lmd/Q-26-7.qmd
             - errors/lmd/Q-26-8.qmd
+            - errors/lmd/Q-26-9.qmd
 
 format:
   html:

@@ -1,0 +1,34 @@
+---
+title: Modules across a project
+---
+
+Autoloaded from `_quarto.yml`:
+
+```{lmd}
+return cards.card("From the project", {=[ a module at the project root ]=})
+```
+
+An extension's module, autoloaded by the extension's name:
+
+```{lmd}
+return pandoc.Para({ badges.badge("new") })
+```
+
+An explicit project-root `require`, whose module requires its neighbour:
+
+```{lmd}
+local deck = require("/components/deck")
+return deck.deck({ "one", "two" })
+```
+
+A parameterised include:
+
+```{lmd}
+return quarto.include("partials/callout.lmd", { kind = "tip", body = {=[ from a *partial* ]=} })
+```
+
+A markdown partial from the project root:
+
+```{lmd}
+return quarto.include("/partials/footer.md")
+```

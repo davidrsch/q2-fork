@@ -7626,6 +7626,7 @@ dependencies = [
  "grass",
  "js-sys",
  "pollster",
+ "quarto-util",
  "reqwest 0.13.5",
  "serde",
  "serde_json",

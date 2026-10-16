@@ -163,17 +163,22 @@ impl SecurityPolicy {
     }
 
     /// Whether `path` may be read: on the allow list and not on the deny
-    /// list (deny wins, as in Deno).
+    /// list (deny wins, as in Deno). The path is normalized lexically
+    /// first, so `allowed/../elsewhere/x` is judged as `elsewhere/x` and a
+    /// `..` cannot walk out of an allow-listed directory (symlinks are not
+    /// resolved here; that needs the filesystem).
     pub fn can_read(&self, path: &Path) -> bool {
-        !self.deny_read.iter().any(|p| p.matches(path))
-            && self.allow_read.iter().any(|p| p.matches(path))
+        let path = quarto_util::normalize_lexically(path);
+        !self.deny_read.iter().any(|p| p.matches(&path))
+            && self.allow_read.iter().any(|p| p.matches(&path))
     }
 
     /// Whether `path` may be written, created, removed or renamed; same
     /// rule as [`can_read`](Self::can_read) over the write lists.
     pub fn can_write(&self, path: &Path) -> bool {
-        !self.deny_write.iter().any(|p| p.matches(path))
-            && self.allow_write.iter().any(|p| p.matches(path))
+        let path = quarto_util::normalize_lexically(path);
+        !self.deny_write.iter().any(|p| p.matches(&path))
+            && self.allow_write.iter().any(|p| p.matches(&path))
     }
 }
 
@@ -401,6 +406,16 @@ mod tests {
         let policy = SecurityPolicy::trusted();
         assert!(!policy.allow_read.is_empty());
         assert!(policy.allow_cwd);
+    }
+
+    /// A relative traversal spelled under an allowed directory is judged
+    /// by where it lands.
+    #[test]
+    fn a_dot_dot_cannot_escape_the_allow_list() {
+        let policy = SecurityPolicy::untrusted(PathBuf::from("/proj"));
+        assert!(policy.can_read(Path::new("/proj/sub/../a.md")));
+        assert!(!policy.can_read(Path::new("/proj/../vendor/secret.md")));
+        assert!(!policy.can_write(Path::new("/proj/./../vendor/out.md")));
     }
 
     #[test]

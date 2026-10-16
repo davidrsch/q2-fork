@@ -366,6 +366,221 @@ pub fn init_script_dir_stack(lua: &Lua) -> Result<()> {
 /// script-dir stack that `resolve_path` and friends read (GH #588).
 const REQUIRE_DIR_STACK_KEY: &str = "quarto_require_dir_stack";
 
+/// `quarto.include(file, params)`: evaluate a file and return its blocks
+/// as a `pandoc.Blocks` (bd-76ogq4ew, phase 3). Where `require` yields a
+/// module *value*, cached once per state, an include is a *call*: run every
+/// time, with `params` (a table, or nil) as the chunk's vararg, so
+/// `partials/card.lmd` can start `local p = ...` and be included with
+/// different arguments from several places.
+///
+/// - An `.lmd` file (any registered source dialect) is compiled by its
+///   dialect; a `.lua` file is loaded as it is. The chunk runs in an
+///   environment inheriting the globals, with its own directory on the
+///   require-private module-dir stack so its `require`s resolve beside it.
+///   Its return value is read under the block-cell contract
+///   (`crate::lua::lmd`): a Block, a list of Blocks, `Nodes`, or nil for
+///   nothing. The structural desugaring set is applied over the result
+///   (`dev-docs/syntax-notes.md`), its diagnostics raised as Lua warnings.
+/// - A `.qmd` / `.md` file is read by the qmd reader and finished as a
+///   fragment (`crate::transforms::fragment`); it takes no params.
+///
+/// `file` resolves relative to the including file (the innermost loading
+/// module, else the running script; for an lmd cell the document), or
+/// against the project root when it starts with `/`. Every read goes
+/// through the [`SystemRuntime`], so the VFS serves it on WASM and a
+/// `SandboxedRuntime` policy governs it.
+pub fn register_quarto_include(
+    lua: &Lua,
+    runtime: Arc<dyn crate::lua::runtime::SystemRuntime>,
+) -> Result<()> {
+    let quarto: Table = lua.globals().get("quarto")?;
+    quarto.set(
+        "include",
+        lua.create_function(move |lua, (file, params): (String, Option<Table>)| {
+            let path = resolve_include_path(lua, &file)?;
+            let bytes = runtime.file_read(&path).map_err(|e| {
+                mlua::Error::runtime(format!(
+                    "quarto.include: cannot read `{}`: {e}",
+                    path.display()
+                ))
+            })?;
+            let source = String::from_utf8(bytes).map_err(mlua::Error::external)?;
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let blocks = match ext.as_str() {
+                "qmd" | "md" | "markdown" => {
+                    if params.is_some() {
+                        return Err(mlua::Error::runtime(format!(
+                            "quarto.include: a markdown file takes no params; `{}` is read as it is",
+                            path.display()
+                        )));
+                    }
+                    include_markdown(&source, &path)?
+                }
+                _ => include_chunk(lua, &source, &path, &ext, params)?,
+            };
+            super::list::create_blocks_table(lua, &blocks)
+        })?,
+    )
+}
+
+/// Where `quarto.include(file)` reads from.
+///
+/// A leading `/` is the project root (as for `require`; an include never
+/// takes an absolute OS path, which keeps it inside the project). Otherwise
+/// the path is relative to the *including file*: the chunk that called
+/// `quarto.include`, read off the Lua stack when it was loaded from a file
+/// (`@path` chunk names: modules, includes, the document's cells), so a
+/// function defined in a module and called later still includes beside
+/// its module. When the calling chunk has no file, the innermost loading
+/// module's directory, then the running script's, stand in.
+fn resolve_include_path(lua: &Lua, file: &str) -> Result<PathBuf> {
+    if let Some(rooted) = file.strip_prefix('/') {
+        return match module_roots(lua).project {
+            Some(project) => Ok(project.join(rooted)),
+            None => Err(mlua::Error::runtime(format!(
+                "quarto.include: `{file}` starts with `/` but no project root is set"
+            ))),
+        };
+    }
+    // Level 0 is this function; level 1 is the Lua caller.
+    let caller_dir: Option<PathBuf> = lua
+        .inspect_stack(1, |debug| {
+            debug
+                .source()
+                .source
+                .as_deref()
+                .and_then(|src| src.strip_prefix('@'))
+                .map(Path::new)
+                .filter(|p| p.is_absolute())
+                .and_then(|p| p.parent().map(Path::to_path_buf))
+        })
+        .flatten();
+    if let Some(dir) = caller_dir {
+        return Ok(dir.join(file));
+    }
+    let module_stack: Table = lua.named_registry_value(REQUIRE_DIR_STACK_KEY)?;
+    let len = module_stack.raw_len();
+    let base = if len > 0 {
+        module_stack.get::<String>(len).unwrap_or_default()
+    } else {
+        current_script_dir(lua)?
+    };
+    Ok(if base.is_empty() {
+        PathBuf::from(file)
+    } else {
+        Path::new(&base).join(file)
+    })
+}
+
+/// A `.qmd` / `.md` include: the reader, then fragment preparation.
+fn include_markdown(source: &str, path: &Path) -> Result<Vec<crate::pandoc::Block>> {
+    let mut trace = crate::utils::output::VerboseOutput::Sink(std::io::sink());
+    match crate::readers::qmd::read(
+        source.as_bytes(),
+        false,
+        &path.display().to_string(),
+        &mut trace,
+        true,
+        None,
+    ) {
+        Ok((pandoc, _context, _warnings)) => Ok(
+            crate::transforms::fragment::prepare_fragment_blocks(pandoc.blocks),
+        ),
+        Err(diagnostics) => {
+            let messages: Vec<String> = diagnostics.iter().map(|d| d.title.clone()).collect();
+            Err(mlua::Error::runtime(format!(
+                "quarto.include: `{}` did not parse: {}",
+                path.display(),
+                messages.join("; ")
+            )))
+        }
+    }
+}
+
+/// An `.lmd` (dialect) or `.lua` include: compile if needed, run with
+/// `params`, read the result as blocks, apply the structural desugaring set.
+fn include_chunk(
+    lua: &Lua,
+    source: &str,
+    path: &Path,
+    ext: &str,
+    params: Option<Table>,
+) -> Result<Vec<crate::pandoc::Block>> {
+    let dialects = super::dialect::registered_dialects(lua);
+    let lua_source = if ext == "lua" {
+        source.to_string()
+    } else if let Some(dialect) = dialects.iter().find(|d| d.extension() == ext) {
+        dialect.compile(source, path).map_err(|error| {
+            mlua::Error::external(crate::dialect::ModuleCompileError {
+                module: path.display().to_string(),
+                path: path.to_path_buf(),
+                dialect: dialect.name().to_string(),
+                error,
+            })
+        })?
+    } else {
+        let known: Vec<String> = ["md", "qmd", "lua"]
+            .into_iter()
+            .map(str::to_string)
+            .chain(dialects.iter().map(|d| d.extension().to_string()))
+            .collect();
+        return Err(mlua::Error::runtime(format!(
+            "quarto.include: `{}` is not a file quarto.include can evaluate (one of: .{})",
+            path.display(),
+            known.join(", .")
+        )));
+    };
+
+    let env = lua.create_table()?;
+    let env_mt = lua.create_table()?;
+    env_mt.set("__index", lua.globals())?;
+    env.set_metatable(Some(env_mt))?;
+
+    let module_stack: Table = lua.named_registry_value(REQUIRE_DIR_STACK_KEY)?;
+    let dir = path
+        .parent()
+        .unwrap_or(Path::new(""))
+        .to_string_lossy()
+        .to_string();
+    let len = module_stack.raw_len();
+    module_stack.set(len + 1, dir)?;
+    let args = match params {
+        Some(t) => Value::Table(t),
+        None => Value::Nil,
+    };
+    let result = lua
+        .load(&lua_source)
+        .set_name(format!("@{}", path.display()))
+        .set_environment(env)
+        .call::<Value>(args);
+    module_stack.set(len + 1, Value::Nil)?;
+    let value = result?;
+
+    let blocks = match super::lmd::classify_cell_value(lua, value) {
+        Ok(super::lmd::LmdCellValue::Nothing) => Vec::new(),
+        Ok(super::lmd::LmdCellValue::Blocks(blocks)) => blocks,
+        Err(err) => {
+            return Err(mlua::Error::runtime(format!(
+                "quarto.include: `{}`: {err}",
+                path.display()
+            )));
+        }
+    };
+    // The structural desugaring set, as for a cell's return value; the
+    // include has no cell to relocate a diagnostic onto, so it is a warning
+    // naming the file.
+    let mut collector = crate::utils::diagnostic_collector::DiagnosticCollector::new();
+    let blocks = crate::pandoc::desugar::desugar_blocks(blocks, &mut collector);
+    for diag in collector.diagnostics() {
+        warn_from_loader(lua, &format!("{}: {}", path.display(), diag.title));
+    }
+    Ok(blocks)
+}
+
 /// Install the host's [`ModuleRoots`](crate::lua_options::ModuleRoots) in
 /// the state: the project root a leading `/` resolves against, and the
 /// extension directories a module name's first segment may select
@@ -1778,6 +1993,200 @@ mod tests {
             warnings[0].contains("greet.shout") && warnings[0].contains("greet.lua"),
             "{warnings:?}"
         );
+    }
+
+    // ---- quarto.include (bd-76ogq4ew, phase 3) ----
+
+    fn create_include_test_lua() -> Lua {
+        let lua = create_dialect_require_test_lua();
+        register_quarto_include(&lua, Arc::new(NativeRuntime::new())).unwrap();
+        lua
+    }
+
+    fn block_texts(lua: &Lua, code: &str) -> Vec<String> {
+        lua.load(format!(
+            "local bs = {code}\nlocal out = {{}}\nfor i, b in ipairs(bs) do out[i] = b.t .. ':' .. pandoc.utils.stringify(b) end\nreturn out"
+        ))
+        .eval::<Vec<String>>()
+        .unwrap()
+    }
+
+    #[test]
+    fn test_include_runs_a_lua_file_with_params_and_returns_blocks() {
+        let lua = create_include_test_lua();
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_file(
+            tmp.path(),
+            "partials/card.lua",
+            "local p = ...\nreturn { pandoc.Header(3, p.title), pandoc.Para(p.body) }",
+        );
+        push_script_dir(&lua, &quarto_util::to_forward_slashes(tmp.path())).unwrap();
+        let texts = block_texts(
+            &lua,
+            r#"quarto.include("partials/card.lua", { title = "Hi", body = "there" })"#,
+        );
+        assert_eq!(texts, vec!["Header:Hi", "Para:there"]);
+        // A call, not a module: different params, different result, and
+        // the file's own `require` cache is not involved.
+        let again = block_texts(
+            &lua,
+            r#"quarto.include("partials/card.lua", { title = "Bye", body = "now" })"#,
+        );
+        assert_eq!(again, vec!["Header:Bye", "Para:now"]);
+        // nil and no return mean no blocks; the result is a Blocks list.
+        write_file(tmp.path(), "partials/empty.lua", "local _ = ...");
+        let n: usize = lua
+            .load(r#"return #quarto.include("partials/empty.lua")"#)
+            .eval()
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn test_include_compiles_a_dialect_file() {
+        // The toy dialect turns `SHOUT "x")` into `return string.upper("x")`,
+        // a string, which is not blocks: the contract error names the file.
+        let lua = create_include_test_lua();
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_file(tmp.path(), "partials/loud.shout", r#"SHOUT "x")"#);
+        push_script_dir(&lua, &quarto_util::to_forward_slashes(tmp.path())).unwrap();
+        let err = lua
+            .load(r#"return quarto.include("partials/loud.shout")"#)
+            .eval::<Value>()
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("loud.shout") && err.contains("must return a Block"),
+            "{err}"
+        );
+        // A compile failure surfaces as the typed module error.
+        write_file(tmp.path(), "partials/broken.shout", "BOOM");
+        let err = lua
+            .load(r#"return quarto.include("partials/broken.shout")"#)
+            .eval::<mlua::Value>()
+            .unwrap_err();
+        assert!(
+            crate::dialect::ModuleCompileError::find_in(&err).is_some(),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn test_include_reads_a_markdown_file_as_a_fragment() {
+        let lua = create_include_test_lua();
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_file(
+            tmp.path(),
+            "partials/note.md",
+            "## A heading\n\nText[^1] here.\n\n[^1]: the note\n",
+        );
+        push_script_dir(&lua, &quarto_util::to_forward_slashes(tmp.path())).unwrap();
+        let texts = block_texts(&lua, r#"quarto.include("partials/note.md")"#);
+        // `stringify` flattens the Note's content into the paragraph.
+        assert_eq!(texts, vec!["Header:A heading", "Para:Textthe note here."]);
+        let (id, has_note): (String, bool) = lua
+            .load(
+                r#"local bs = quarto.include("partials/note.md")
+                   local note = false
+                   bs[2]:walk({ Note = function() note = true end })
+                   return bs[1].identifier, note"#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(id, "", "derived heading id dropped");
+        assert!(has_note, "local footnote paired into a Note");
+        let err = lua
+            .load(r#"return quarto.include("partials/note.md", { x = 1 })"#)
+            .eval::<Value>()
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("takes no params"), "{err}");
+    }
+
+    #[test]
+    fn test_include_resolves_beside_the_including_module_and_against_the_project_root() {
+        let lua = create_include_test_lua();
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_file(
+            tmp.path(),
+            "mods/m.lua",
+            r#"return { part = function() return quarto.include("part.md") end }"#,
+        );
+        write_file(tmp.path(), "mods/part.md", "beside the module\n");
+        write_file(tmp.path(), "part.md", "beside the script\n");
+        write_file(tmp.path(), "shared/footer.md", "at the root\n");
+        set_module_roots(&lua, roots(Some(tmp.path()), &[]));
+        push_script_dir(
+            &lua,
+            &quarto_util::to_forward_slashes(&tmp.path().join("docs")),
+        )
+        .unwrap();
+        // From the script: its own directory (docs/) has no part.md.
+        let err = lua
+            .load(r#"return quarto.include("part.md")"#)
+            .eval::<Value>()
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("cannot read"), "{err}");
+        // From inside a module: the module's directory.
+        pop_script_dir(&lua).unwrap();
+        push_script_dir(&lua, &quarto_util::to_forward_slashes(tmp.path())).unwrap();
+        let texts = block_texts(&lua, r#"require("mods/m").part()"#);
+        assert_eq!(texts, vec!["Para:beside the module"]);
+        let texts = block_texts(&lua, r#"quarto.include("part.md")"#);
+        assert_eq!(texts, vec!["Para:beside the script"]);
+        // A leading slash: the project root.
+        let texts = block_texts(&lua, r#"quarto.include("/shared/footer.md")"#);
+        assert_eq!(texts, vec!["Para:at the root"]);
+    }
+
+    #[test]
+    fn test_include_applies_the_structural_desugaring_set() {
+        // A paragraph holding one image is an implicit figure, as it would
+        // be from the reader (dev-docs/syntax-notes.md).
+        let lua = create_include_test_lua();
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_file(
+            tmp.path(),
+            "fig.lua",
+            r#"return pandoc.Para({ pandoc.Image({pandoc.Str("cap")}, "a.png", "fig:") })"#,
+        );
+        push_script_dir(&lua, &quarto_util::to_forward_slashes(tmp.path())).unwrap();
+        let tags: Vec<String> = lua
+            .load(r#"local bs = quarto.include("fig.lua"); return { bs[1].t }"#)
+            .eval()
+            .unwrap();
+        assert_eq!(tags, vec!["Figure"]);
+    }
+
+    #[test]
+    fn test_include_reads_only_through_the_runtime_so_a_read_policy_governs_it() {
+        use quarto_system_runtime::{SandboxedRuntime, SecurityPolicy};
+        let tmp = tempfile::TempDir::new().unwrap();
+        let allowed = tmp.path().join("proj");
+        let denied = tmp.path().join("vendor");
+        write_file(&allowed, "ok.md", "fine\n");
+        write_file(&denied, "secret.md", "secret\n");
+        let lua = create_test_lua();
+        let sandboxed: Arc<dyn crate::lua::runtime::SystemRuntime> =
+            Arc::new(SandboxedRuntime::new(
+                NativeRuntime::new(),
+                SecurityPolicy::untrusted(allowed.clone()),
+            ));
+        register_scoped_require(&lua, sandboxed.clone()).unwrap();
+        register_quarto_include(&lua, sandboxed).unwrap();
+        push_script_dir(&lua, &quarto_util::to_forward_slashes(&allowed)).unwrap();
+        let texts = block_texts(&lua, r#"quarto.include("ok.md")"#);
+        assert_eq!(texts, vec!["Para:fine"]);
+        // Relative traversal out of the allowed directory: the read is
+        // refused by the policy (a leading `/` would mean the project root,
+        // not an absolute path).
+        let err = lua
+            .load(r#"return quarto.include("../vendor/secret.md")"#)
+            .eval::<Value>()
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("cannot read"), "{err}");
     }
 
     // ---- module roots (bd-76ogq4ew, phase 3) ----

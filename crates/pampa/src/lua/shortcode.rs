@@ -132,6 +132,8 @@ impl LuaShortcodeEngine {
         super::quarto_api::register_scoped_require(&lua, runtime.clone())
             .map_err(LuaShortcodeError::LuaError)?;
         super::quarto_api::set_module_roots(&lua, options.module_roots.clone());
+        super::quarto_api::register_quarto_include(&lua, runtime.clone())
+            .map_err(LuaShortcodeError::LuaError)?;
         for dialect in &options.dialects {
             super::dialect::register_source_dialect(&lua, dialect.clone())
                 .map_err(LuaShortcodeError::LuaError)?;

@@ -381,11 +381,13 @@ user to confirm or overturn at review:
   render the root is the document's directory). `require("cards/deck")`
   also tries `_extensions/cards/deck` when a discovered extension is named
   `cards` (the first path segment selects the extension), *after* the
-  document-relative directories, so a local `cards/` directory wins. No
-  `contributes: lmd-modules:` key: an extension's Lua and lmd files are
-  addressable by the extension's name, and a declared list would be a
-  second place to say what the directory already shows. Both roots feed
-  `quarto.include` as well.
+  document-relative directories, so a local `cards/` directory wins. Every
+  discovered extension is addressable this way; the manifest key
+  `contributes: modules: true` exists only because the manifest validator
+  requires some contribution, so an extension that ships nothing but
+  modules can be declared at all (found when the project fixture's
+  `badges` extension failed to load). Both roots feed `quarto.include` as
+  well.
 - **Plumbing.** The `_with` entry points from Phase 1 take a
   `pampa::lua::LuaOptions` (dialects plus `ModuleRoots`) instead of a bare
   dialect slice, so the next host-provided setting is a field, not a new
@@ -409,12 +411,22 @@ user to confirm or overturn at review:
   desugaring set applied; a `.qmd` or `.md` file is read as a fragment
   (local footnotes, derived ids) and takes no params. Not cached: an
   include is a call. The same `SandboxedRuntime` denial test as `require`.
+  *Found on the way:* the sandbox policy matched un-normalized paths, so
+  `allowed/../vendor/x` passed an allow list for `allowed/`; the policy now
+  normalizes lexically before matching (symlinks still need the
+  filesystem).
+- **Relative to the including file, exactly.** The include path is
+  resolved against the directory of the chunk that called
+  `quarto.include`, read off the Lua stack (`@path` chunk names), so a
+  function defined in a module and called from a cell includes beside its
+  module, not beside the document. Anonymous chunks fall back to the
+  loading module's directory, then the running script's.
 
 
-- [ ] Project-root resolution for `require` (leading `/`, the convention `components.src` already uses) and a `_extensions/<name>/` root addressable as `require("<name>/module")` (or a `contributes: lmd-modules:` key; decide with the user).
-- [ ] Autoload: `lmd: modules: [...]` in `_quarto.yml` or a document\'s front matter, equivalent to a `require` into a named global before the first cell. Decide whether the include workaround stays documented as the prelude mechanism.
-- [ ] `quarto.include(file, params)` returning `Blocks`: evaluates an `.lmd` file (or reads a `.qmd` fragment) in the document\'s state with a params table, distinct from `require`\'s module value. **Resolution and reading go through the Lua state\'s `SystemRuntime` only** (see File access above): relative to the including file, then the same roots `require` searches; pinned by a `wasm_lua.rs` test over the VFS and a `SandboxedRuntime` denial test. It is a new entry point under the structural desugaring contract (PR #850), so it applies the set and gets a row in `dev-docs/syntax-notes.md`.
-- [ ] Pins through the real binary with a project fixture: a module in `_extensions`, a module at project root, an autoloaded module, a parameterised include.
+- [x] Project-root resolution for `require` (leading `/`, the convention `components.src` already uses) and a `_extensions/<name>/` root addressable as `require("<name>/module")` (or a `contributes: lmd-modules:` key; decide with the user).
+- [x] Autoload: `lmd: modules: [...]` in `_quarto.yml` or a document\'s front matter, equivalent to a `require` into a named global before the first cell. Decide whether the include workaround stays documented as the prelude mechanism.
+- [x] `quarto.include(file, params)` returning `Blocks`: evaluates an `.lmd` file (or reads a `.qmd` fragment) in the document\'s state with a params table, distinct from `require`\'s module value. **Resolution and reading go through the Lua state\'s `SystemRuntime` only** (see File access above): relative to the including file, then the same roots `require` searches; pinned by a `wasm_lua.rs` test over the VFS and a `SandboxedRuntime` denial test. It is a new entry point under the structural desugaring contract (PR #850), so it applies the set and gets a row in `dev-docs/syntax-notes.md`.
+- [x] Pins through the real binary with a project fixture (`fixtures/lmd-project`, snapshotted as `project.main.html` / `project.stderr`; mirrored by `examples/lmd/10-project`, embedded in the guide): a module in `_extensions`, a module at project root, an autoloaded module, a parameterised include.
 
 ### Later, own strand: markup-side component call sites
 

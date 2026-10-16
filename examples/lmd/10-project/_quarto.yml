@@ -1,0 +1,6 @@
+project:
+  type: default
+lmd:
+  modules:
+    - components/cards
+    - badges

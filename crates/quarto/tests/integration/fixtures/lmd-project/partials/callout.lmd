@@ -1,0 +1,7 @@
+-- A parameterised partial: `quarto.include` runs it with params as `...`.
+local p = ...
+return {=:
+::: {.partial}
+**`{lmd} p.kind`**: `{lmd} p.body`
+:::
+:=}

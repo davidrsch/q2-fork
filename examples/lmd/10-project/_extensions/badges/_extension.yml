@@ -1,0 +1,5 @@
+title: Badges
+author: Test
+version: 0.1.0
+contributes:
+  modules: true

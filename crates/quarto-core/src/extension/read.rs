@@ -177,16 +177,25 @@ fn parse_contributes(
         result.engines = parse_engines(engines_cv, ext_dir, extension_file)?;
     }
 
-    // Validate that contributes has at least one sub-field (engines count too)
+    // `modules: true` (or a list of module names, kept for documentation
+    // only): the extension ships modules for `require` (bd-76ogq4ew).
+    if let Some(modules_cv) = contributes.get("modules") {
+        result.modules = modules_cv.as_bool().unwrap_or(false)
+            || modules_cv.as_array().is_some_and(|a| !a.is_empty());
+    }
+
+    // Validate that contributes has at least one sub-field (engines and
+    // modules count too)
     if result.formats.is_empty()
         && result.filters.is_empty()
         && result.shortcodes.is_empty()
         && result.metadata.is_none()
         && result.project.is_none()
         && result.engines.is_empty()
+        && !result.modules
     {
         return Err(crate::error::QuartoError::Other(
-            "Extension 'contributes' must have at least one of: formats, filters, shortcodes, metadata, project, engines".to_string(),
+            "Extension 'contributes' must have at least one of: formats, filters, shortcodes, metadata, project, engines, modules".to_string(),
         ));
     }
 
@@ -855,6 +864,53 @@ contributes:
         assert!(ext.version.is_none());
         assert_eq!(ext.contributes.shortcodes.len(), 1);
         assert_eq!(ext.contributes.shortcodes[0], ext_dir.join("hello.lua"));
+    }
+
+    /// bd-76ogq4ew phase 3: an extension that ships only Lua or lmd modules
+    /// for `require("<name>/module")` declares `contributes: modules: true`
+    /// (or lists them) and passes the "contributes something" check.
+    #[test]
+    fn test_read_extension_with_only_modules() {
+        let tmp = TempDir::new().unwrap();
+        let ext_dir = tmp.path().join("_extensions/badges");
+        let file = write_extension(
+            &ext_dir,
+            r#"
+title: Badges
+contributes:
+  modules: true
+"#,
+        );
+        let runtime = make_runtime();
+        let ext = read_extension(&file, &runtime).unwrap();
+        assert_eq!(ext.id.name, "badges");
+        assert!(ext.contributes.modules);
+
+        let listed = write_extension(
+            &tmp.path().join("_extensions/listed"),
+            r#"
+title: Listed
+contributes:
+  modules: [init, ui/pill]
+"#,
+        );
+        assert!(
+            read_extension(&listed, &runtime)
+                .unwrap()
+                .contributes
+                .modules
+        );
+
+        let off = write_extension(
+            &tmp.path().join("_extensions/off"),
+            r#"
+title: Off
+contributes:
+  modules: false
+"#,
+        );
+        let err = read_extension(&off, &runtime).unwrap_err().to_string();
+        assert!(err.contains("at least one of"), "{err}");
     }
 
     #[test]

@@ -52,7 +52,7 @@ pub use filter::{
     apply_lua_filters_with, create_filter_environment, create_filter_environment_with,
 };
 #[allow(unused_imports)]
-pub use quarto_api::set_module_roots;
+pub use quarto_api::{register_quarto_include, set_module_roots};
 #[allow(unused_imports)]
 pub use quarto_doc::{
     HtmlDependency, IncludeLocation, TextInclude, extract_html_dependencies, extract_text_includes,
