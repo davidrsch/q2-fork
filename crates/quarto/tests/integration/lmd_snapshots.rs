@@ -189,7 +189,8 @@ fn render_project(fixture: &str, page: &str) -> (String, String) {
     let temp = tempfile::TempDir::new().unwrap();
     let dir = temp.path().to_path_buf();
     copy_dir(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/integration/fixtures/{fixture}")),
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("tests/integration/fixtures/{fixture}")),
         &dir,
     );
     let output = Command::new(Q2_BIN)
