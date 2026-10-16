@@ -50,7 +50,7 @@ pub use desugar::{
     DesugarOptions, EmitMode, FragmentKind, LmdError, desugar_lua, desugar_lua_expr,
     desugar_lua_expr_with, desugar_lua_with,
 };
-pub use dialect::{LmdDialect, dialects};
+pub use dialect::{LmdDialect, dialects, lua_options};
 pub(crate) use emit::inline_lmd_source;
 
 /// The language tag an lmd cell carries: `` ```{lmd} `` parses to a

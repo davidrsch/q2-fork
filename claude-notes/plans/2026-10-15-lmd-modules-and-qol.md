@@ -372,6 +372,45 @@ it, as for any fragment); only the scanner's view of the body changes.
 
 ### Phase 3: project-level and extension modules {#phase-3}
 
+Started 2026-10-16 on `braid/bd-76ogq4ew-lmd-phase3-project-modules`,
+stacked on Phase 2 (PR #858). Decisions taken while implementing, for the
+user to confirm or overturn at review:
+
+- **Roots.** `require("/components/cards")` resolves against the project
+  root (the leading-`/` convention `components.src` uses; for a single-file
+  render the root is the document's directory). `require("cards/deck")`
+  also tries `_extensions/cards/deck` when a discovered extension is named
+  `cards` (the first path segment selects the extension), *after* the
+  document-relative directories, so a local `cards/` directory wins. No
+  `contributes: lmd-modules:` key: an extension's Lua and lmd files are
+  addressable by the extension's name, and a declared list would be a
+  second place to say what the directory already shows. Both roots feed
+  `quarto.include` as well.
+- **Plumbing.** The `_with` entry points from Phase 1 take a
+  `pampa::lua::LuaOptions` (dialects plus `ModuleRoots`) instead of a bare
+  dialect slice, so the next host-provided setting is a field, not a new
+  parameter on five functions. quarto-core builds it from `ProjectContext`
+  in one place (`crate::lmd::lua_options`).
+- **Autoload.** `lmd: modules:` in `_quarto.yml` or front matter (merged
+  metadata) is a list; a string item `components/cards` binds the global
+  `cards` (its last path segment), a one-key map `ui: components/widgets`
+  binds `ui`. The modules are required, in order, before the document's
+  first cell. A module that fails to load is `Q-26-9` at the entry, and the
+  document's cells are left as written: a broken prelude fails the page
+  visibly once rather than once per cell. Applies to cells only; filters
+  and shortcode handlers `require` what they need.
+- **`quarto.include(file, params)`.** Resolves `file` relative to the
+  including file (the innermost loading module, else the running script,
+  for a cell the document), then the project root for a leading `/`; reads
+  through the runtime only. An `.lmd` (or `.lua`) file is compiled by its
+  dialect and run as a chunk with `params` as its vararg (`local p = ...`),
+  its return value under the block-cell contract (Block, Blocks, plain
+  table of blocks, Nodes, or nil for nothing) and the structural
+  desugaring set applied; a `.qmd` or `.md` file is read as a fragment
+  (local footnotes, derived ids) and takes no params. Not cached: an
+  include is a call. The same `SandboxedRuntime` denial test as `require`.
+
+
 - [ ] Project-root resolution for `require` (leading `/`, the convention `components.src` already uses) and a `_extensions/<name>/` root addressable as `require("<name>/module")` (or a `contributes: lmd-modules:` key; decide with the user).
 - [ ] Autoload: `lmd: modules: [...]` in `_quarto.yml` or a document\'s front matter, equivalent to a `require` into a named global before the first cell. Decide whether the include workaround stays documented as the prelude mechanism.
 - [ ] `quarto.include(file, params)` returning `Blocks`: evaluates an `.lmd` file (or reads a `.qmd` fragment) in the document\'s state with a params table, distinct from `require`\'s module value. **Resolution and reading go through the Lua state\'s `SystemRuntime` only** (see File access above): relative to the including file, then the same roots `require` searches; pinned by a `wasm_lua.rs` test over the VFS and a `SandboxedRuntime` denial test. It is a new entry point under the structural desugaring contract (PR #850), so it applies the set and gets a row in `dev-docs/syntax-notes.md`.

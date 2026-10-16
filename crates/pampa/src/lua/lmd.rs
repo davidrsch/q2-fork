@@ -121,22 +121,23 @@ impl LmdRuntime {
     /// (`pandoc.*`, `quarto.*`, `FORMAT`, scoped `require`), with
     /// `document_path` standing in for the filter script's path so
     /// `quarto.utils.resolve_path` and `require` resolve relative to the
-    /// document. `dialects` are the source dialects `require` may load
-    /// (q2 passes lmd itself, so a cell can `require` an `.lmd` module).
+    /// document. `options` carries the source dialects `require` may load
+    /// (q2 passes lmd itself, so a cell can `require` an `.lmd` module) and
+    /// the module roots it searches beyond the document's directory.
     pub fn new(
         runtime: Arc<dyn SystemRuntime>,
         target_format: &str,
         document_path: &Path,
         attribution: Option<Arc<dyn AttributionLookup>>,
         meta: &quarto_pandoc_types::config_value::ConfigValue,
-        dialects: &[Arc<dyn crate::dialect::SourceDialect>],
+        options: &crate::lua_options::LuaOptions,
     ) -> FilterResult<Self> {
         let lua = create_filter_environment_with(
             runtime,
             target_format,
             document_path,
             attribution,
-            dialects,
+            options,
         )?;
         // quarto.metadata.get / global `meta`: the document's merged
         // metadata, the same snapshot every cell sees.
@@ -406,7 +407,7 @@ mod tests {
             Path::new("doc.qmd"),
             None,
             &quarto_pandoc_types::config_value::ConfigValue::default(),
-            &[],
+            &crate::lua_options::LuaOptions::default(),
         )
         .expect("lmd runtime")
     }

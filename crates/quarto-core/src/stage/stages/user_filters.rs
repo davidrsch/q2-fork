@@ -234,6 +234,9 @@ impl PipelineStage for UserFiltersStage {
             .path
             .parent()
             .map_or_else(|| std::path::PathBuf::from("."), |p| p.to_path_buf());
+        // The lmd dialect and the project's module roots, for the filters'
+        // `require` (bd-76ogq4ew).
+        let lua_options = crate::lmd::lua_options(&ctx.project);
 
         // The Lua filter future is !Send (mlua::Lua is !Send), but this
         // pipeline stage runs under #[async_trait] which requires Send on native.
@@ -258,7 +261,7 @@ impl PipelineStage for UserFiltersStage {
                     runtime,
                     attribution,
                     &doc_dir,
-                    &crate::lmd::dialects(),
+                    &lua_options,
                 ))
                 .map_err(|e| PipelineError::stage_error(self.name(), e.to_string()))
             })
@@ -272,7 +275,7 @@ impl PipelineStage for UserFiltersStage {
             ctx.runtime.clone(),
             attribution,
             &doc_dir,
-            &crate::lmd::dialects(),
+            &lua_options,
         )
         .await
         .map_err(|e| PipelineError::stage_error(self.name(), e.to_string()));

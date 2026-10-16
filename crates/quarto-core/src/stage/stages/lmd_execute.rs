@@ -612,7 +612,7 @@ impl PipelineStage for LmdExecuteStage {
             &ctx.document.input,
             attribution,
             &doc.ast.meta,
-            &crate::lmd::dialects(),
+            &crate::lmd::lua_options(&ctx.project),
         )
         .map_err(|err| PipelineError::stage_error(self.name(), err.to_string()))?;
 
@@ -652,7 +652,7 @@ mod tests {
             document,
             None,
             meta,
-            &crate::lmd::dialects(),
+            &pampa::lua::LuaOptions::with_dialects(crate::lmd::dialects()),
         )
         .expect("lmd runtime")
     }

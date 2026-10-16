@@ -366,6 +366,22 @@ pub fn init_script_dir_stack(lua: &Lua) -> Result<()> {
 /// script-dir stack that `resolve_path` and friends read (GH #588).
 const REQUIRE_DIR_STACK_KEY: &str = "quarto_require_dir_stack";
 
+/// Install the host's [`ModuleRoots`](crate::lua_options::ModuleRoots) in
+/// the state: the project root a leading `/` resolves against, and the
+/// extension directories a module name's first segment may select
+/// (bd-76ogq4ew, phase 3). Replaces any roots set before. Without this
+/// call the loader searches the script directories only.
+pub fn set_module_roots(lua: &Lua, roots: crate::lua_options::ModuleRoots) {
+    lua.set_app_data(roots);
+}
+
+/// The roots in effect, or none.
+pub(crate) fn module_roots(lua: &Lua) -> crate::lua_options::ModuleRoots {
+    lua.app_data_ref::<crate::lua_options::ModuleRoots>()
+        .map(|r| r.clone())
+        .unwrap_or_default()
+}
+
 /// Replace the global `require` with a script-dir-aware loader.
 ///
 /// Q1 extensions `require` sibling modules relative to the requiring
@@ -375,7 +391,11 @@ const REQUIRE_DIR_STACK_KEY: &str = "quarto_require_dir_stack";
 /// 1. resolves `name` against the require-private module-dir stack
 ///    (innermost loading module first) and then the script-dir stack
 ///    top-down, trying `<dir>/<name>.lua`, `<dir>/<name with . -> />.lua`,
-///    and `<dir>/<name>/init.lua`;
+///    and `<dir>/<name>/init.lua`; then, when the host set
+///    [`ModuleRoots`](crate::lua_options::ModuleRoots), the extension
+///    directory the name's first segment selects (`require("cards/deck")`
+///    tries `_extensions/cards/deck`); a name with a leading `/` resolves
+///    against the project root only (`require("/components/cards")`);
 /// 2. executes the module in a sandboxed environment (globals-inheriting,
 ///    like shortcode scripts) with the module's own directory pushed on the
 ///    private module-dir stack — NOT the script-dir stack — so nested
@@ -441,15 +461,44 @@ pub fn register_scoped_require(
             shadowed: Option<PathBuf>,
         }
         let dialects = super::dialect::registered_dialects(lua);
-        let mut stems: Vec<String> = vec![name.clone()];
-        if name.contains('.') {
-            stems.push(name.replace('.', "/"));
+        let roots = module_roots(lua);
+        // The forms a name is tried in, under one base directory.
+        let stems_of = |name: &str| -> Vec<String> {
+            if name.is_empty() {
+                return vec!["init".to_string()];
+            }
+            let mut stems: Vec<String> = vec![name.to_string()];
+            if name.contains('.') {
+                stems.push(name.replace('.', "/"));
+            }
+            stems.push(format!("{name}/init"));
+            stems
+        };
+        // (base directory, stems) pairs in search order.
+        let mut searches: Vec<(PathBuf, Vec<String>)> = Vec::new();
+        if let Some(rooted) = name.strip_prefix('/') {
+            // `/components/cards`: the project root, and only it.
+            if let Some(project) = &roots.project {
+                searches.push((project.clone(), stems_of(rooted)));
+            }
+        } else {
+            for dir in &dirs {
+                searches.push((PathBuf::from(dir), stems_of(&name)));
+            }
+            // `cards/deck` or `cards.deck`: the extension named by the first
+            // segment, after the script directories, so a local `cards/`
+            // directory wins over an extension of the same name.
+            let (head, rest) = match name.find(['/', '.']) {
+                Some(i) => (&name[..i], &name[i + 1..]),
+                None => (name.as_str(), ""),
+            };
+            if let Some(ext) = roots.extension(head) {
+                searches.push((ext.dir.clone(), stems_of(rest)));
+            }
         }
-        stems.push(format!("{name}/init"));
         let mut candidates: Vec<Candidate> = Vec::new();
-        for dir in &dirs {
-            let base = PathBuf::from(dir);
-            for stem in &stems {
+        for (base, stems) in &searches {
+            for stem in stems {
                 let lua_path = base.join(format!("{stem}.lua"));
                 for dialect in &dialects {
                     candidates.push(Candidate {
@@ -553,7 +602,11 @@ pub fn register_scoped_require(
         // the stock `require` (package.path, C modules) gets a turn and
         // its own report becomes the hint when it fails too.
         let searched = if candidates.is_empty() {
-            "no script directory on the stack".to_string()
+            if name.starts_with('/') {
+                "no project root is set for a `/`-rooted module name".to_string()
+            } else {
+                "no script directory on the stack".to_string()
+            }
         } else {
             candidates
                 .iter()
@@ -1725,6 +1778,152 @@ mod tests {
             warnings[0].contains("greet.shout") && warnings[0].contains("greet.lua"),
             "{warnings:?}"
         );
+    }
+
+    // ---- module roots (bd-76ogq4ew, phase 3) ----
+
+    fn roots(
+        project: Option<&Path>,
+        extensions: &[(&str, &Path)],
+    ) -> crate::lua_options::ModuleRoots {
+        crate::lua_options::ModuleRoots {
+            project: project.map(Path::to_path_buf),
+            extensions: extensions
+                .iter()
+                .map(|(name, dir)| crate::lua_options::ExtensionRoot {
+                    name: name.to_string(),
+                    dir: dir.to_path_buf(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn test_require_with_a_leading_slash_resolves_against_the_project_root() {
+        let lua = create_dialect_require_test_lua();
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_file(
+            tmp.path(),
+            "components/cards.lua",
+            r#"return "project cards""#,
+        );
+        write_file(
+            tmp.path(),
+            "components/deck.shout",
+            r#"SHOUT "project deck")"#,
+        );
+        write_file(
+            tmp.path(),
+            "docs/components/cards.lua",
+            r#"return "local cards""#,
+        );
+        set_module_roots(&lua, roots(Some(tmp.path()), &[]));
+        push_script_dir(
+            &lua,
+            &quarto_util::to_forward_slashes(&tmp.path().join("docs")),
+        )
+        .unwrap();
+        let rooted: String = lua
+            .load(r#"return require("/components/cards")"#)
+            .eval()
+            .unwrap();
+        assert_eq!(rooted, "project cards");
+        let dialect: String = lua
+            .load(r#"return require("/components/deck")"#)
+            .eval()
+            .unwrap();
+        assert_eq!(dialect, "PROJECT DECK");
+        // Without the slash the script directory is searched, as before.
+        let local: String = lua
+            .load(r#"return require("components/cards")"#)
+            .eval()
+            .unwrap();
+        assert_eq!(local, "local cards");
+        // A rooted name never falls back to the script directories.
+        let err = lua
+            .load(r#"return require("/nowhere")"#)
+            .eval::<Value>()
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not found"), "{err}");
+        assert!(err.contains("/nowhere"), "{err}");
+    }
+
+    #[test]
+    fn test_require_with_a_leading_slash_and_no_project_root_says_so() {
+        let lua = create_require_test_lua();
+        let tmp = tempfile::TempDir::new().unwrap();
+        push_script_dir(&lua, &quarto_util::to_forward_slashes(tmp.path())).unwrap();
+        let err = lua
+            .load(r#"return require("/components/cards")"#)
+            .eval::<Value>()
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no project root"), "{err}");
+    }
+
+    #[test]
+    fn test_require_resolves_an_extension_by_its_name() {
+        let lua = create_dialect_require_test_lua();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let ext = tmp.path().join("_extensions/cards");
+        write_file(&ext, "deck.lua", r#"return "ext deck""#);
+        write_file(&ext, "init.shout", r#"SHOUT "ext init")"#);
+        write_file(&ext, "ui/badge.shout", r#"SHOUT "ext badge")"#);
+        set_module_roots(&lua, roots(None, &[("cards", &ext)]));
+        push_script_dir(
+            &lua,
+            &quarto_util::to_forward_slashes(&tmp.path().join("docs")),
+        )
+        .unwrap();
+        let slashed: String = lua.load(r#"return require("cards/deck")"#).eval().unwrap();
+        let dotted: String = lua
+            .load(r#"return require("cards.ui.badge")"#)
+            .eval()
+            .unwrap();
+        let bare: String = lua.load(r#"return require("cards")"#).eval().unwrap();
+        assert_eq!(
+            (slashed.as_str(), dotted.as_str(), bare.as_str()),
+            ("ext deck", "EXT BADGE", "EXT INIT")
+        );
+        // An extension that is not registered is not searched.
+        let err = lua
+            .load(r#"return require("other/thing")"#)
+            .eval::<Value>()
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not found"), "{err}");
+    }
+
+    #[test]
+    fn test_require_prefers_a_local_directory_over_an_extension_of_the_same_name() {
+        let lua = create_require_test_lua();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let ext = tmp.path().join("_extensions/cards");
+        write_file(&ext, "deck.lua", r#"return "ext deck""#);
+        write_file(tmp.path(), "docs/cards/deck.lua", r#"return "local deck""#);
+        set_module_roots(&lua, roots(None, &[("cards", &ext)]));
+        push_script_dir(
+            &lua,
+            &quarto_util::to_forward_slashes(&tmp.path().join("docs")),
+        )
+        .unwrap();
+        let got: String = lua.load(r#"return require("cards/deck")"#).eval().unwrap();
+        assert_eq!(got, "local deck");
+    }
+
+    #[test]
+    fn test_module_roots_later_extension_of_the_same_name_wins() {
+        let lua = create_require_test_lua();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let builtin = tmp.path().join("builtin/cards");
+        let user = tmp.path().join("_extensions/cards");
+        write_file(&builtin, "deck.lua", r#"return "builtin""#);
+        write_file(&user, "deck.lua", r#"return "user""#);
+        set_module_roots(&lua, roots(None, &[("cards", &builtin), ("cards", &user)]));
+        push_script_dir(&lua, &quarto_util::to_forward_slashes(tmp.path())).unwrap();
+        let got: String = lua.load(r#"return require("cards/deck")"#).eval().unwrap();
+        assert_eq!(got, "user");
     }
 
     #[test]

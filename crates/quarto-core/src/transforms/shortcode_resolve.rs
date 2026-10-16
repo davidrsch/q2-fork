@@ -1231,7 +1231,7 @@ impl AstTransform for ShortcodeResolveTransform {
             match pampa::lua::LuaShortcodeEngine::new_with(
                 &self.target_format,
                 runtime,
-                &crate::lmd::dialects(),
+                &crate::lmd::lua_options(ctx.project),
             ) {
                 Ok(mut engine) => {
                     // Load scripts from metadata-specified paths. These load

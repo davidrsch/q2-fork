@@ -41,6 +41,8 @@ mod walk;
 #[allow(unused_imports)]
 pub use crate::dialect::ModuleCompileError;
 #[allow(unused_imports)]
+pub use crate::lua_options::{ExtensionRoot, LuaOptions, ModuleRoots};
+#[allow(unused_imports)]
 pub use dialect::{DialectError, SourceDialect, register_source_dialect};
 #[allow(unused_imports)]
 pub use filter::FilterOutput;
@@ -49,6 +51,8 @@ pub use filter::{
     LuaFilterError, apply_lua_filter, apply_lua_filter_with, apply_lua_filters,
     apply_lua_filters_with, create_filter_environment, create_filter_environment_with,
 };
+#[allow(unused_imports)]
+pub use quarto_api::set_module_roots;
 #[allow(unused_imports)]
 pub use quarto_doc::{
     HtmlDependency, IncludeLocation, TextInclude, extract_html_dependencies, extract_text_includes,

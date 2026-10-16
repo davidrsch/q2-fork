@@ -371,7 +371,8 @@ end
         })],
     };
 
-    let dialects: Vec<Arc<dyn SourceDialect>> = vec![Arc::new(Shout)];
+    let options =
+        pampa::lua::LuaOptions::with_dialects(vec![Arc::new(Shout) as Arc<dyn SourceDialect>]);
     let output = apply_lua_filters_with(
         pandoc,
         ASTContext::new(),
@@ -379,7 +380,7 @@ end
         "html",
         runtime,
         None,
-        &dialects,
+        &options,
     )
     .await
     .expect("filter execution failed");
