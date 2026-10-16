@@ -447,10 +447,9 @@ fn resolve_include_path(
     file: &str,
 ) -> Result<PathBuf> {
     if let Some(rooted) = file.strip_prefix('/') {
-        if Path::new(file).is_absolute()
-            && runtime
-                .path_exists(Path::new(file), Some(quarto_system_runtime::PathKind::File))
-                .unwrap_or(false)
+        if runtime
+            .path_exists(Path::new(file), Some(quarto_system_runtime::PathKind::File))
+            .unwrap_or(false)
         {
             return Ok(PathBuf::from(file));
         }
@@ -707,13 +706,12 @@ pub fn register_scoped_require(
         // (base directory, stems) pairs in search order.
         let mut searches: Vec<(PathBuf, Vec<String>)> = Vec::new();
         if let Some(rooted) = name.strip_prefix('/') {
-            // An absolute OS path is tried as itself first: Quarto 1
-            // filters `require(quarto.utils.resolve_path("_modules/x"))`
-            // (GH #587 contract). Then `/components/cards`: the project
-            // root. The two never both exist for one name in practice.
-            if Path::new(&name).is_absolute() {
-                searches.push((PathBuf::new(), stems_of(&name)));
-            }
+            // The name as a path of its own first: Quarto 1 filters
+            // `require(quarto.utils.resolve_path("_modules/x"))`, an
+            // absolute path (GH #587 contract; on the WASM VFS too, where
+            // `Path::is_absolute` would say no). Then `/components/cards`:
+            // the project root. The two never both exist for one name.
+            searches.push((PathBuf::new(), stems_of(&name)));
             if let Some(project) = &roots.project {
                 searches.push((project.clone(), stems_of(rooted)));
             }
@@ -2165,10 +2163,8 @@ mod tests {
         assert_eq!(texts, vec!["Para:at the root"]);
         // An existing absolute path is read as itself.
         let abs = quarto_util::to_forward_slashes(&tmp.path().join("mods/part.md"));
-        if Path::new(&abs).is_absolute() {
-            let texts = block_texts(&lua, &format!(r#"quarto.include("{abs}")"#));
-            assert_eq!(texts, vec!["Para:beside the module"]);
-        }
+        let texts = block_texts(&lua, &format!(r#"quarto.include("{abs}")"#));
+        assert_eq!(texts, vec!["Para:beside the module"]);
     }
 
     #[test]
@@ -2302,10 +2298,10 @@ mod tests {
             &quarto_util::to_forward_slashes(&tmp.path().join("docs")),
         )
         .unwrap();
+        // On Windows the spelling is `C:/…`, which takes the ordinary
+        // path (a join with an absolute path is that path); on Unix the
+        // leading `/` takes the rooted branch, which tries it as itself.
         let abs = quarto_util::to_forward_slashes(&tmp.path().join("_modules/greet"));
-        if !Path::new(&abs).is_absolute() {
-            return; // Windows spells absolute paths without a leading slash.
-        }
         let got: String = lua
             .load(format!(r#"return require("{abs}")"#))
             .eval()
