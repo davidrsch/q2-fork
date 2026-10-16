@@ -36,8 +36,18 @@
 //! underline lands on the line. Cells from an included file name the
 //! included file, since include expansion registers it in the source
 //! context under its own id.
+//!
+//! What a cell returns gets the structural desugaring set
+//! (`pampa::pandoc::desugar`: list-table and definition-list divs, the
+//! implicit figure) before it is spliced in, per cell, so a cell that
+//! builds `pandoc.Div({…}, {"list-table"})` from nodes ends up with the
+//! same `Table` the reader would have made from the markdown (bd-7gqr148v).
+//! A node a cell built has no document position of its own, so a Q-2-35
+//! from that pass is relocated onto the cell.
 
 use async_trait::async_trait;
+use pampa::pandoc::desugar::{desugar_blocks, desugar_inlines};
+use pampa::utils::diagnostic_collector::DiagnosticCollector;
 use quarto_error_reporting::{DiagnosticMessage, DiagnosticMessageBuilder};
 use quarto_pandoc_types::attr::AttrSourceInfo;
 use quarto_pandoc_types::block::{Block, CodeBlock};
@@ -193,12 +203,14 @@ fn displayed_inline_cell(expr: &str, source_info: &SourceInfo) -> Inline {
 }
 
 fn cell_error(
+    code: &str,
     title: &str,
     location: SourceInfo,
     problem: String,
     hint: Option<&str>,
 ) -> DiagnosticMessage {
     let mut builder = DiagnosticMessageBuilder::error(title)
+        .with_code(code)
         .with_location(location)
         .problem(problem);
     if let Some(hint) = hint {
@@ -265,23 +277,112 @@ fn failure_diagnostic(
     err: &LmdCellError,
     location: Option<SourceInfo>,
 ) -> DiagnosticMessage {
-    let (title, hint) = match err {
-        LmdCellError::Lua(_) => ("lmd cell failed", None),
+    // A module the cell required that did not compile is its own failure
+    // (bd-76ogq4ew): the fix is in the module file, not in the cell, and
+    // the dialect's own diagnostics name where.
+    if let LmdCellError::Lua(lua_err) = err
+        && let Some(module_err) = pampa::dialect::ModuleCompileError::find_in(lua_err)
+    {
+        let location = location.unwrap_or_else(|| cell.anchor.span.clone());
+        let mut builder = DiagnosticMessageBuilder::error("lmd module did not compile")
+            .with_code("Q-26-8")
+            .with_location(location)
+            .problem(module_err.to_string());
+        // The dialect's own diagnostics, when they say more than the
+        // message already does (the lmd desugarer's summary is the first
+        // reader diagnostic's title, so a lone one adds nothing).
+        let message = module_err.to_string();
+        for inner in &module_err.error.diagnostics {
+            if !message.contains(&inner.title) {
+                builder =
+                    builder.add_hint(format!("{}: {}", module_err.path.display(), inner.title));
+            }
+        }
+        return builder
+            .add_hint("Fix the module file; the cell that requires it is left as written.")
+            .build();
+    }
+    let (code, title, hint) = match err {
+        LmdCellError::Lua(_) => ("Q-26-4", "lmd cell failed", None),
         LmdCellError::NotBlocks { .. } => (
+            "Q-26-5",
             "lmd cell did not return blocks",
             Some(
                 "Return a Block, a list of Blocks, or nil. Write `{=: … :=}` for a markdown fragment that is blocks.",
             ),
         ),
         LmdCellError::NotInlines { .. } => (
-            "inline lmd cell did not produce inlines",
+            "Q-26-6",
+            "Inline lmd cell did not produce inlines",
             Some(
-                "An inline cell's expression must be an Inline, a list of Inlines, a string, or nil. Write `{=[ … ]=}` for a markdown fragment that is inlines.",
+                "An inline cell's expression must be an Inline, a list of Inlines, a string, a number, a boolean, or nil. Write `{=[ … ]=}` for a markdown fragment that is inlines.",
             ),
         ),
     };
     let location = location.unwrap_or_else(|| cell.anchor.span.clone());
-    cell_error(title, location, err.to_string(), hint)
+    cell_error(code, title, location, err.to_string(), hint)
+}
+
+/// The structural desugaring set over a block cell's result, with any
+/// diagnostic it raises relocated onto the cell.
+fn desugar_cell_blocks(
+    blocks: Vec<Block>,
+    cell: &PendingCell,
+    diagnostics: &mut Vec<DiagnosticMessage>,
+) -> Vec<Block> {
+    let mut collector = DiagnosticCollector::new();
+    let blocks = desugar_blocks(blocks, &mut collector);
+    diagnostics.extend(
+        collector
+            .diagnostics()
+            .iter()
+            .map(|diag| relocate_to_cell(diag, cell)),
+    );
+    blocks
+}
+
+/// [`desugar_cell_blocks`] for an inline cell's result (its sugar, if
+/// any, sits in the blocks of a `Note`).
+fn desugar_cell_inlines(
+    inlines: Inlines,
+    cell: &PendingCell,
+    diagnostics: &mut Vec<DiagnosticMessage>,
+) -> Inlines {
+    let mut collector = DiagnosticCollector::new();
+    let inlines = desugar_inlines(inlines, &mut collector);
+    diagnostics.extend(
+        collector
+            .diagnostics()
+            .iter()
+            .map(|diag| relocate_to_cell(diag, cell)),
+    );
+    inlines
+}
+
+/// A diagnostic the desugaring pass raised about a node the cell
+/// produced, located on the cell instead. The node's own location is not
+/// usable: a node the cell built carries the Lua chunk position
+/// (`SourceInfo::generated`), and a node `pandoc.read` returned carries an
+/// offset into that call's private source context. The whole cell is the
+/// honest resolution available; the reader's precise position is
+/// available only for markup the reader itself parsed, which never reaches
+/// this pass with sugar left in it. Code, title, problem and hints are
+/// kept; details are not, since each carries its own (unusable) location.
+fn relocate_to_cell(diag: &DiagnosticMessage, cell: &PendingCell) -> DiagnosticMessage {
+    let mut builder = DiagnosticMessageBuilder::new(diag.kind, diag.title.clone())
+        .with_location(cell.anchor.span.clone());
+    if let Some(code) = &diag.code {
+        builder = builder.with_code(code.clone());
+    }
+    if let Some(problem) = &diag.problem {
+        builder = builder.problem(problem.clone());
+    }
+    for hint in &diag.hints {
+        builder = builder.add_hint(hint.clone());
+    }
+    builder
+        .add_info("The node was built by this lmd cell.")
+        .build()
 }
 
 /// Split a block cell's text into its code, the `echo` option, and the
@@ -302,10 +403,22 @@ fn block_cell_code_and_echo(
                     .map(options_to_config)
                     .is_some_and(|(config, option_diags)| {
                         diagnostics.extend(option_diags);
-                        config
-                            .get("echo")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false)
+                        match config.get("echo") {
+                            None => false,
+                            Some(value) => value.as_bool().unwrap_or_else(|| {
+                                // A wrongly typed option is reported, not
+                                // silently taken as `false`: a typo such as
+                                // `echo: yes please` would otherwise vanish.
+                                diagnostics.push(cell_error(
+                                    "Q-26-7",
+                                    "Invalid lmd cell options",
+                                    value.source_info.clone(),
+                                    "`echo` must be `true` or `false`".to_string(),
+                                    None,
+                                ));
+                                false
+                            }),
+                        }
                     });
             let option_lines = cell.text[..partitioned.options_len].matches('\n').count();
             (partitioned.code, echo, option_lines)
@@ -316,7 +429,8 @@ fn block_cell_code_and_echo(
                 .cloned()
                 .unwrap_or_else(|| cell.anchor.span.clone());
             diagnostics.push(cell_error(
-                "lmd cell options are not valid",
+                "Q-26-7",
+                "Invalid lmd cell options",
                 location,
                 err.to_string(),
                 None,
@@ -359,7 +473,7 @@ pub async fn execute_lmd_cells(
                             out.push(displayed_block_cell(&code, &cell.source_info));
                         }
                         if let LmdCellValue::Blocks(result) = value {
-                            out.extend(result);
+                            out.extend(desugar_cell_blocks(result, cell, diagnostics));
                         }
                     }
                     Err(err) => {
@@ -377,7 +491,9 @@ pub async fn execute_lmd_cells(
                     .await
                 {
                     Ok(LmdInlineValue::Nothing) => CellOutput::Inlines(Vec::new()),
-                    Ok(LmdInlineValue::Inlines(result)) => CellOutput::Inlines(result),
+                    Ok(LmdInlineValue::Inlines(result)) => {
+                        CellOutput::Inlines(desugar_cell_inlines(result, cell, diagnostics))
+                    }
                     Err(err) => {
                         // The code span is on the reported line and tighter
                         // than the line, so it stays the location.
@@ -496,6 +612,7 @@ impl PipelineStage for LmdExecuteStage {
             &ctx.document.input,
             attribution,
             &doc.ast.meta,
+            &crate::lmd::dialects(),
         )
         .map_err(|err| PipelineError::stage_error(self.name(), err.to_string()))?;
 
@@ -523,13 +640,19 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
-    fn runtime(meta: &quarto_pandoc_types::config_value::ConfigValue) -> LmdRuntime {
+    /// A runtime whose document lives at `document`, so `require` resolves
+    /// beside it; lmd is registered as it is in the stage.
+    fn runtime_at(
+        meta: &quarto_pandoc_types::config_value::ConfigValue,
+        document: &Path,
+    ) -> LmdRuntime {
         LmdRuntime::new(
             Arc::new(NativeRuntime::new()),
             "html",
-            Path::new("doc.qmd"),
+            document,
             None,
             meta,
+            &crate::lmd::dialects(),
         )
         .expect("lmd runtime")
     }
@@ -542,6 +665,14 @@ mod tests {
     }
 
     fn render_with_sources(qmd: &str) -> (Vec<Block>, Vec<DiagnosticMessage>, SourceContext) {
+        render_at(qmd, Path::new("doc.qmd"))
+    }
+
+    /// [`render_with_sources`] for a document at `document`.
+    fn render_at(
+        qmd: &str,
+        document: &Path,
+    ) -> (Vec<Block>, Vec<DiagnosticMessage>, SourceContext) {
         let mut sink: Vec<u8> = Vec::new();
         let (ast, ctx, _warnings) =
             pampa::readers::qmd::read(qmd.as_bytes(), false, "test.qmd", &mut sink, true, None)
@@ -553,11 +684,204 @@ mod tests {
         let mut diagnostics = Vec::new();
         pollster::block_on(execute_lmd_cells(
             &mut blocks,
-            &runtime(&ast.meta),
+            &runtime_at(&ast.meta, document),
             &sources,
             &mut diagnostics,
         ));
         (blocks, diagnostics, sources)
+    }
+
+    // ---- modules: `require` of `.lmd` files (bd-76ogq4ew, phase 1) ----
+
+    fn write_module(dir: &Path, name: &str, content: &str) {
+        let path = dir.join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, content).unwrap();
+    }
+
+    const CARDS_LMD: &str = "local M = {}\n\nfunction M.card(title, body)\n  return {=:\n::: {.card}\n### `{lmd} title`\n\n`{lmd} body`\n:::\n:=}\nend\n\nreturn M\n";
+
+    #[test]
+    fn a_cell_requires_an_lmd_module_and_uses_its_component() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_module(tmp.path(), "components/cards.lmd", CARDS_LMD);
+        let (blocks, diags, _) = render_at(
+            "```{lmd}\nlocal cards = require(\"components/cards\")\nreturn cards.card(\"Hello\", {=[ from a *module* ]=})\n```\n",
+            &tmp.path().join("doc.qmd"),
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        assert_eq!(blocks.len(), 1, "{blocks:?}");
+        let Block::Div(div) = &blocks[0] else {
+            panic!("expected the card div, got {:?}", blocks[0]);
+        };
+        assert_eq!(div.attr.1, vec!["card".to_string()]);
+        let Block::Header(h) = &div.content[0] else {
+            panic!("expected a heading, got {:?}", div.content[0]);
+        };
+        assert_eq!(inlines_text(&h.content), "Hello");
+        assert_eq!(para_text(&div.content[1]), "from a *module*");
+    }
+
+    #[test]
+    fn a_runtime_error_inside_a_module_names_the_module_file_and_line() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_module(
+            tmp.path(),
+            "boom.lmd",
+            "local M = {}\nfunction M.go()\n  error(\"boom\")\nend\nreturn M\n",
+        );
+        let (_, diags, sources) = render_at(
+            // Not `return m.go()`: a tail call drops the cell's frame from
+            // the traceback, and then the whole cell is the honest location.
+            "```{lmd}\nlocal m = require(\"boom\")\nlocal r = m.go()\nreturn r\n```\n",
+            &tmp.path().join("doc.qmd"),
+        );
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert_eq!(diags[0].code.as_deref(), Some("Q-26-4"));
+        let problem = problem_text(&diags[0]);
+        // The module's own position leads the message…
+        assert!(problem.contains("boom.lmd:3: boom"), "{problem}");
+        // …and the cell's frame in the traceback locates the diagnostic.
+        assert_eq!(
+            located_text(&diags[0], &sources),
+            "local r = m.go()",
+            "{problem}"
+        );
+    }
+
+    #[test]
+    fn a_desugar_failure_inside_a_module_is_reported_at_the_require() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_module(
+            tmp.path(),
+            "bad.lmd",
+            "local M = {}\nfunction M.go()\n  return {=: pages' :=}\nend\nreturn M\n",
+        );
+        let (_, diags, sources) = render_at(
+            "```{lmd}\nlocal m = require(\"bad\")\nreturn m.go()\n```\n",
+            &tmp.path().join("doc.qmd"),
+        );
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert_eq!(diags[0].code.as_deref(), Some("Q-26-8"), "{diags:?}");
+        let problem = problem_text(&diags[0]);
+        assert!(
+            problem.contains("module 'bad' could not be compiled from lmd"),
+            "{problem}"
+        );
+        // The reader's own title is in the message; the hint is the fix.
+        assert!(problem.contains("Quote"), "{problem}");
+        let hints = format!("{:?}", diags[0].hints);
+        assert!(hints.contains("Fix the module file"), "{hints}");
+        assert!(problem.contains("bad.lmd"), "{problem}");
+        assert!(
+            problem.contains("markdown fragment failed to parse"),
+            "{problem}"
+        );
+        assert_eq!(
+            located_text(&diags[0], &sources),
+            "local m = require(\"bad\")"
+        );
+    }
+
+    #[test]
+    fn a_module_may_require_a_sibling_lmd_module() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_module(tmp.path(), "ui/cards.lmd", CARDS_LMD);
+        write_module(
+            tmp.path(),
+            "ui/page.lmd",
+            "local cards = require(\"cards\")\nreturn { hero = function(t) return cards.card(t, {=[ hero ]=}) end }\n",
+        );
+        let (blocks, diags, _) = render_at(
+            "```{lmd}\nreturn require(\"ui/page\").hero(\"Top\")\n```\n",
+            &tmp.path().join("doc.qmd"),
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let Block::Div(div) = &blocks[0] else {
+            panic!("expected the card div, got {:?}", blocks[0]);
+        };
+        let Block::Header(h) = &div.content[0] else {
+            panic!("expected a heading");
+        };
+        assert_eq!(inlines_text(&h.content), "Top");
+    }
+
+    #[test]
+    fn an_lmd_module_wins_over_a_lua_file_of_the_same_name_with_a_warning() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_module(tmp.path(), "cards.lmd", CARDS_LMD);
+        write_module(
+            tmp.path(),
+            "cards.lua",
+            "return { card = function() error(\"stale\") end }\n",
+        );
+        let (blocks, diags, _) = render_at(
+            "```{lmd}\nreturn require(\"cards\").card(\"Hello\", {=[ x ]=})\n```\n",
+            &tmp.path().join("doc.qmd"),
+        );
+        assert!(matches!(blocks[0], Block::Div(_)), "{blocks:?}");
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert!(
+            diags[0].title.contains("cards.lmd") && diags[0].title.contains("cards.lua"),
+            "{diags:?}"
+        );
+    }
+
+    // ---- fragment gaps (bd-76ogq4ew, phase 2) ----
+
+    /// A footnote defined inside a fragment runs end to end: the cell's
+    /// blocks hold an inline `Note`, which the document's footnote
+    /// transforms number later like any other note.
+    #[test]
+    fn a_footnote_defined_in_a_fragment_is_an_inline_note_in_the_cells_output() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (blocks, diags, _) = render_at(
+            "```{lmd}\nreturn {=:\nThe claim.[^src]\n\n[^src]: The *source*.\n:=}\n```\n",
+            &tmp.path().join("doc.qmd"),
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        let Block::Paragraph(p) = &blocks[0] else {
+            panic!("{blocks:?}")
+        };
+        let note = p
+            .content
+            .iter()
+            .find_map(|i| match i {
+                Inline::Note(n) => Some(n),
+                _ => None,
+            })
+            .expect("a Note inline");
+        let Block::Paragraph(inner) = &note.content[0] else {
+            panic!("{:?}", note.content)
+        };
+        assert_eq!(inlines_text(&inner.content), "The *source*.");
+    }
+
+    /// `quarto.markdown(str)` in a cell: a string becomes `Nodes`, which a
+    /// block cell takes as blocks and an inline cell as inlines.
+    #[test]
+    fn quarto_markdown_turns_a_string_into_nodes_for_either_kind_of_cell() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (blocks, diags, _) = render_at(
+            "```{lmd}\nreturn quarto.markdown(\"One *em*.\\n\\nTwo.\")\n```\n\nAnd `{lmd} quarto.markdown(\"**bold** inline\")` here.\n",
+            &tmp.path().join("doc.qmd"),
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        assert_eq!(blocks.len(), 3, "{blocks:?}");
+        assert!(
+            matches!(&blocks[0], Block::Paragraph(p) if p.content.iter().any(|i| matches!(i, Inline::Emph(_)))),
+            "{blocks:?}"
+        );
+        assert!(matches!(&blocks[1], Block::Paragraph(_)), "{blocks:?}");
+        let Block::Paragraph(p) = &blocks[2] else {
+            panic!("{blocks:?}")
+        };
+        assert!(
+            p.content.iter().any(|i| matches!(i, Inline::Strong(_))),
+            "{:?}",
+            p.content
+        );
+        assert_eq!(inlines_text(&p.content), "And **bold** inline here.");
     }
 
     /// The text a diagnostic's location resolves to in the test file.
@@ -612,6 +936,121 @@ mod tests {
         assert!(!blocks.iter().any(is_pending_block_cell));
     }
 
+    // ----- the structural desugaring set over cell results (bd-7gqr148v) -----
+
+    const LIST_TABLE_DIV: &str = "pandoc.Div({ pandoc.BulletList({ { pandoc.BulletList({ { pandoc.Plain({ pandoc.Str('k') }) }, { pandoc.Plain({ pandoc.Str('v') }) } }) } }) }, pandoc.Attr('', {'list-table'}))";
+
+    #[test]
+    fn a_cell_built_list_table_div_becomes_a_table() {
+        let (blocks, diags) = render(&format!("```{{lmd}}\nreturn {LIST_TABLE_DIV}\n```\n"));
+        assert!(diags.is_empty(), "{diags:?}");
+        assert!(matches!(blocks.as_slice(), [Block::Table(_)]), "{blocks:?}");
+    }
+
+    #[test]
+    fn a_cell_built_definition_list_div_becomes_a_definition_list() {
+        let qmd = "```{lmd}\nreturn pandoc.Div({ pandoc.BulletList({ { pandoc.Plain({ pandoc.Str('t') }), pandoc.BulletList({ { pandoc.Plain({ pandoc.Str('d') }) } }) } }) }, pandoc.Attr('', {'definition-list'}))\n```\n";
+        let (blocks, diags) = render(qmd);
+        assert!(diags.is_empty(), "{diags:?}");
+        assert!(
+            matches!(blocks.as_slice(), [Block::DefinitionList(_)]),
+            "{blocks:?}"
+        );
+    }
+
+    #[test]
+    fn a_cell_built_single_image_para_becomes_a_figure() {
+        let qmd = "```{lmd}\nreturn pandoc.Para({ pandoc.Image({ pandoc.Str('alt') }, 'x.png', '', pandoc.Attr('fig-x')) })\n```\n";
+        let (blocks, diags) = render(qmd);
+        assert!(diags.is_empty(), "{diags:?}");
+        let [Block::Figure(figure)] = blocks.as_slice() else {
+            panic!("expected Figure, got {blocks:?}");
+        };
+        assert_eq!(figure.attr.0, "fig-x");
+    }
+
+    #[test]
+    fn an_invalid_cell_built_list_table_warns_at_the_cell() {
+        let qmd = "Before\n\n```{lmd}\nreturn pandoc.Div({ pandoc.Para({ pandoc.Str('x') }) }, pandoc.Attr('', {'list-table'}))\n```\n";
+        let (blocks, diags, sources) = render_with_sources(qmd);
+        assert!(
+            matches!(blocks.as_slice(), [_, Block::Div(_)]),
+            "{blocks:?}"
+        );
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert_eq!(diags[0].code.as_deref(), Some("Q-2-35"));
+        assert_eq!(
+            diags[0].kind,
+            quarto_error_reporting::DiagnosticKind::Warning
+        );
+        // Located on the cell's text, not on the Lua chunk position the
+        // constructed div carries.
+        assert_eq!(
+            located_text(&diags[0], &sources),
+            "return pandoc.Div({ pandoc.Para({ pandoc.Str('x') }) }, pandoc.Attr('', {'list-table'}))"
+        );
+    }
+
+    #[test]
+    fn an_inline_cell_note_holding_a_list_table_is_desugared() {
+        let qmd = format!("A note`{{lmd}} pandoc.Note({{ {LIST_TABLE_DIV} }})` here.\n");
+        let (blocks, diags) = render(&qmd);
+        assert!(diags.is_empty(), "{diags:?}");
+        let Block::Paragraph(p) = &blocks[0] else {
+            panic!("{blocks:?}");
+        };
+        let note = p
+            .content
+            .iter()
+            .find_map(|i| match i {
+                Inline::Note(n) => Some(n),
+                _ => None,
+            })
+            .expect("the note is spliced in");
+        assert!(
+            matches!(note.content.as_slice(), [Block::Table(_)]),
+            "{:?}",
+            note.content
+        );
+    }
+
+    #[test]
+    fn a_cell_nested_in_a_fragment_is_covered_by_the_parent_pass() {
+        let qmd = format!(
+            "````{{lmd}}\nreturn {{=:\nIntro\n\n```{{lmd}}\nreturn {LIST_TABLE_DIV}\n```\n:=}}\n````\n"
+        );
+        let (blocks, diags) = render(&qmd);
+        assert!(diags.is_empty(), "{diags:?}");
+        assert!(
+            matches!(blocks.as_slice(), [Block::Paragraph(_), Block::Table(_)]),
+            "{blocks:?}"
+        );
+    }
+
+    /// bd-7gqr148v: a table written inside a fragment runs and is spliced
+    /// in, whether it was a pipe table or a list-table the reader desugared.
+    #[test]
+    fn tables_in_fragments_run_and_are_spliced_in() {
+        let qmd = "```{lmd}\nreturn {=:\n| a | b |\n|---|--:|\n| 1 | 2 |\n\n::: {.list-table}\n* - k\n  - v\n* - x\n  - y\n:::\n:=}\n```\n";
+        let (blocks, diags) = render(qmd);
+        assert!(diags.is_empty(), "{diags:?}");
+        let [Block::Table(pipe), Block::Table(list)] = blocks.as_slice() else {
+            panic!("expected two tables, got {blocks:?}");
+        };
+        assert_eq!(pipe.head.rows.len(), 1);
+        assert_eq!(pipe.bodies[0].body.len(), 1);
+        assert_eq!(
+            pipe.colspec[1].0,
+            quarto_pandoc_types::table::Alignment::Right
+        );
+        assert_eq!(
+            list.head.rows.len(),
+            1,
+            "bare list-table promotes its first row"
+        );
+        assert_eq!(list.bodies[0].body.len(), 1);
+    }
+
     #[test]
     fn the_motivating_example_with_immediate_values() {
         let qmd = "::: foo\n\n```{lmd}\nlocal out = pandoc.Blocks({})\nfor _, v in ipairs({'a', 'b'}) do\n  out:extend({=: **`{lmd} v`** :=})\nend\nreturn out\n```\n\n:::\n";
@@ -638,6 +1077,20 @@ mod tests {
         let texts: Vec<String> = div.content.iter().map(para_text).collect();
         assert_eq!(texts, vec!["**a**", "**b**", "**c**", "**d**"]);
         assert_eq!(para_text(&blocks[1]), "Also d and 4.");
+    }
+
+    /// bd-iqd6niat: metadata numbers and booleans are Lua numbers and
+    /// booleans (divergence D-num), and an inline cell renders them as
+    /// `tostring` would, so `version: 12.1` needs no `tostring()`.
+    #[test]
+    fn inline_cells_render_metadata_numbers_and_booleans() {
+        let qmd = "---\nversion: 12.1\ncount: 3\nflag: true\n---\n\nVersion `{lmd} meta.version`, count `{lmd} meta.count`, twice `{lmd} meta.count * 2`, flag `{lmd} meta.flag`, pair `{lmd} {meta.count, ' of ', meta.version}`.\n";
+        let (blocks, diags) = render(qmd);
+        assert!(diags.is_empty(), "{diags:?}");
+        assert_eq!(
+            para_text(&blocks[0]),
+            "Version 12.1, count 3, twice 6, flag true, pair 3 of 12.1."
+        );
     }
 
     #[test]
@@ -957,12 +1410,30 @@ mod tests {
     }
 
     #[test]
+    fn a_wrongly_typed_echo_option_is_reported_on_its_value() {
+        let qmd = "```{lmd}\n--| echo: yes please\nreturn nil\n```\n";
+        let (blocks, diags, sources) = render_with_sources(qmd);
+        assert!(blocks.is_empty(), "the cell still runs: {blocks:?}");
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert_eq!(diags[0].code.as_deref(), Some("Q-26-7"), "{:?}", diags[0]);
+        // The value's span is composed through the YAML parse; map its start
+        // and check it lands on `yes please` (row 1, after `--| echo: `).
+        let loc = diags[0].location.as_ref().expect("located");
+        let mapped = loc.map_offset(0, &sources).expect("maps");
+        assert_eq!(
+            (mapped.location.row, mapped.location.column),
+            (1, 10),
+            "{mapped:?}"
+        );
+    }
+
+    #[test]
     fn cell_option_errors_are_located_on_the_option_line() {
         let qmd = "```{lmd}\n--| echo: [\nreturn nil\n```\n";
         let (_blocks, diags, sources) = render_with_sources(qmd);
         assert_eq!(diags.len(), 1, "{diags:?}");
         assert!(
-            diags[0].title.contains("options are not valid"),
+            diags[0].title.contains("Invalid lmd cell options"),
             "{:?}",
             diags[0]
         );

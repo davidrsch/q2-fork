@@ -136,6 +136,19 @@ pub fn create_filter_environment(
     script_path: &Path,
     attribution: Option<Arc<dyn crate::attribution::AttributionLookup>>,
 ) -> FilterResult<Lua> {
+    create_filter_environment_with(runtime, target_format, script_path, attribution, &[])
+}
+
+/// [`create_filter_environment`] with source dialects registered on the
+/// state, so `require` loads their files and `quarto.<name>.compile` exists
+/// (bd-76ogq4ew). The host passes the dialects it knows; q2 passes lmd.
+pub fn create_filter_environment_with(
+    runtime: Arc<dyn SystemRuntime>,
+    target_format: &str,
+    script_path: &Path,
+    attribution: Option<Arc<dyn crate::attribution::AttributionLookup>>,
+    dialects: &[Arc<dyn crate::dialect::SourceDialect>],
+) -> FilterResult<Lua> {
     // Create Lua state
     // On WASM, we can't load all libraries (no package/io/os/debug support),
     // so use a restricted set. On native, load everything for full compatibility.
@@ -168,6 +181,9 @@ pub fn create_filter_environment(
     // On native the stock `require` remains the fallback for anything not
     // found relative to the script dirs.
     super::quarto_api::register_scoped_require(&lua, runtime.clone())?;
+    for dialect in dialects {
+        super::dialect::register_source_dialect(&lua, dialect.clone())?;
+    }
 
     // Register quarto.attribution.{lookup, lookup_range, identities}.
     // When `attribution` is `None`, registers no-op stubs:
@@ -242,6 +258,29 @@ pub async fn apply_lua_filter(
     runtime: Arc<dyn SystemRuntime>,
     attribution: Option<Arc<dyn crate::attribution::AttributionLookup>>,
 ) -> FilterResult<FilterOutput> {
+    apply_lua_filter_with(
+        pandoc,
+        context,
+        filter_path,
+        target_format,
+        runtime,
+        attribution,
+        &[],
+    )
+    .await
+}
+
+/// [`apply_lua_filter`] with source dialects available to the filter's
+/// `require` (bd-76ogq4ew).
+pub async fn apply_lua_filter_with(
+    pandoc: &Pandoc,
+    context: &ASTContext,
+    filter_path: &Path,
+    target_format: &str,
+    runtime: Arc<dyn SystemRuntime>,
+    attribution: Option<Arc<dyn crate::attribution::AttributionLookup>>,
+    dialects: &[Arc<dyn crate::dialect::SourceDialect>],
+) -> FilterResult<FilterOutput> {
     // Read filter file via runtime (supports VFS on WASM)
     let filter_bytes = runtime.file_read(filter_path).map_err(|e| {
         LuaFilterError::FileReadError(filter_path.to_owned(), std::io::Error::other(e.to_string()))
@@ -253,7 +292,8 @@ pub async fn apply_lua_filter(
         )
     })?;
 
-    let lua = create_filter_environment(runtime, target_format, filter_path, attribution)?;
+    let lua =
+        create_filter_environment_with(runtime, target_format, filter_path, attribution, dialects)?;
     // quarto.metadata.get / `meta`: a snapshot of the document's metadata
     // as this filter starts (Q1 parity, quarto-cli PR 13246).
     super::metadata::register_quarto_metadata(&lua, &pandoc.meta)?;
@@ -334,6 +374,29 @@ pub async fn apply_lua_filters(
     runtime: Arc<dyn SystemRuntime>,
     attribution: Option<Arc<dyn crate::attribution::AttributionLookup>>,
 ) -> FilterResult<FilterOutput> {
+    apply_lua_filters_with(
+        pandoc,
+        context,
+        filter_paths,
+        target_format,
+        runtime,
+        attribution,
+        &[],
+    )
+    .await
+}
+
+/// [`apply_lua_filters`] with source dialects available to every filter's
+/// `require` (bd-76ogq4ew).
+pub async fn apply_lua_filters_with(
+    pandoc: Pandoc,
+    context: ASTContext,
+    filter_paths: &[std::path::PathBuf],
+    target_format: &str,
+    runtime: Arc<dyn SystemRuntime>,
+    attribution: Option<Arc<dyn crate::attribution::AttributionLookup>>,
+    dialects: &[Arc<dyn crate::dialect::SourceDialect>],
+) -> FilterResult<FilterOutput> {
     let mut current_pandoc = pandoc;
     let mut current_context = context;
     let mut all_diagnostics = Vec::new();
@@ -342,13 +405,14 @@ pub async fn apply_lua_filters(
     let mut all_resources = Vec::new();
 
     for filter_path in filter_paths {
-        let output = apply_lua_filter(
+        let output = apply_lua_filter_with(
             &current_pandoc,
             &current_context,
             filter_path,
             target_format,
             runtime.clone(),
             attribution.clone(),
+            dialects,
         )
         .await?;
         current_pandoc = output.pandoc;
@@ -1646,7 +1710,7 @@ mod unit_tests {
     }
 
     #[test]
-    fn test_handle_inline_return_number_errors() {
+    fn test_handle_inline_return_number_is_text() {
         let lua = Lua::new();
         use crate::pandoc::Inline;
         use crate::pandoc::inline::Str;
@@ -1656,10 +1720,16 @@ mod unit_tests {
             text: "original".to_string(),
             source_info: SourceInfo::for_test(),
         });
-        // Pandoc errors on non-coercible returns; so do we, loudly.
-        let err = handle_inline_return(&lua, Value::Integer(42), &original, "Str").unwrap_err();
+        // D-numtext (bd-q4gnd5os): a number reads as its `tostring` text,
+        // where pandoc would error. A function is still an error, loudly.
+        let result = handle_inline_return(&lua, Value::Integer(42), &original, "Str").unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(matches!(&result[0], Inline::Str(s) if s.text == "42"));
+
+        let f = lua.create_function(|_, ()| Ok(())).unwrap();
+        let err = handle_inline_return(&lua, Value::Function(f), &original, "Str").unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("number"), "should name the got-type: {msg}");
+        assert!(msg.contains("function"), "should name the got-type: {msg}");
         assert!(
             msg.contains("'Str'"),
             "should name the filter function: {msg}"
@@ -1667,7 +1737,7 @@ mod unit_tests {
     }
 
     #[test]
-    fn test_handle_inline_return_boolean_errors() {
+    fn test_handle_inline_return_boolean_is_text() {
         let lua = Lua::new();
         use crate::pandoc::Inline;
         use crate::pandoc::inline::Str;
@@ -1677,13 +1747,10 @@ mod unit_tests {
             text: "original".to_string(),
             source_info: SourceInfo::for_test(),
         });
-        let err = handle_inline_return(&lua, Value::Boolean(true), &original, "Str").unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("boolean"), "should name the got-type: {msg}");
-        assert!(
-            msg.contains("'Str'"),
-            "should name the filter function: {msg}"
-        );
+        // D-numtext: a boolean reads as `true` / `false`.
+        let result = handle_inline_return(&lua, Value::Boolean(true), &original, "Str").unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(matches!(&result[0], Inline::Str(s) if s.text == "true"));
     }
 
     #[test]
@@ -2115,7 +2182,7 @@ mod unit_tests {
     }
 
     #[test]
-    fn test_handle_inlines_return_with_control_number_errors() {
+    fn test_handle_inlines_return_with_control_number_is_text() {
         let lua = Lua::new();
         use crate::pandoc::Inline;
         use crate::pandoc::inline::Str;
@@ -2125,12 +2192,22 @@ mod unit_tests {
             text: "original".to_string(),
             source_info: SourceInfo::for_test(),
         })];
+        // D-numtext: a number is text; a function is not coercible.
         let mut values = MultiValue::new();
-        values.push_front(Value::Integer(42)); // Not coercible to Inlines
+        values.push_front(Value::Integer(42));
+        let (elements, _) =
+            handle_inlines_return_with_control(&lua, values, &original, "Inlines").unwrap();
+        assert_eq!(elements.len(), 1);
+        assert!(matches!(&elements[0], Inline::Str(s) if s.text == "42"));
+
+        let mut values = MultiValue::new();
+        values.push_front(Value::Function(
+            lua.create_function(|_, ()| Ok(())).unwrap(),
+        ));
         let err =
             handle_inlines_return_with_control(&lua, values, &original, "Inlines").unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("number"), "should name the got-type: {msg}");
+        assert!(msg.contains("function"), "should name the got-type: {msg}");
     }
 
     #[test]

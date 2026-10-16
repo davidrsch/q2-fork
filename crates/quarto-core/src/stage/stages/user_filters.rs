@@ -250,7 +250,7 @@ impl PipelineStage for UserFiltersStage {
                     .enable_all()
                     .build()
                     .map_err(|e| PipelineError::stage_error(self.name(), e.to_string()))?;
-                rt.block_on(pampa::unified_filter::apply_filters(
+                rt.block_on(pampa::unified_filter::apply_filters_with(
                     ast,
                     ast_context,
                     filters,
@@ -258,12 +258,13 @@ impl PipelineStage for UserFiltersStage {
                     runtime,
                     attribution,
                     &doc_dir,
+                    &crate::lmd::dialects(),
                 ))
                 .map_err(|e| PipelineError::stage_error(self.name(), e.to_string()))
             })
         };
         #[cfg(target_arch = "wasm32")]
-        let filter_result = pampa::unified_filter::apply_filters(
+        let filter_result = pampa::unified_filter::apply_filters_with(
             doc.ast,
             doc.ast_context,
             filters,
@@ -271,6 +272,7 @@ impl PipelineStage for UserFiltersStage {
             ctx.runtime.clone(),
             attribution,
             &doc_dir,
+            &crate::lmd::dialects(),
         )
         .await
         .map_err(|e| PipelineError::stage_error(self.name(), e.to_string()));
@@ -405,7 +407,7 @@ mod tests {
             Ok(PathBuf::from("/"))
         }
         fn temp_dir(&self, _template: &str) -> quarto_system_runtime::RuntimeResult<TempDir> {
-            Ok(TempDir::new(PathBuf::from("/tmp/test")))
+            Ok(TempDir::new(PathBuf::from("/nonexistent/q2-mock-temp-dir")))
         }
         fn exec_pipe(
             &self,

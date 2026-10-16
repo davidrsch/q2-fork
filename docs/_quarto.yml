@@ -32,6 +32,7 @@ website:
             - guides/projects/create.qmd
             - guides/projects/book.qmd
             - guides/projects/preview.qmd
+            - guides/projects/render-options.qmd
             - guides/projects/paths.qmd
             - guides/projects/listings.qmd
             - guides/projects/listing-templates.qmd
@@ -63,8 +64,11 @@ website:
             - guides/authoring/migrating-markdown.qmd
             - guides/authoring/figures.qmd
             - guides/authoring/tables.qmd
+            - guides/authoring/cross-references.qmd
             - guides/authoring/diagrams.qmd
             - guides/authoring/shortcodes.qmd
+            - guides/authoring/lmd.qmd
+            - guides/authoring/lua-filters.qmd
             - guides/authoring/brand.qmd
             - guides/authoring/layout.qmd
             - guides/authoring/tabsets.qmd
@@ -329,6 +333,14 @@ website:
             - errors/project/Q-5-38.qmd
             - errors/project/Q-5-39.qmd
             - errors/project/Q-5-40.qmd
+            - errors/project/Q-5-41.qmd
+            - errors/project/Q-5-42.qmd
+            - errors/project/Q-5-43.qmd
+            - errors/project/Q-5-44.qmd
+            - errors/project/Q-5-45.qmd
+            - errors/project/Q-5-46.qmd
+            - errors/project/Q-5-47.qmd
+            - errors/project/Q-5-48.qmd
         - section: "include"
           contents:
             - errors/include/Q-17-1.qmd
@@ -451,6 +463,16 @@ website:
             - errors/components/Q-25-7.qmd
             - errors/components/Q-25-8.qmd
             - errors/components/Q-25-9.qmd
+        - section: "lmd"
+          contents:
+            - errors/lmd/Q-26-1.qmd
+            - errors/lmd/Q-26-2.qmd
+            - errors/lmd/Q-26-3.qmd
+            - errors/lmd/Q-26-4.qmd
+            - errors/lmd/Q-26-5.qmd
+            - errors/lmd/Q-26-6.qmd
+            - errors/lmd/Q-26-7.qmd
+            - errors/lmd/Q-26-8.qmd
 
 format:
   html:

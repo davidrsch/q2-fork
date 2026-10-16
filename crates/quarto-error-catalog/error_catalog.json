@@ -1506,8 +1506,8 @@
   },
   "Q-20-8": {
     "subsystem": "pandoc",
-    "title": "Multiple Formats Declared, Only One Rendered",
-    "message_template": "The document's `format:` declares more than one output format, but Quarto renders only one format per invocation. This message names which format was rendered and which were skipped; the skipped formats were not produced.",
+    "title": "Multiple Formats in One Render Not Yet Supported",
+    "message_template": "A `format:` declares more than one output format, and rendering several formats in one invocation is not yet supported. This message names which format was rendered and which were skipped; the skipped formats were not produced. Render each format on its own with `--to <format>` or `-M format:<format>`.",
     "docs_url": "https://quarto.org/docs/errors/pandoc/Q-20-8",
     "since_version": "99.9.9"
   },
@@ -1740,6 +1740,62 @@
     "title": "Algolia Search Is Misconfigured",
     "message_template": "`website.search.algolia` needs `application-id`, `search-only-api-key`, and `index-name`. The Algolia settings are ignored and the built-in search index is used instead.",
     "docs_url": "https://quarto.org/docs/errors/project/Q-5-40",
+    "since_version": "99.9.9"
+  },
+  "Q-5-41": {
+    "subsystem": "project",
+    "title": "Page Is Not a Chapter of the Book",
+    "message_template": "A page in a book project that is not in the book's chapter list was rendered on its own: it has its own numbering, and it cannot link to the book's chapters. Add the file to `book.chapters` to include it in the book.",
+    "docs_url": "https://quarto.org/docs/errors/project/Q-5-41",
+    "since_version": "99.9.9"
+  },
+  "Q-5-42": {
+    "subsystem": "project",
+    "title": "Book Scope Does Not Apply to This Format",
+    "message_template": "`book-scope: book` was requested for this render, but the format has no whole-book output (`html`, `docx`, `pptx`), so each page is rendered on its own. A whole-book output exists for `typst`, `pdf` and `epub`.",
+    "docs_url": "https://quarto.org/docs/errors/project/Q-5-42",
+    "since_version": "99.9.9"
+  },
+  "Q-5-43": {
+    "subsystem": "project",
+    "title": "Invalid book-scope Value",
+    "message_template": "`book-scope` takes `book` or `chapter`. Any other value, including `none` (which only describes the output of a render that is not in book mode) and a non-string value, was ignored and the next lower layer applies.",
+    "docs_url": "https://quarto.org/docs/errors/project/Q-5-43",
+    "since_version": "99.9.9"
+  },
+  "Q-5-44": {
+    "subsystem": "project",
+    "title": "book-scope Is Not a Format Option",
+    "message_template": "`book-scope` under `format.<name>:` was ignored. Set it at the top level: which format a render uses depends on the scope, so the scope cannot depend on the format.",
+    "docs_url": "https://quarto.org/docs/errors/project/Q-5-44",
+    "since_version": "99.9.9"
+  },
+  "Q-5-45": {
+    "subsystem": "project",
+    "title": "book-scope chapter Ignored for a Whole-Book Render",
+    "message_template": "`book-scope: chapter` in the project, a `_metadata.yml` or a document describes how to render one chapter, so it was ignored in a render of the whole book.",
+    "docs_url": "https://quarto.org/docs/errors/project/Q-5-45",
+    "since_version": "99.9.9"
+  },
+  "Q-5-46": {
+    "subsystem": "project",
+    "title": "book-scope Only Applies to Books",
+    "message_template": "`book-scope` has no effect in a project that is not a book.",
+    "docs_url": "https://quarto.org/docs/errors/project/Q-5-46",
+    "since_version": "99.9.9"
+  },
+  "Q-5-47": {
+    "subsystem": "project",
+    "title": "book-scope chapter Needs a File",
+    "message_template": "`book-scope: chapter` needs a file to render: name the chapter(s).",
+    "docs_url": "https://quarto.org/docs/errors/project/Q-5-47",
+    "since_version": "99.9.9"
+  },
+  "Q-5-48": {
+    "subsystem": "project",
+    "title": "Book Requested for a Page Outside the Book",
+    "message_template": "`book-scope: book` was requested for this render, but the named page is not in the book's chapter list, so it was rendered on its own. Add the file to `book.chapters` to include it in the book.",
+    "docs_url": "https://quarto.org/docs/errors/project/Q-5-48",
     "since_version": "99.9.9"
   },
   "Q-13-8": {
@@ -2132,6 +2188,62 @@
     "title": "Component Module Could Not Be Prepared",
     "message_template": "A component's TypeScript or JSX module (or one it imports) failed to transpile, could not be read, or has an import that names no file. The component was not shipped; its element keeps the static content.",
     "docs_url": "https://quarto.org/docs/errors/components/Q-25-9",
+    "since_version": "99.9.9"
+  },
+  "Q-26-1": {
+    "subsystem": "lmd",
+    "title": "Lua syntax error in an lmd cell",
+    "message_template": "The Lua in an lmd cell does not parse, so the cell cannot be desugared. The cell is left as written and does not run.",
+    "docs_url": "https://quarto.org/docs/errors/lmd/Q-26-1",
+    "since_version": "99.9.9"
+  },
+  "Q-26-2": {
+    "subsystem": "lmd",
+    "title": "Unsupported markdown inside an lmd fragment",
+    "message_template": "A markdown fragment in an lmd cell contains a node the fragment emitter has no constructor for (a shortcode, CriticMarkup, or a custom node). The cell is left as written and does not run. A footnote defined in the fragment is not one: it is paired with the fragment's references.",
+    "docs_url": "https://quarto.org/docs/errors/lmd/Q-26-2",
+    "since_version": "99.9.9"
+  },
+  "Q-26-3": {
+    "subsystem": "lmd",
+    "title": "Inline fragment holds more than one block",
+    "message_template": "An inline markdown fragment, `{=[ … ]=}`, parsed to more than one block. An inline fragment must be a single paragraph or empty. The cell is left as written and does not run.",
+    "docs_url": "https://quarto.org/docs/errors/lmd/Q-26-3",
+    "since_version": "99.9.9"
+  },
+  "Q-26-4": {
+    "subsystem": "lmd",
+    "title": "lmd cell failed",
+    "message_template": "The Lua in an lmd cell raised an error while compiling or running. The cell is left displayed in the document and produces no output.",
+    "docs_url": "https://quarto.org/docs/errors/lmd/Q-26-4",
+    "since_version": "99.9.9"
+  },
+  "Q-26-5": {
+    "subsystem": "lmd",
+    "title": "lmd cell did not return blocks",
+    "message_template": "An lmd cell returned a value that is not a Block, a list of Blocks, or nil. The cell is left displayed in the document and produces no output.",
+    "docs_url": "https://quarto.org/docs/errors/lmd/Q-26-5",
+    "since_version": "99.9.9"
+  },
+  "Q-26-6": {
+    "subsystem": "lmd",
+    "title": "Inline lmd cell did not produce inlines",
+    "message_template": "An inline lmd cell evaluated to a value that is not an Inline, a list of Inlines, a string, a number, a boolean, or nil. The code span is left displayed and produces no output.",
+    "docs_url": "https://quarto.org/docs/errors/lmd/Q-26-6",
+    "since_version": "99.9.9"
+  },
+  "Q-26-7": {
+    "subsystem": "lmd",
+    "title": "Invalid lmd cell options",
+    "message_template": "The `--|` option lines at the top of an lmd cell are not valid YAML, or name an option with the wrong type. The cell runs as if it had no options.",
+    "docs_url": "https://quarto.org/docs/errors/lmd/Q-26-7",
+    "since_version": "99.9.9"
+  },
+  "Q-26-8": {
+    "subsystem": "lmd",
+    "title": "lmd module did not compile",
+    "message_template": "An `.lmd` module that a cell, filter or shortcode handler required has a Lua syntax error or a markdown fragment that does not parse, so `require` failed. The requiring cell is left as written.",
+    "docs_url": "https://quarto.org/docs/errors/lmd/Q-26-8",
     "since_version": "99.9.9"
   }
 }

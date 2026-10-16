@@ -167,13 +167,21 @@ Quarto deliberately diverges from Pandoc in a few places, in favor of
 its richer configuration model:
 
 - **Numbers stay numbers.** `count: 3` reads as the Lua number `3`
-  (Pandoc renders it as the string `'3'`).
+  (Pandoc renders it as the string `'3'`). In return, a number or boolean
+  is accepted wherever an Inline is expected and reads as `tostring`
+  would print it: `pandoc.Strong(meta.count)` works, where Pandoc would
+  reject `pandoc.Strong(3)`. Block positions stay strict.
 - **Null reads as `nil`.** A key with an explicit YAML `~` looks absent
   from Lua; deleting a metadata key is `meta.key = nil`, and writing an
   explicit null is `quarto.config.null()`.
 - Values Quarto tracks specially — `!path`, `!glob`, `!expr` tagged
   strings — appear as small typed values with a `.value` string
   property, and survive a filter round-trip losslessly.
+
+Besides the `meta` argument of a `Meta` or `Pandoc` handler, every filter
+can read the document metadata directly through `quarto.metadata.get("a.b")`
+and the `meta` global, in the same shapes. The [lmd page](lmd.qmd#reaching-for-metadata)
+describes both.
 
 ## Constructing configuration values: `quarto.config`
 
@@ -222,6 +230,26 @@ Delete the attribute (`el.attributes["quarto-eq-number"] = nil`) to leave
 an equation unnumbered. The attribute exists only once cross-references
 have been resolved, so list the filter *after* the `quarto` entry in
 `filters:`; a filter listed before it runs too early to see the number.
+
+## Tables, definition lists and figures built from Lua
+
+Quarto's markdown has shorthand for three structures: a `::: {.list-table}`
+div becomes a table, a `::: {.definition-list}` div becomes a definition list,
+and a paragraph holding nothing but an image with alt text becomes a figure.
+The reader rewrites those shapes as it parses, so by the time a filter runs,
+the document holds `Table`, `DefinitionList` and `Figure` nodes, never the
+shorthand.
+
+The same rewrite is applied to markdown and JSON that `pandoc.read` returns,
+and to what an `{lmd}` cell returns, so a cell that builds
+`pandoc.Div({ rows }, pandoc.Attr("", {"list-table"}))` from nodes gets the
+same `Table` the markdown would have. A list-table div with the wrong shape is
+reported as `Q-2-35`, pointing at the cell that built it.
+
+It is **not** applied to what a filter function returns. A filter that wants a
+table returns a `pandoc.Table` (or the result of `pandoc.read`); a
+`.list-table` div returned from a `Div` handler stays a div, as it does in
+pandoc and in Quarto 1.
 
 ## Attaching scripts and stylesheets: `quarto.doc.add_html_dependency`
 

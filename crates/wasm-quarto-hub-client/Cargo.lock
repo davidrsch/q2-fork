@@ -4295,6 +4295,7 @@ dependencies = [
  "imagesize",
  "include_dir",
  "jupyter-protocol",
+ "libc",
  "lol_html",
  "pagefind",
  "pampa",
@@ -4342,6 +4343,7 @@ dependencies = [
  "tree-sitter-r",
  "typst-gather",
  "uuid",
+ "walkdir",
  "which",
  "yaml-rust2",
 ]
@@ -4415,6 +4417,7 @@ dependencies = [
  "tree-sitter-javascript",
  "tree-sitter-json",
  "tree-sitter-julia",
+ "tree-sitter-lmd",
  "tree-sitter-lua",
  "tree-sitter-python",
  "tree-sitter-r",

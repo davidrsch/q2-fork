@@ -15,13 +15,12 @@ A markdown error inside a fragment (left as written):
 return {=: This line mentions the groups' Unique IDs. :=}
 ```
 
-An unsupported node inside a fragment (left as written):
+An unsupported node inside a fragment (left as written; the shortcode is
+underlined, bd-onsqz7sv):
 
 ``` {.lmd .code-with-copy}
 return {=:
-| a | b |
-|---|---|
-| 1 | 2 |
+Version 2 is read with `meta.version` instead.
 :=}
 ```
 
@@ -47,5 +46,7 @@ An inline runtime error `nope()`{.lmd} and a wrong shape
 > ```
 
 Invalid cell options:
+
+An option of the wrong type:
 
 After everything.

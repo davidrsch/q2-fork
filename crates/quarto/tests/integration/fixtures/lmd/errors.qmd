@@ -1,5 +1,6 @@
 ---
 title: errors
+version: 2
 ---
 
 A Lua syntax error (left as written):
@@ -15,13 +16,12 @@ A markdown error inside a fragment (left as written):
 return {=: This line mentions the groups' Unique IDs. :=}
 ```
 
-An unsupported node inside a fragment (left as written):
+An unsupported node inside a fragment (left as written; the shortcode is
+underlined, bd-onsqz7sv):
 
 ```{lmd}
 return {=:
-| a | b |
-|---|---|
-| 1 | 2 |
+Version {{< meta version >}} is read with `meta.version` instead.
 :=}
 ```
 
@@ -49,6 +49,13 @@ Invalid cell options:
 
 ```{lmd}
 --| echo: [
+return nil
+```
+
+An option of the wrong type:
+
+```{lmd}
+--| echo: yes please
 return nil
 ```
 

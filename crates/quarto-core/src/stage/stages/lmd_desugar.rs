@@ -201,25 +201,48 @@ impl PipelineStage for LmdDesugarStage {
         for failure in errors {
             trace_event!(ctx, EventLevel::Warn, "{}", failure.error);
             // A fragment's markdown errors are the reader's own, already
-            // rerooted into the document; report them as they are, under
-            // the cell when one of them has no location.
-            if let LmdError::MarkdownParse { diagnostics, .. } = failure.error {
-                for mut diag in diagnostics {
-                    if diag.location.is_none() {
-                        diag.location = Some(failure.location.clone());
+            // rerooted into the document and carrying the reader's codes;
+            // report them as they are, under the cell when one of them has
+            // no location. Every other failure gets an lmd code of its own.
+            let (code, title) = match &failure.error {
+                LmdError::MarkdownParse { .. } => {
+                    let LmdError::MarkdownParse { diagnostics, .. } = failure.error else {
+                        unreachable!()
+                    };
+                    for mut diag in diagnostics {
+                        if diag.location.is_none() {
+                            diag.location = Some(failure.location.clone());
+                        }
+                        diag.hints.push(quarto_error_reporting::MessageContent::Markdown(
+                            "Inside an lmd markdown fragment; the cell is left as written and will not run."
+                                .to_string(),
+                        ));
+                        ctx.diagnostics.push(diag);
                     }
-                    diag.hints.push(quarto_error_reporting::MessageContent::Markdown(
-                        "Inside an lmd markdown fragment; the cell is left as written and will not run."
-                            .to_string(),
-                    ));
-                    ctx.diagnostics.push(diag);
+                    continue;
                 }
-                continue;
+                LmdError::LuaParse { .. } => ("Q-26-1", "Lua syntax error in an lmd cell"),
+                LmdError::Unsupported { .. } => {
+                    ("Q-26-2", "Unsupported markdown inside an lmd fragment")
+                }
+                LmdError::NotInlines(_) => ("Q-26-3", "Inline fragment holds more than one block"),
+            };
+            let mut builder = DiagnosticMessageBuilder::warning(title)
+                .with_code(code)
+                .with_location(failure.location)
+                .problem(failure.error.to_string());
+            // A shortcode has a Lua spelling the author can use instead
+            // (bd-onsqz7sv: shortcodes inside fragments stay unsupported).
+            if let LmdError::Unsupported {
+                kind: "Shortcode", ..
+            } = &failure.error
+            {
+                builder = builder.add_hint(
+                    "Read the value in Lua instead: `{lmd} meta.key` in place of `{{< meta key >}}`.",
+                );
             }
             ctx.diagnostics.push(
-                DiagnosticMessageBuilder::warning("lmd cell could not be desugared")
-                    .with_location(failure.location)
-                    .problem(failure.error.to_string())
+                builder
                     .add_hint("The cell is left as written and will not run.")
                     .build(),
             );
@@ -343,17 +366,39 @@ mod tests {
         assert!(near.contains('\''), "{near:?} at {off}");
     }
 
+    /// A footnote defined inside the fragment is no longer unsupported: it
+    /// is paired with its reference and printed as a `pandoc.Note`.
     #[test]
-    fn an_unsupported_node_is_located_at_the_node() {
+    fn a_footnote_defined_in_the_fragment_desugars() {
         let (mut blocks, sources) =
-            parse("```{lmd}\nreturn {=:\n| a | b |\n|---|---|\n| 1 | 2 |\n:=}\n```\n");
+            parse("```{lmd}\nreturn {=:\ntext[^1]\n\n[^1]: the note\n:=}\n```\n");
+        let errors = desugar_lmd_cells(&mut blocks, &sources);
+        assert!(errors.is_empty(), "{errors:?}");
+        let cell = code_block(&blocks[0]);
+        assert!(cell.text.contains("pandoc.Note({"), "{}", cell.text);
+    }
+
+    /// bd-onsqz7sv: the reader built a shortcode's span against the file id
+    /// rather than through the fragment's parent span, so the error for a
+    /// shortcode inside a fragment underlined the front matter.
+    #[test]
+    fn an_unsupported_shortcode_is_located_at_the_shortcode() {
+        let (mut blocks, sources) = parse(
+            "---\ntitle: doc\nversion: 2\n---\n\n```{lmd}\nreturn {=: Version {{< meta version >}} here. :=}\n```\n",
+        );
         let errors = desugar_lmd_cells(&mut blocks, &sources);
         assert_eq!(errors.len(), 1, "{errors:?}");
         assert!(matches!(
             errors[0].error,
-            LmdError::Unsupported { kind: "Table", .. }
+            LmdError::Unsupported {
+                kind: "Shortcode",
+                ..
+            }
         ));
-        assert!(span_text(&errors[0].location, &sources).starts_with("| a | b |"));
+        assert_eq!(
+            span_text(&errors[0].location, &sources),
+            "{{< meta version >}}"
+        );
     }
 
     #[test]
