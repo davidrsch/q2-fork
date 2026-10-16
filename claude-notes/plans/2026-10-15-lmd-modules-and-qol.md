@@ -378,7 +378,11 @@ user to confirm or overturn at review:
 
 - **Roots.** `require("/components/cards")` resolves against the project
   root (the leading-`/` convention `components.src` uses; for a single-file
-  render the root is the document's directory). `require("cards/deck")`
+  render the root is the document's directory). *Amended after the
+  `contract-filter-require` smoke test failed:* an absolute OS path is tried
+  as itself first, since Quarto 1 filters `require(quarto.utils.resolve_path(…))`
+  (GH #587); the project-root reading applies when no such file exists.
+  `quarto.include` follows the same rule. `require("cards/deck")`
   also tries `_extensions/cards/deck` when a discovered extension is named
   `cards` (the first path segment selects the extension), *after* the
   document-relative directories, so a local `cards/` directory wins. Every

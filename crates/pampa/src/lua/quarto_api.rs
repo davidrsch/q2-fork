@@ -386,7 +386,9 @@ const REQUIRE_DIR_STACK_KEY: &str = "quarto_require_dir_stack";
 ///
 /// `file` resolves relative to the including file (the innermost loading
 /// module, else the running script; for an lmd cell the document), or
-/// against the project root when it starts with `/`. Every read goes
+/// against the project root when it starts with `/` (an existing absolute
+/// path is read as itself, as `require` does for Quarto 1 filters). Every
+/// read goes
 /// through the [`SystemRuntime`], so the VFS serves it on WASM and a
 /// `SandboxedRuntime` policy governs it.
 pub fn register_quarto_include(
@@ -397,7 +399,7 @@ pub fn register_quarto_include(
     quarto.set(
         "include",
         lua.create_function(move |lua, (file, params): (String, Option<Table>)| {
-            let path = resolve_include_path(lua, &file)?;
+            let path = resolve_include_path(lua, runtime.as_ref(), &file)?;
             let bytes = runtime.file_read(&path).map_err(|e| {
                 mlua::Error::runtime(format!(
                     "quarto.include: cannot read `{}`: {e}",
@@ -429,16 +431,29 @@ pub fn register_quarto_include(
 
 /// Where `quarto.include(file)` reads from.
 ///
-/// A leading `/` is the project root (as for `require`; an include never
-/// takes an absolute OS path, which keeps it inside the project). Otherwise
+/// A leading `/` is the project root, as for `require`, unless the path
+/// exists as an absolute OS path (`quarto.utils.resolve_path` results),
+/// which is then read as itself; the runtime's policy governs either
+/// way. Otherwise
 /// the path is relative to the *including file*: the chunk that called
 /// `quarto.include`, read off the Lua stack when it was loaded from a file
 /// (`@path` chunk names: modules, includes, the document's cells), so a
 /// function defined in a module and called later still includes beside
 /// its module. When the calling chunk has no file, the innermost loading
 /// module's directory, then the running script's, stand in.
-fn resolve_include_path(lua: &Lua, file: &str) -> Result<PathBuf> {
+fn resolve_include_path(
+    lua: &Lua,
+    runtime: &dyn crate::lua::runtime::SystemRuntime,
+    file: &str,
+) -> Result<PathBuf> {
     if let Some(rooted) = file.strip_prefix('/') {
+        if Path::new(file).is_absolute()
+            && runtime
+                .path_exists(Path::new(file), Some(quarto_system_runtime::PathKind::File))
+                .unwrap_or(false)
+        {
+            return Ok(PathBuf::from(file));
+        }
         return match module_roots(lua).project {
             Some(project) => Ok(project.join(rooted)),
             None => Err(mlua::Error::runtime(format!(
@@ -692,7 +707,13 @@ pub fn register_scoped_require(
         // (base directory, stems) pairs in search order.
         let mut searches: Vec<(PathBuf, Vec<String>)> = Vec::new();
         if let Some(rooted) = name.strip_prefix('/') {
-            // `/components/cards`: the project root, and only it.
+            // An absolute OS path is tried as itself first: Quarto 1
+            // filters `require(quarto.utils.resolve_path("_modules/x"))`
+            // (GH #587 contract). Then `/components/cards`: the project
+            // root. The two never both exist for one name in practice.
+            if Path::new(&name).is_absolute() {
+                searches.push((PathBuf::new(), stems_of(&name)));
+            }
             if let Some(project) = &roots.project {
                 searches.push((project.clone(), stems_of(rooted)));
             }
@@ -816,18 +837,22 @@ pub fn register_scoped_require(
         // one the author can act on, so it is reported first; on native
         // the stock `require` (package.path, C modules) gets a turn and
         // its own report becomes the hint when it fails too.
-        let searched = if candidates.is_empty() {
-            if name.starts_with('/') {
-                "no project root is set for a `/`-rooted module name".to_string()
-            } else {
-                "no script directory on the stack".to_string()
-            }
+        let no_root_note = if name.starts_with('/') && roots.project.is_none() {
+            "; no project root is set for a `/`-rooted module name"
         } else {
-            candidates
-                .iter()
-                .map(|c| c.path.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
+            ""
+        };
+        let searched = if candidates.is_empty() {
+            format!("no script directory on the stack{no_root_note}")
+        } else {
+            format!(
+                "{}{no_root_note}",
+                candidates
+                    .iter()
+                    .map(|c| c.path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
         };
         let scoped = format!(
             "module '{name}' not found (searched relative to the current script directory: {searched})"
@@ -2138,6 +2163,12 @@ mod tests {
         // A leading slash: the project root.
         let texts = block_texts(&lua, r#"quarto.include("/shared/footer.md")"#);
         assert_eq!(texts, vec!["Para:at the root"]);
+        // An existing absolute path is read as itself.
+        let abs = quarto_util::to_forward_slashes(&tmp.path().join("mods/part.md"));
+        if Path::new(&abs).is_absolute() {
+            let texts = block_texts(&lua, &format!(r#"quarto.include("{abs}")"#));
+            assert_eq!(texts, vec!["Para:beside the module"]);
+        }
     }
 
     #[test]
@@ -2179,8 +2210,7 @@ mod tests {
         let texts = block_texts(&lua, r#"quarto.include("ok.md")"#);
         assert_eq!(texts, vec!["Para:fine"]);
         // Relative traversal out of the allowed directory: the read is
-        // refused by the policy (a leading `/` would mean the project root,
-        // not an absolute path).
+        // refused by the policy, which judges the normalized path.
         let err = lua
             .load(r#"return quarto.include("../vendor/secret.md")"#)
             .eval::<Value>()
@@ -2256,6 +2286,31 @@ mod tests {
             .to_string();
         assert!(err.contains("not found"), "{err}");
         assert!(err.contains("/nowhere"), "{err}");
+    }
+
+    /// GH #587 contract, kept: an absolute path is required as itself
+    /// (Quarto 1 filters do `require(quarto.utils.resolve_path(...))`),
+    /// whether or not a project root is set.
+    #[test]
+    fn test_require_of_an_absolute_path_is_literal() {
+        let lua = create_require_test_lua();
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_file(tmp.path(), "_modules/greet.lua", r#"return "abs""#);
+        set_module_roots(&lua, roots(Some(&tmp.path().join("elsewhere")), &[]));
+        push_script_dir(
+            &lua,
+            &quarto_util::to_forward_slashes(&tmp.path().join("docs")),
+        )
+        .unwrap();
+        let abs = quarto_util::to_forward_slashes(&tmp.path().join("_modules/greet"));
+        if !Path::new(&abs).is_absolute() {
+            return; // Windows spells absolute paths without a leading slash.
+        }
+        let got: String = lua
+            .load(format!(r#"return require("{abs}")"#))
+            .eval()
+            .unwrap();
+        assert_eq!(got, "abs");
     }
 
     #[test]

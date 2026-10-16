@@ -492,7 +492,9 @@ more places:
 - **The project root**, with a leading slash: `require("/components/cards")`
   finds `components/cards.lmd` at the root of the project however deep the
   document sits (the same convention `components.src` uses). For a
-  single-file render the root is the document's directory.
+  single-file render the root is the document's directory. A path that
+  exists as an absolute path is still read as itself, so a Quarto 1 filter's
+  `require(quarto.utils.resolve_path(…))` keeps working.
 - **An extension, by its name**: `require("badges/pill")` finds
   `_extensions/badges/pill.lmd`, and a bare `require("badges")` is that
   extension's `init.lmd`. A local `badges/` directory beside the document
