@@ -30,3 +30,19 @@ wasm-pack build --target web --dev
 ## Output
 
 The built package is output to `pkg/` and can be used directly in web applications or published to npm.
+
+## Keeping the build green without a wasm toolchain
+
+This crate builds `pampa` with `default-features = false`, a feature set the
+workspace build never compiles. Two guards cover it on every PR (bd-yt3x1gwk):
+
+- `cargo xtask check-feature-sets` (also run by `cargo xtask verify` and
+  CI's test-suite) runs `cargo check -p pampa --no-default-features
+  [--features …]` natively for every no-default feature set a consumer
+  declares. The sets are read from the consumers' manifests, so a new
+  consumer is picked up automatically. This catches feature-gating
+  mistakes, but not errors in `#[cfg(target_arch = "wasm32")]` code.
+- The quarto-hub-mcp parser tier builds this crate's nodejs pkg. Its vitest
+  global setup skips the tier when the build fails, unless
+  `QUARTO_QMD_PARSER_REQUIRED=1` is set; CI's parser-tier step sets it, so
+  a crate that does not compile fails there instead of skipping.

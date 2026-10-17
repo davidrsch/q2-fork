@@ -197,6 +197,17 @@ jobs:
         env:
           RUSTFLAGS: "-D warnings"
 
+      # The wasm crates build pampa with `default-features = false` outside
+      # the workspace, so neither Clippy nor the tests compile their feature
+      # sets. This checks pampa natively under every such set (derived from
+      # the consumers' manifests), so a feature-gating mistake fails here
+      # instead of in the nightly/release wasm build (bd-yt3x1gwk).
+      - name: Check pampa consumer feature sets
+        shell: bash
+        run: cargo xtask check-feature-sets --profile ci
+        env:
+          RUSTFLAGS: "-D warnings"
+
       - name: Test block tree-sitter grammar
         shell: bash
         run: |

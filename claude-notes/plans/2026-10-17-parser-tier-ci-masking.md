@@ -2,12 +2,24 @@
 title: 'Parser-tier CI step masks wasm-qmd-parser build failures (bd-yt3x1gwk)'
 date: 2026-10-17
 description: 'The quarto-hub-mcp parser-tier CI step reports green when wasm-qmd-parser fails to compile, because the vitest global setup turns every build failure into a skip; make the build fatal on legs that declare the toolchain present, and add a cheap derived feature-set check of pampa to CI and verify.'
-status: designed  # Design aligned with user 2026-10-17; implementation awaits go-ahead
+status: implemented  # Phases 0–5 landed 2026-10-17; PR CI confirmation pending
 braid:
   strand: bd-yt3x1gwk
 ---
 
 **Branch:** `braid/bd-yt3x1gwk-pampa-fails-compile-without` (topic branch in the main checkout, based on `main` @ `ad283a2cb`)
+
+## Implementation status (2026-10-17)
+
+- [x] Phase 0: xtask unit tests (`check_feature_sets::tests`, plus verify gate and wiring tests); vitest `src/vitest-global-setup.test.ts`.
+- [x] Phase 1: `prepareQmdParser` in `vitest-global-setup.mjs`.
+- [x] Phase 2: `QUARTO_QMD_PARSER_REQUIRED: "1"` on the parser-tier step.
+- [x] Phase 3: `cargo xtask check-feature-sets [--profile P]`.
+- [x] Phase 4: verify step 3 sub-step (`--skip-feature-sets`), plus the CI step *Check pampa consumer feature sets* (`--profile ci`, `-D warnings`) after Clippy.
+- [x] Phase 5: `crates/wasm-qmd-parser/AGENTS.md`, pampa `[features]` comment, `.claude/rules/xtask.md`.
+- [ ] Phase 6: local negative tests done; full verify, and PR CI confirming the parser tier runs (not skips) on both legs, still to come.
+  - An ungated `&mlua::Error` probe in pampa makes `check-feature-sets` fail on the `{}` set and name the consumers.
+  - `QUARTO_QMD_PARSER_REQUIRED=1 npx vitest run src/qmd-ast.test.ts` on a machine without wasm-pack exits 1 with the build error, and writes no marker. The compile-error path itself needs a wasm-pack machine, so CI covers it.
 
 ## Goal
 
@@ -18,7 +30,8 @@ A PR whose CI checks pass, and whose local `cargo xtask verify` passes, must not
 1. **Make parser setup fatal through an opt-in variable (option A).** A CI step that has the wasm toolchain sets `QUARTO_QMD_PARSER_REQUIRED=1`. With the variable set, a failed parser build fails the run. Without it, the setup keeps today's skip. The setup does not try to classify errors as "toolchain missing" versus "compile error". This mirrors the existing `TYPST_PARITY_REQUIRED`.
 2. **`cargo xtask verify` does not set `QUARTO_QMD_PARSER_REQUIRED`.** Verify keeps working for developers without LLVM/wasm-pack. The feature-set check (decision 3) gives verify its coverage of this class of break.
 3. **Add a pampa feature-set check to both CI and verify.** Verify exists so developers can see CI's result ahead of time, so the check runs in both places. It is cheap (measurements below).
-4. **Derive the feature sets from consumer manifests.** Don't hardcode them. xtask reads every manifest that depends on pampa with `default-features = false`, so the list follows the consumers' `Cargo.toml` and cannot go stale.
+4. **Derive the feature sets from consumer manifests.** Don't hardcode them. xtask reads every manifest that depends on pampa with `default-features = false`, so the list follows the consumers\' `Cargo.toml` and cannot go stale.
+   *Implementation note:* xtask reads the manifests with `cargo metadata --no-deps` rather than parsing TOML (no `toml` dependency). Cargo then applies workspace inheritance itself, which matters because the root `[workspace.dependencies.pampa]` sets `default-features = false`. It also matches by package name, so renamed dependencies are covered. It works on the excluded wasm crates too, at ~0.02 s per manifest. Discovery also finds quarto-core\'s `{json-filter, lua-filter}` set, so the check runs three sets: `{}`, `{lua-filter}`, `{json-filter, lua-filter}`.
 5. **Leave `--features terminal-support` alone.** `cargo check -p pampa --no-default-features --features terminal-support` fails (`unresolved import quarto_system_runtime`). No consumer uses that combination. Wait until a real consumer needs it, then design the fix with that use case in hand. No strand will be filed. Decision 4 checks only the sets that consumers actually use, so this combination will not trip the new check.
 
 ## Issue context
@@ -108,7 +121,7 @@ Filed 2026-10-17 by Carlos (P1 bug, labels `ci`, `release`). The strand records 
 ### Phase 5 — Docs
 
 - `crates/wasm-qmd-parser/AGENTS.md` (toolchain section): document `QUARTO_QMD_PARSER_REQUIRED`.
-- Document the feature-set check, in pampa's `Cargo.toml` `[features]` comment or a `dev-docs/` note: "consumers' feature sets are checked by `cargo xtask check-feature-sets`; add a consumer and it is picked up automatically".
+- Document the feature-set check, in pampa's `Cargo.toml` `[features]` comment or a `dev-docs/` note: "consumers\' feature sets are checked by `cargo xtask check-feature-sets`; add a consumer and it is picked up automatically".
 
 ### Phase 6 — Verification
 
