@@ -1,91 +1,128 @@
 ---
 title: 'Parser-tier CI step masks wasm-qmd-parser build failures (bd-yt3x1gwk)'
 date: 2026-10-17
-description: 'The quarto-hub-mcp parser-tier CI step reports green when wasm-qmd-parser fails to compile, because the vitest global setup turns every build failure into a skip; make the build fatal on legs that declare the toolchain present.'
-status: draft  # Investigation — pending design alignment with user; do not implement before the go-ahead
+description: 'The quarto-hub-mcp parser-tier CI step reports green when wasm-qmd-parser fails to compile, because the vitest global setup turns every build failure into a skip; make the build fatal on legs that declare the toolchain present, and add a cheap derived feature-set check of pampa to CI and verify.'
+status: designed  # Design aligned with user 2026-10-17; implementation awaits go-ahead
 braid:
   strand: bd-yt3x1gwk
 ---
 
 **Branch:** `braid/bd-yt3x1gwk-pampa-fails-compile-without` (topic branch in the main checkout, based on `main` @ `ad283a2cb`)
-**Do not start implementation until the user gives the go-ahead.**
 
-## Triage verdict
+## Goal
 
-**Ready to design.** Defect 1 (the compile break) is fixed and v0.34.0 shipped. Only defect 2 remains: CI swallowed the break. The mechanism is understood. The repo already has a precedent for the fix (`TYPST_PARITY_REQUIRED`). The design questions below are small.
+A PR whose CI checks pass, and whose local `cargo xtask verify` passes, must not then fail the nightly or release build. v0.34.0 broke exactly this way. CI compiled pampa without `lua-filter`, the compile failed, and the step still reported success.
+
+## Decisions (2026-10-17)
+
+1. **Make parser setup fatal through an opt-in variable (option A).** A CI step that has the wasm toolchain sets `QUARTO_QMD_PARSER_REQUIRED=1`. With the variable set, a failed parser build fails the run. Without it, the setup keeps today's skip. The setup does not try to classify errors as "toolchain missing" versus "compile error". This mirrors the existing `TYPST_PARITY_REQUIRED`.
+2. **`cargo xtask verify` does not set `QUARTO_QMD_PARSER_REQUIRED`.** Verify keeps working for developers without LLVM/wasm-pack. The feature-set check (decision 3) gives verify its coverage of this class of break.
+3. **Add a pampa feature-set check to both CI and verify.** Verify exists so developers can see CI's result ahead of time, so the check runs in both places. It is cheap (measurements below).
+4. **Derive the feature sets from consumer manifests.** Don't hardcode them. xtask reads every manifest that depends on pampa with `default-features = false`, so the list follows the consumers' `Cargo.toml` and cannot go stale.
+5. **Leave `--features terminal-support` alone.** `cargo check -p pampa --no-default-features --features terminal-support` fails (`unresolved import quarto_system_runtime`). No consumer uses that combination. Wait until a real consumer needs it, then design the fix with that use case in hand. No strand will be filed. Decision 4 checks only the sets that consumers actually use, so this combination will not trip the new check.
 
 ## Issue context
 
 Filed 2026-10-17 by Carlos (P1 bug, labels `ci`, `release`). The strand records two defects:
 
-1. **pampa does not compile without `lua-filter`.** `ModuleCompileError::find_in` (73588f3e5, bd-76ogq4ew) was in an ungated `impl`. The bug blocked the v0.34.0 release in `web-payloads`. **Done:** #862 (c73213d7a) fixed it. v0.34.0 was re-tagged at 8c1eed493 and published (strand comment, 2026-10-17).
-2. **CI masked the break. Still open; this plan covers it.** Per-PR CI compiled pampa without `lua-filter` in the parser-tier step and the compile failed. The step still reported `success`. The PR #861 ubuntu log shows:
+1. **pampa does not compile without `lua-filter`.** Commit 73588f3e5 (bd-76ogq4ew) left `ModuleCompileError::find_in` in an ungated `impl`. **Done:** #862 (c73213d7a) fixed it, and v0.34.0 was re-tagged at 8c1eed493 and published. `cargo check -p pampa --no-default-features` passes at `ad283a2cb`.
+2. **CI masked the break. This plan covers it.** The PR #861 ubuntu log shows the masking:
    ```
    [qmd-parser] unavailable (wasm-pack build failed for wasm-qmd-parser ...) — parser-tier tests will skip.
    ↓ src/qmd-ast.test.ts (21 tests | 21 skipped)
    ```
 
-The strand also proposes an optional extra: a cheap `cargo check -p pampa --no-default-features` in the Rust suite.
-
-Incidental, out of scope: `cargo check -p pampa --no-default-features --features terminal-support` fails (`unresolved import quarto_system_runtime`). No shipped consumer uses that combination.
-
 ## Dependency graph
 
-- **discovered-from**: bd-76ogq4ew (in_progress). Its phase 1 introduced `find_in`. The release run surfaced the break, not the work on bd-76ogq4ew itself. That strand gives no design constraints for this one.
-- No `blocks`/`related` edges. The release that created the urgency is out, so nothing downstream is waiting. P1 still fits: the same masking can hide the next feature-gating mistake until a release.
+- **discovered-from**: bd-76ogq4ew (in_progress). Its phase 1 introduced `find_in`. The release run surfaced the break, not the bd-76ogq4ew work itself, and that strand puts no design constraints on this one.
+- No `blocks`/`related` edges. The release is out, so nothing is waiting on this strand. It stays P1 because the same masking would hide the next feature-gating mistake until a release.
 
 ## What the code looks like today
 
-All paths in the strand still exist with the same shape:
-
-- `ts-packages/quarto-hub-mcp/scripts/vitest-global-setup.mjs`: `setup()` wraps `ensureQmdParserPkg({ quiet: true })` in a bare `try/catch`. Every throw writes `.qmd-parser-unavailable` and warns.
-- `ts-packages/quarto-hub-mcp/scripts/qmd-parser-pkg.mjs`: `ensureQmdParserPkg` throws in three distinguishable situations:
-  - `findLlvmBin()` on darwin: Homebrew LLVM missing. This is a toolchain gap.
-  - `build()` with `res.error` set: `wasm-pack` not on PATH (spawn ENOENT). Also a toolchain gap.
-  - `build()` with `res.status !== 0`: wasm-pack ran and failed. This covers real compile errors, but also a missing or wrong wasm32 clang on Linux, which surfaces as a cc-rs failure inside the build.
-- `src/test-setup.ts` exports `PARSER_UNAVAILABLE` (the marker exists). Seven test files gate on it: `qmd-ast`, `qmd-outline`, `qmd-sections`, `conformance` (per case), `bundle`, `npm-pack`, `mcpb-pack`.
+- `ts-packages/quarto-hub-mcp/scripts/vitest-global-setup.mjs`: `setup()` wraps `ensureQmdParserPkg({ quiet: true })` in a bare `try/catch`. On any throw it writes `.qmd-parser-unavailable` and prints a warning.
+- `ts-packages/quarto-hub-mcp/scripts/qmd-parser-pkg.mjs`: `ensureQmdParserPkg` throws when LLVM is missing (darwin), when `wasm-pack` is missing (spawn error), and when the build fails (non-zero exit). The non-zero exit also covers a missing wasm32 clang on Linux.
+- `ts-packages/quarto-hub-mcp/src/test-setup.ts`: exports `PARSER_UNAVAILABLE`, which is true when the marker file exists. Seven test files gate on it: `qmd-ast`, `qmd-outline`, `qmd-sections`, `conformance` (per case), `bundle`, `npm-pack`, `mcpb-pack`.
 - `.github/workflows/ts-test-suite.yml`:
-  - `test-suite` job (ubuntu + macOS) has the toolchain (Clang/LLVM, wasm-pack) and runs the step *Run quarto-hub-mcp parser-tier tests* (line ~254). This is where the skip is wrong.
-  - `workspace-ts-suites` job is toolchain-free by design and runs `npm test -w ts-packages/quarto-hub-mcp` (line ~405). The skip is correct there.
-- **Precedent:** the same workflow sets `TYPST_PARITY_REQUIRED=1`, and `ts-packages/typst-host/src/parity.test.ts:26,40` throws instead of skipping when it is set. The strand's `QUARTO_QMD_PARSER_REQUIRED=1` proposal follows that pattern.
-- `cargo xtask verify` step 12 runs the quarto-hub-mcp tests locally, so local behaviour depends on whether verify sets the variable.
-- The Rust `test-suite.yml` has no `--no-default-features` check for pampa. Its WASM job builds pampa with `--features lua-filter`, which is why it missed the break.
+  - The `test-suite` job (ubuntu + macOS) has the toolchain. Its step *Run quarto-hub-mcp parser-tier tests* (~line 254) is where the skip is wrong.
+  - The `workspace-ts-suites` job is toolchain-free by design and runs `npm test -w ts-packages/quarto-hub-mcp` (~line 405). The skip is right there.
+- **Precedent:** `TYPST_PARITY_REQUIRED=1` in the same workflow, read by `ts-packages/typst-host/src/parity.test.ts:26,40`.
+- **pampa consumers that turn off default features:**
 
-No repro artifact is needed. The CI log quoted in the strand is the repro. To simulate it locally, introduce a compile error in pampa under `cfg(not(feature = "lua-filter"))` and run the parser-tier vitest command: it reports skips and exits 0.
+  | Consumer | In workspace? | pampa features |
+  | --- | --- | --- |
+  | `crates/wasm-qmd-parser` | no (excluded) | none |
+  | `crates/wasm-quarto-hub-client` | no (excluded) | `lua-filter` |
+  | `crates/experiments/reconcile-viewer` | yes (`workspace = true`) | none |
 
-## Proposed phases (draft)
+  The two wasm crates are excluded from the workspace, so `cargo check -p <consumer>` does not resolve. The check therefore runs on pampa itself, once per distinct feature set.
+- `crates/xtask` has no TOML parser. The workspace pins `toml = "0.9.11"`, and xtask already uses `walkdir`.
+- The Rust `test-suite.yml` has no `--no-default-features` check. Its WASM job builds pampa with `--features lua-filter`, which is why it missed the break.
 
-- **Phase 0: Test plan.** Unit-test the setup decision (required vs. not × success / toolchain-missing / build-failed). This probably means extracting a pure `decide(err, required)` helper from `vitest-global-setup.mjs` that vitest can test without wasm-pack.
-- **Phase 1: Make setup fatal when required.** Read `QUARTO_QMD_PARSER_REQUIRED`. When it is `1`, rethrow (vitest aborts the run) and do not write the marker. Also delete any stale marker, so a later run cannot inherit a skip.
-- **Phase 2: CI wiring.** Set the variable in the parser-tier step's `env:` on both matrix legs. Update the step comment and the setup's doc comment, which currently describe the skip as unconditional.
-- **Phase 3: cheap Rust guard, in both CI and verify (decided, Q3).** Check pampa natively under each feature set its out-of-workspace consumers use, so a feature-gating mistake fails in seconds, locally and in CI. See "Q3 resolution" below for the measured cost and the open sub-question on how to list the feature sets.
-- **Phase 4: Docs.** Note the variable in `crates/wasm-qmd-parser/AGENTS.md` and/or the quarto-hub-mcp README next to the existing toolchain notes.
+**Measured cost of the check** (warm `target/`, M-series Mac): with nothing changed, under a second per set. After an edit to pampa: ~0.5 s with no features, ~13 s with `lua-filter`. The cold CI cost is unmeasured. Clippy runs earlier in the same job and already builds most of the check-mode dependency metadata.
 
-## Open design questions for the user
+**Limit:** a native check catches feature-gating mistakes. It does not catch errors in `#[cfg(target_arch = "wasm32")]` code. The required parser tier covers that. The two guards complement each other; neither replaces the other.
 
-1. **Opt-in variable, or classify the error?** Option A: `QUARTO_QMD_PARSER_REQUIRED=1` (the strand's proposal, mirrors `TYPST_PARITY_REQUIRED`). Option B: skip only on "toolchain missing" (LLVM not found, wasm-pack ENOENT) and fail on any non-zero wasm-pack exit. B also protects local dev, but on Linux a missing wasm32 clang shows up as a non-zero exit, so B would break toolchain-less Linux developers. I recommend **A, optionally combined with B**: fail when required, and otherwise keep skipping but print the full error.
-2. **Should `cargo xtask verify` set the variable?** Pro: local verify catches the break before CI does. Con: verify would then fail for anyone without LLVM/wasm-pack, unless it sets the variable only after probing for the toolchain. My lean: don't set it in verify. Instead add the cheap `cargo check --no-default-features` from Q3, which needs no wasm toolchain.
-3. **Include the Rust `--no-default-features` check?** *Resolved (2026-10-17): yes, in both CI and `cargo xtask verify`.* The goal is that a PR whose CI and local verify pass cannot then fail the nightly/release build. Verify is how developers see CI's result ahead of time, so the guard belongs in both. Sub-question 3a below remains open.
+## Phases
 
-   **3a. How should the guard list the feature sets?** These are the out-of-workspace consumers that turn pampa's defaults off:
+### Phase 0 — Tests first
 
-   | Consumer | pampa features |
-   | --- | --- |
-   | `crates/wasm-qmd-parser` | none |
-   | `crates/wasm-quarto-hub-client` | `lua-filter` |
-   | `crates/experiments/reconcile-viewer` | none (same set as wasm-qmd-parser) |
+- xtask unit tests for feature-set derivation:
+  - fixture manifests covering `default-features = false` with and without `features`;
+  - `workspace = true` inheritance (reconcile-viewer's form);
+  - a pampa dependency with defaults on (ignored);
+  - duplicate sets (deduplicated);
+  - the `[dependencies]` vs. `[target.'cfg(...)'.dependencies]` placement of the dependency.
+- A test that runs the derivation on the real repo and asserts it finds at least the `{}` and `{lua-filter}` sets. This catches a silent "found nothing" regression.
+- A vitest test for the setup decision. Extract a pure helper from `vitest-global-setup.mjs` (e.g. `onParserBuildFailure(err, { required })`) and assert that it rethrows when required and writes the marker otherwise.
 
-   Both wasm crates are outside the workspace, so `cargo check -p wasm-qmd-parser` does not resolve. Checking them via `--manifest-path` would need their own lockfile, target dir and toolchain config, which is too heavy for verify. So the guard checks pampa itself with each set. Options:
-   - **(i) Hardcode** the two `cargo check -p pampa --no-default-features [--features …]` lines in verify and CI, with a comment naming the consumer manifests. Simple, but it drifts when a consumer's features change.
-   - **(ii) Derive** the sets in xtask by reading each `crates/wasm-*/Cargo.toml` `pampa` entry. Expose them as one xtask step (e.g. `cargo xtask check-feature-sets`) that verify calls and CI runs, so there is one source of truth and no drift. Recommended.
+### Phase 1 — Fatal parser setup
 
-   **Measured cost** (warm `target/`, M-series Mac): with nothing changed, under a second per set. After an edit to pampa: ~0.5 s with no features and ~13 s with `lua-filter`. Cold CI cost is unmeasured, though Clippy already builds most of the check-mode dependency metadata.
+- In `vitest-global-setup.mjs`, read `process.env.QUARTO_QMD_PARSER_REQUIRED === '1'`. When it is set and the build fails:
+  - delete any stale marker;
+  - rethrow with a message naming the variable, like typst's `TYPST_PARITY_REQUIRED=1 but …`.
 
-   **Limit:** a native check catches feature-gating mistakes (the bd-76ogq4ew class). It does not catch errors inside `#[cfg(target_arch = "wasm32")]` code. The required parser tier (Q1) still covers those, so the two guards complement each other.
-4. **The `terminal-support` side observation.** File it as a separate low-priority strand, or ignore it because no consumer uses the combination?
+  Unset keeps the current behaviour.
+- Update the doc comments in `vitest-global-setup.mjs` and `src/test-setup.ts`. They currently describe the skip as unconditional.
 
-## Risks / tradeoffs (draft)
+### Phase 2 — CI wiring for the parser tier
 
-- **Fatal setup changes the failure surface.** A flaky wasm-pack download or a cc-rs hiccup on a runner now turns the step red, where it used to pass silently. That is the intended trade, but expect some infra-flavoured reds early on.
-- **Other suites use the same skip-when-absent pattern.** `hub-client/src/pandoc/*.wasm.test.ts` skip when assets are missing. In CI those assets come from `fetch-pandoc-wasm.mjs --require`, so they fail loudly already. A wider audit is not needed for this strand. It is worth a sentence in the PR so the reasoning is on record.
-- Rethrowing from a vitest `globalSetup` aborts the entire run, including the non-parser tests in the step. That is acceptable in the parser-tier step, which runs only parser-tier files.
+- Add `env: QUARTO_QMD_PARSER_REQUIRED: '1'` to the *Run quarto-hub-mcp parser-tier tests* step in `ts-test-suite.yml`. That step covers both matrix legs.
+- Extend the step's comment block with the reason (this incident, bd-yt3x1gwk).
+- Leave `workspace-ts-suites` untouched.
+
+### Phase 3 — Derived pampa feature-set check
+
+- New xtask module (working name `check_feature_sets.rs`) and subcommand (`cargo xtask check-feature-sets`):
+  1. Walk the repo's crate manifests (`crates/**/Cargo.toml`, skipping `target/`, `vendor/` and `node_modules/`).
+  2. Parse each manifest with `toml`. Collect every `pampa` dependency entry that has `default-features = false`.
+  3. Collect the distinct `features` lists from those entries.
+  4. For each list, run `cargo check -p pampa --no-default-features [--features a,b]`. Print the consumers that require each set, so a failure tells the developer which consumer it protects.
+- Add `toml = { workspace = true }` to `crates/xtask/Cargo.toml`.
+- Scope is pampa only for now. Generalising to "any workspace crate with an out-of-workspace `default-features = false` consumer" is a natural follow-up, but it is not needed to close this strand.
+
+### Phase 4 — Hook the check into verify and CI
+
+- `cargo xtask verify`: add the check as a step right after the Rust build step, since it is cheap and fails fast. Give it a `--skip-feature-sets` flag consistent with the other skip flags, and update `TOTAL_STEPS` and the module doc list.
+- `test-suite.yml`: add a *Check pampa feature sets* step running `cargo xtask check-feature-sets` next to Clippy, on both matrix legs.
+
+### Phase 5 — Docs
+
+- `crates/wasm-qmd-parser/AGENTS.md` (toolchain section): document `QUARTO_QMD_PARSER_REQUIRED`.
+- Document the feature-set check, in pampa's `Cargo.toml` `[features]` comment or a `dev-docs/` note: "consumers' feature sets are checked by `cargo xtask check-feature-sets`; add a consumer and it is picked up automatically".
+
+### Phase 6 — Verification
+
+- `cargo xtask verify --skip-hub-build` is green.
+- **Negative test (local, not committed):** temporarily reintroduce an ungated `mlua` reference in pampa and confirm that both of these fail:
+  - `cargo xtask check-feature-sets`;
+  - the parser-tier vitest command run with `QUARTO_QMD_PARSER_REQUIRED=1`.
+
+  Then revert.
+- PR CI: confirm the parser-tier step still runs its tests (not skipped) on ubuntu and macOS, and that the new Rust step is present.
+
+## Risks / tradeoffs
+
+- **Fatal setup changes the failure surface.** A flaky wasm-pack install or cc-rs hiccup on a runner now turns the step red, where it used to pass silently. That is intended, but expect some infra-flavoured reds early on.
+- **Rethrowing from a vitest `globalSetup` aborts the whole run.** That is acceptable here: the parser-tier step runs only parser-tier files.
+- **Manifest discovery is lexical.** It matches the `pampa` dependency key. A renamed dependency (`package = "pampa"` under another key) would be missed. Match on `package` too.
+- **Other suites skip when assets are absent** (`hub-client/src/pandoc/*.wasm.test.ts`). In CI those assets come from `fetch-pandoc-wasm.mjs --require`, which fails loudly. A sentence in the PR is enough; no audit is needed for this strand.
