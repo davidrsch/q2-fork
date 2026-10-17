@@ -58,14 +58,30 @@ No repro artifact is needed. The CI log quoted in the strand is the repro. To si
 - **Phase 0: Test plan.** Unit-test the setup decision (required vs. not × success / toolchain-missing / build-failed). This probably means extracting a pure `decide(err, required)` helper from `vitest-global-setup.mjs` that vitest can test without wasm-pack.
 - **Phase 1: Make setup fatal when required.** Read `QUARTO_QMD_PARSER_REQUIRED`. When it is `1`, rethrow (vitest aborts the run) and do not write the marker. Also delete any stale marker, so a later run cannot inherit a skip.
 - **Phase 2: CI wiring.** Set the variable in the parser-tier step's `env:` on both matrix legs. Update the step comment and the setup's doc comment, which currently describe the skip as unconditional.
-- **Phase 3 (optional): cheap Rust guard.** Add `cargo check -p pampa --no-default-features` to `test-suite.yml`, and maybe to `cargo xtask verify`, so a feature-gating mistake fails in seconds.
+- **Phase 3: cheap Rust guard, in both CI and verify (decided, Q3).** Check pampa natively under each feature set its out-of-workspace consumers use, so a feature-gating mistake fails in seconds, locally and in CI. See "Q3 resolution" below for the measured cost and the open sub-question on how to list the feature sets.
 - **Phase 4: Docs.** Note the variable in `crates/wasm-qmd-parser/AGENTS.md` and/or the quarto-hub-mcp README next to the existing toolchain notes.
 
 ## Open design questions for the user
 
 1. **Opt-in variable, or classify the error?** Option A: `QUARTO_QMD_PARSER_REQUIRED=1` (the strand's proposal, mirrors `TYPST_PARITY_REQUIRED`). Option B: skip only on "toolchain missing" (LLVM not found, wasm-pack ENOENT) and fail on any non-zero wasm-pack exit. B also protects local dev, but on Linux a missing wasm32 clang shows up as a non-zero exit, so B would break toolchain-less Linux developers. I recommend **A, optionally combined with B**: fail when required, and otherwise keep skipping but print the full error.
 2. **Should `cargo xtask verify` set the variable?** Pro: local verify catches the break before CI does. Con: verify would then fail for anyone without LLVM/wasm-pack, unless it sets the variable only after probing for the toolchain. My lean: don't set it in verify. Instead add the cheap `cargo check --no-default-features` from Q3, which needs no wasm toolchain.
-3. **Include the Rust `--no-default-features` check?** If yes: CI only (`test-suite.yml`, next to Clippy), or also in `cargo xtask verify`? Should it cover more than `pampa`, e.g. a short list of `default-features = false` consumer crate/feature sets taken from `wasm-qmd-parser`'s and `wasm-quarto-hub-client`'s Cargo.toml?
+3. **Include the Rust `--no-default-features` check?** *Resolved (2026-10-17): yes, in both CI and `cargo xtask verify`.* The goal is that a PR whose CI and local verify pass cannot then fail the nightly/release build. Verify is how developers see CI's result ahead of time, so the guard belongs in both. Sub-question 3a below remains open.
+
+   **3a. How should the guard list the feature sets?** These are the out-of-workspace consumers that turn pampa's defaults off:
+
+   | Consumer | pampa features |
+   | --- | --- |
+   | `crates/wasm-qmd-parser` | none |
+   | `crates/wasm-quarto-hub-client` | `lua-filter` |
+   | `crates/experiments/reconcile-viewer` | none (same set as wasm-qmd-parser) |
+
+   Both wasm crates are outside the workspace, so `cargo check -p wasm-qmd-parser` does not resolve. Checking them via `--manifest-path` would need their own lockfile, target dir and toolchain config, which is too heavy for verify. So the guard checks pampa itself with each set. Options:
+   - **(i) Hardcode** the two `cargo check -p pampa --no-default-features [--features …]` lines in verify and CI, with a comment naming the consumer manifests. Simple, but it drifts when a consumer's features change.
+   - **(ii) Derive** the sets in xtask by reading each `crates/wasm-*/Cargo.toml` `pampa` entry. Expose them as one xtask step (e.g. `cargo xtask check-feature-sets`) that verify calls and CI runs, so there is one source of truth and no drift. Recommended.
+
+   **Measured cost** (warm `target/`, M-series Mac): with nothing changed, under a second per set. After an edit to pampa: ~0.5 s with no features and ~13 s with `lua-filter`. Cold CI cost is unmeasured, though Clippy already builds most of the check-mode dependency metadata.
+
+   **Limit:** a native check catches feature-gating mistakes (the bd-76ogq4ew class). It does not catch errors inside `#[cfg(target_arch = "wasm32")]` code. The required parser tier (Q1) still covers those, so the two guards complement each other.
 4. **The `terminal-support` side observation.** File it as a separate low-priority strand, or ignore it because no consumer uses the combination?
 
 ## Risks / tradeoffs (draft)
