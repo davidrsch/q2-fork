@@ -11,6 +11,11 @@
  * reopening a document inside the live viewer empties it for a few frames, a visible flash. The frame on
  * top is never an empty viewer: a new document that fails to draw is dropped (see `VIEWER_WATCHDOG_MS`),
  * and the previous one stays.
+ *
+ * Only the live frame is titled `PDF preview` (`VIEWER_TITLE`); a frame still loading has no title and is
+ * `aria-hidden` and `inert`, so assistive tech and title lookups (the e2e specs) see exactly one viewer
+ * (bd-e4q7juv0). A loading frame is never hidden with CSS: pdf.js must lay it out and paint it underneath,
+ * or it never becomes ready to promote.
  */
 
 /** The slice of pdf.js's `PDFViewerApplication` this module uses. */
@@ -54,6 +59,9 @@ export interface PdfViewerHandle {
 }
 
 export const PDF_HISTORY_KEY = 'pdfjs.history';
+
+/** The live viewer frame's `title`; a frame still loading has none. */
+export const VIEWER_TITLE = 'PDF preview';
 
 /** URL of the stock viewer under the app's base path (`'./'` for the preview SPA, Vite's `BASE_URL` for hub-client). */
 export function viewerUrl(base: string, file?: string, restore = false): string {
@@ -102,7 +110,8 @@ export function mountPdfViewer(container: HTMLElement, base: string, options: Pd
   function load(pdf: Uint8Array, zIndex: number, restore: boolean): { frame: Frame; ready: Promise<void> } {
     const blobUrl = URL.createObjectURL(new Blob([pdf as BlobPart], { type: 'application/pdf' }));
     const iframe = document.createElement('iframe');
-    iframe.title = 'PDF preview';
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.inert = true;
     iframe.style.cssText = `position:absolute;inset:0;width:100%;height:100%;border:0;display:block;z-index:${zIndex}`;
     const ready = new Promise<void>((resolve, reject) => {
       // `once`: the subscriptions and the watchdog below belong to this one document load.
@@ -179,6 +188,9 @@ export function mountPdfViewer(container: HTMLElement, base: string, options: Pd
     if (pending !== frame || disposed) return; // superseded, or the pane closed
     pending = null;
     frame.iframe.style.zIndex = '2';
+    frame.iframe.title = VIEWER_TITLE;
+    frame.iframe.removeAttribute('aria-hidden');
+    frame.iframe.inert = false;
     if (current) discard(current);
     current = frame;
   }
