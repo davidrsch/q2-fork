@@ -8,12 +8,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import html2canvas from 'html2canvas';
-import type { Symbol } from '@quarto/preview-renderer/types/intelligence';
-import { parseSlides, renderSlide } from '../components/render/ReactAstSlideRenderer';
-import type { PandocAST } from '@quarto/preview-renderer/framework';
+import { renderSlide, type Slide } from '../components/render/ReactAstSlideRenderer';
+import type { BlockNode, DivBlock, PandocAST } from '@quarto/preview-renderer/framework';
+import { slideSourceLines } from './slideStartLines';
 
 /**
- * Map from symbol line number to thumbnail data URL.
+ * Map from a slide's 0-based source start line to its thumbnail data URL.
+ *
+ * The line comes from the first located node inside the slide — for a titled
+ * slide that is its heading, so the key equals the heading symbol's
+ * `range.start.line`, which is what `OutlinePanel` looks thumbnails up by.
+ * See `slideStartLines.ts`.
  */
 export type ThumbnailMap = Map<number, string>;
 
@@ -22,8 +27,6 @@ interface UseSlideThumbnailsOptions {
   astJson: string | null;
   /** Current file path for resolving relative image paths. */
   currentFilePath: string;
-  /** Document symbols (headers) to generate thumbnails for. */
-  symbols: Symbol[];
   /** Whether the preview is ready for thumbnail capture. */
   previewReady: boolean;
   /** Trigger value that changes when preview content updates. */
@@ -32,6 +35,14 @@ interface UseSlideThumbnailsOptions {
   enabled: boolean;
 }
 
+/**
+ * The renderable slide for one top-level block of the transformed AST: a
+ * section Div contributes its contents, anything else is a one-block slide.
+ */
+function slideForBlock(block: BlockNode): Slide {
+  const blocks = block.t === 'Div' ? (block as DivBlock).c[1] : [block];
+  return { type: 'content', blocks };
+}
 
 /**
  * Generate thumbnails for presentation slides.
@@ -42,13 +53,16 @@ interface UseSlideThumbnailsOptions {
 export function useSlideThumbnails({
   astJson,
   currentFilePath,
-  symbols,
   previewReady,
   contentVersion,
   enabled,
 }: UseSlideThumbnailsOptions): ThumbnailMap {
   const [thumbnails, setThumbnails] = useState<ThumbnailMap>(new Map());
   const captureInProgressRef = useRef(false);
+  // A capture requested while one is running is deferred, not dropped:
+  // the running capture may be rendering a deck the user has since edited.
+  const rerunRequestedRef = useRef(false);
+  const captureThumbnailsRef = useRef<() => Promise<void>>(async () => {});
   const debounceTimeoutRef = useRef<number | null>(null);
 
   // Clear thumbnails when disabled (e.g., switching away from slide format)
@@ -61,11 +75,13 @@ export function useSlideThumbnails({
   const captureThumbnails = useCallback(async () => {
     // Skip thumbnail generation when not in slide format
     if (!enabled) return;
-    // Avoid overlapping capture operations
-    if (captureInProgressRef.current) return;
+    // Avoid overlapping capture operations; rerun once the current one ends
+    if (captureInProgressRef.current) {
+      rerunRequestedRef.current = true;
+      return;
+    }
     if (!previewReady) return;
     if (!astJson) return;
-    if (symbols.length === 0) return;
 
     captureInProgressRef.current = true;
 
@@ -81,30 +97,19 @@ export function useSlideThumbnails({
         return;
       }
 
-      const slides = parseSlides(ast);
+      // One top-level block per horizontal slide (see slideStartLines.ts).
+      const startLines = slideSourceLines(ast);
 
-      // Filter symbols to only headers (those that create slides)
-      // Headers use SymbolKind 'string' in our LSP
-      // The symbols array contains top-level symbols only (h1/h2), with h3+ nested as children
-      const slideHeaders = symbols.filter(s => s.kind === 'string');
+      for (let slideIndex = 0; slideIndex < ast.blocks.length; slideIndex++) {
+        const startLine = startLines[slideIndex];
 
-      // Match slides to headers by index (structural position)
-      let headerIndex = 0;
-      for (let slideIndex = 0; slideIndex < slides.length; slideIndex++) {
-        const slide = slides[slideIndex];
-
-        // Skip title slides (they don't correspond to document sections)
-        if (slide.type === 'title') {
+        // A slide with no source text (the generated title slide) has no
+        // outline entry to attach a thumbnail to.
+        if (startLine === null) {
           continue;
         }
 
-        // Match this content slide to the next header by index
-        if (headerIndex >= slideHeaders.length) {
-          continue;
-        }
-
-        const matchingSymbol = slideHeaders[headerIndex];
-        headerIndex++;
+        const slide = slideForBlock(ast.blocks[slideIndex]);
 
         // Create a temporary container for rendering this slide
         const container = document.createElement('div');
@@ -146,10 +151,10 @@ export function useSlideThumbnails({
                 if (ctx) {
                   ctx.drawImage(canvas, 0, 0, 128, 64);
                   const dataUrl = thumbnailCanvas.toDataURL('image/png');
-                  newThumbnails.set(matchingSymbol.range.start.line, dataUrl);
+                  newThumbnails.set(startLine, dataUrl);
                 }
               } catch (error) {
-                console.error(`Failed to capture thumbnail for slide ${slideIndex} ("${matchingSymbol.name}"):`, error);
+                console.error(`Failed to capture thumbnail for slide ${slideIndex} (line ${startLine + 1}):`, error);
               } finally {
                 root.unmount();
                 resolve();
@@ -165,8 +170,18 @@ export function useSlideThumbnails({
       setThumbnails(newThumbnails);
     } finally {
       captureInProgressRef.current = false;
+      if (rerunRequestedRef.current) {
+        rerunRequestedRef.current = false;
+        // Through the ref so the rerun sees the latest astJson, not the one
+        // this closure captured.
+        void captureThumbnailsRef.current();
+      }
     }
-  }, [astJson, currentFilePath, symbols, previewReady, enabled]);
+  }, [astJson, currentFilePath, previewReady, enabled]);
+
+  useEffect(() => {
+    captureThumbnailsRef.current = captureThumbnails;
+  }, [captureThumbnails]);
 
   // Debounced capture thumbnails when content changes
   useEffect(() => {

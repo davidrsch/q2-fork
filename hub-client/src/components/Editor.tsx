@@ -85,7 +85,7 @@ import ImageViewer from './ImageViewer';
 import ReplayDrawer from './ReplayDrawer';
 import './Editor.css';
 import PreviewRouter from './render/PreviewRouter';
-import type { PreviewMode } from './render/getQ2Format';
+import { isSlidesFormat, type PreviewMode } from './render/getQ2Format';
 import { useDownloadAs } from '../pandoc/useDownloadAs';
 import { download as downloadStrings } from '../strings';
 import { fileSidebar, dialogs } from '../strings';
@@ -451,14 +451,13 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
     setCurrentFormat(format);
   }, []);
 
-  // Generate thumbnails for slides (only when format is q2-slides)
+  // Generate thumbnails for slides (only for reveal decks)
   const thumbnails = useSlideThumbnails({
     astJson,
     currentFilePath: currentFile?.path ?? '',
-    symbols,
     previewReady: wasmStatus === 'ready' && editorReady,
     contentVersion,
-    enabled: currentFormat === 'q2-slides',
+    enabled: isSlidesFormat(currentFormat),
   });
 
   // New file dialog state (text-only after Phase C of generic-file-uploader plan)
@@ -563,7 +562,7 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
   const [currentSlideIndex, setCurrentSlideIndex] = useState<number>(0);
 
   // Map cursor position to slide index
-  const getSlideForLine = useCursorToSlide(astJson, symbols);
+  const getSlideForLine = useCursorToSlide(astJson);
 
   // Keep getSlideForLine in a ref so the cursor listener always has the latest version
   const getSlideForLineRef = useRef(getSlideForLine);

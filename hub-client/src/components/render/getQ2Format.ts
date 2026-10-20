@@ -50,6 +50,17 @@ export interface ClassifyDeps {
  *
  * Never reads `formats[0]`: with a requested format that is not declared it would be wrong.
  */
+/**
+ * Preview pseudo-formats that render as a reveal deck. The resolver reports
+ * `revealjs` for a `format: revealjs` document and passes an explicit
+ * `format: q2-slides` through unchanged (`preview_pseudo_format` in
+ * crates/quarto-core/src/pandoc_request/formats.rs); both drive
+ * `RevealDeck`, so slide-only UI (thumbnails, printing) keys off this.
+ */
+export function isSlidesFormat(format: string | null): boolean {
+  return format === 'revealjs' || format === 'q2-slides';
+}
+
 export function classifyPreviewMode(path: string | undefined, deps: ClassifyDeps): PreviewMode {
   if (!path) return { mode: 'dom' };
   const resolved = deps.resolve(path);
