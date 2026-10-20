@@ -23,6 +23,10 @@ WASM rebuild is needed for a changelog-only edit.
 
 -->
 
+### 2026-10-20
+
+- [`4540c20c2`](https://github.com/quarto-dev/q2/commits/4540c20c2): Upgrade KaTeX to 0.18.9, which keeps trailing rows in `align` environments.
+
 ### 2026-10-15
 
 - [`9ee269ea0`](https://github.com/quarto-dev/q2/commits/9ee269ea0): The "Link another browser" dialog now says what it actually shares — its warning reads "access and edit every project in your project list" instead of the single-project wording, since the link carries the whole project list.
