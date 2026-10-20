@@ -1,7 +1,7 @@
 ---
 title: 'Release asset: hub-client WASM package for Connect satellite builds (bd-m7oy2asc)'
 date: 2026-10-20
-description: 'connect-satellites'' build-editor.sh needs the gitignored crates/wasm-quarto-hub-client/pkg from a q2 checkout at its pinned tag; package it once in the release pipeline''s web-payloads job and publish quarto-hub-client-wasm-<version>.tar.gz (checksummed + minisigned) as a release asset.'
+description: 'build-editor.sh in connect-satellites needs the gitignored `crates/wasm-quarto-hub-client/pkg` inside a q2 checkout at its pinned tag; package it once in web-payloads and publish `quarto-hub-client-wasm-<version>.tar.gz` (checksummed + minisigned) as a release asset.'
 status: phases 1-2 landed; dry-run dispatch + real-release confirmation pending
 braid:
   strand: bd-m7oy2asc
