@@ -19,6 +19,7 @@ pub mod filters;
 pub mod json_filter;
 #[cfg(feature = "lua-filter")]
 pub mod lua;
+pub mod lua_options;
 pub mod node_lookup;
 pub mod options;
 pub mod pandoc;

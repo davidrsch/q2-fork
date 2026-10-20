@@ -182,15 +182,15 @@ fn main_element(html: &str) -> &str {
     &html[start..end]
 }
 
-/// Render the `lmd-blog` project fixture (a website whose index page
-/// declares a `type: metadata` listing and builds the markup in lmd
-/// cells; bd-2oqen84t) and return the host page's `<main>` plus the
+/// Render a project fixture under `fixtures/<fixture>` in a scratch copy
+/// and return `<main>` of the output page at `_site/<page>` plus the
 /// normalized stderr.
-fn render_blog() -> (String, String) {
+fn render_project(fixture: &str, page: &str) -> (String, String) {
     let temp = tempfile::TempDir::new().unwrap();
     let dir = temp.path().to_path_buf();
     copy_dir(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/integration/fixtures/lmd-blog"),
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("tests/integration/fixtures/{fixture}")),
         &dir,
     );
     let output = Command::new(Q2_BIN)
@@ -204,14 +204,22 @@ fn render_blog() -> (String, String) {
         &dir,
         "index",
     );
-    let html = std::fs::read_to_string(dir.join("_site/posts/index.html")).unwrap_or_else(|e| {
+    let html = std::fs::read_to_string(dir.join("_site").join(page)).unwrap_or_else(|e| {
         panic!(
-            "no host page for lmd-blog: {e}\nexit: {:?}\nstdout:\n{}\nstderr:\n{stderr}",
+            "no output page for {fixture}: {e}\nexit: {:?}\nstdout:\n{}\nstderr:\n{stderr}",
             output.status,
             String::from_utf8_lossy(&output.stdout)
         )
     });
     (main_element(&html).to_string(), stderr)
+}
+
+/// Render the `lmd-blog` project fixture (a website whose index page
+/// declares a `type: metadata` listing and builds the markup in lmd
+/// cells; bd-2oqen84t) and return the host page's `<main>` plus the
+/// normalized stderr.
+fn render_blog() -> (String, String) {
+    render_project("lmd-blog", "posts/index.html")
 }
 
 /// bd-2oqen84t: the motivating example end to end. A `type: metadata`
@@ -234,6 +242,23 @@ fn lmd_blog_project_renders_as_snapshotted() {
         );
         insta::assert_snapshot!("blog.main.html", main);
         insta::assert_snapshot!("blog.stderr", stderr);
+    });
+}
+
+/// bd-76ogq4ew phase 3: modules across a project, end to end. A module at
+/// the project root and an extension's module, both autoloaded by
+/// `lmd: modules:` in `_quarto.yml`; a `/`-rooted `require` whose module
+/// requires its neighbour; a parameterised `quarto.include` of an `.lmd`
+/// partial and a `/`-rooted include of a markdown one.
+#[test]
+fn lmd_project_renders_as_snapshotted() {
+    let mut settings = insta::Settings::clone_current();
+    settings.set_snapshot_path("snapshots/lmd");
+    settings.set_prepend_module_to_snapshot(false);
+    settings.bind(|| {
+        let (main, stderr) = render_project("lmd-project", "index.html");
+        insta::assert_snapshot!("project.main.html", main);
+        insta::assert_snapshot!("project.stderr", stderr);
     });
 }
 

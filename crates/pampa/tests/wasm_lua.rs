@@ -310,6 +310,73 @@ fn shortcode_engine_init_wasm() {
 }
 
 // ============================================================================
+// Test 3c: `quarto.include` reads through the VFS
+// ============================================================================
+
+/// `quarto.include(file, params)` resolves relative to the running script
+/// and reads through the runtime, so a filter on the hub client includes a
+/// `.lua` partial with params and a `.md` partial from the virtual
+/// filesystem (bd-76ogq4ew, phase 3).
+#[wasm_bindgen_test]
+async fn quarto_include_wasm() {
+    use pampa::lua::apply_lua_filters_with;
+    use pampa::lua::runtime::{VirtualFileSystem, WasmRuntime};
+    use pampa::pandoc::{ASTContext, Block, Inline, Pandoc, Paragraph, Str};
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    let mut vfs = VirtualFileSystem::new();
+    vfs.add_file(
+        Path::new("/project/partials/card.lua"),
+        b"local p = ...\nreturn pandoc.Para({ pandoc.Str(p.title) })".to_vec(),
+    );
+    vfs.add_file(
+        Path::new("/project/partials/note.md"),
+        b"From *markdown*.\n".to_vec(),
+    );
+    vfs.add_file(
+        Path::new("/project/filter.lua"),
+        br#"
+function Pandoc(doc)
+    local blocks = pandoc.Blocks({})
+    blocks:extend(quarto.include("partials/card.lua", { title = "included-lua" }))
+    blocks:extend(quarto.include("partials/note.md"))
+    doc.blocks = blocks
+    return doc
+end
+"#
+        .to_vec(),
+    );
+
+    let runtime: Arc<dyn pampa::lua::runtime::SystemRuntime> = Arc::new(WasmRuntime::with_vfs(vfs));
+    let pandoc = Pandoc {
+        meta: quarto_pandoc_types::ConfigValue::default(),
+        blocks: vec![Block::Paragraph(Paragraph {
+            content: vec![Inline::Str(Str {
+                text: "hello".to_string(),
+                source_info: quarto_source_map::SourceInfo::for_test(),
+            })],
+            source_info: quarto_source_map::SourceInfo::for_test(),
+        })],
+    };
+    let output = apply_lua_filters_with(
+        pandoc,
+        ASTContext::new(),
+        &[PathBuf::from("/project/filter.lua")],
+        "html",
+        runtime,
+        None,
+        &pampa::lua::LuaOptions::default(),
+    )
+    .await
+    .expect("filter runs");
+    assert_eq!(output.pandoc.blocks.len(), 2, "{:?}", output.pandoc.blocks);
+    let text = format!("{:?}", output.pandoc.blocks);
+    assert!(text.contains("included-lua"), "{text}");
+    assert!(text.contains("markdown"), "{text}");
+}
+
+// ============================================================================
 // Test 3b: a source dialect module loaded through `require` from the VFS
 // ============================================================================
 
@@ -371,7 +438,8 @@ end
         })],
     };
 
-    let dialects: Vec<Arc<dyn SourceDialect>> = vec![Arc::new(Shout)];
+    let options =
+        pampa::lua::LuaOptions::with_dialects(vec![Arc::new(Shout) as Arc<dyn SourceDialect>]);
     let output = apply_lua_filters_with(
         pandoc,
         ASTContext::new(),
@@ -379,7 +447,7 @@ end
         "html",
         runtime,
         None,
-        &dialects,
+        &options,
     )
     .await
     .expect("filter execution failed");

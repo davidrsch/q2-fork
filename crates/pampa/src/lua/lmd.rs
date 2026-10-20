@@ -122,22 +122,23 @@ impl LmdRuntime {
     /// (`pandoc.*`, `quarto.*`, `FORMAT`, scoped `require`), with
     /// `document_path` standing in for the filter script's path so
     /// `quarto.utils.resolve_path` and `require` resolve relative to the
-    /// document. `dialects` are the source dialects `require` may load
-    /// (q2 passes lmd itself, so a cell can `require` an `.lmd` module).
+    /// document. `options` carries the source dialects `require` may load
+    /// (q2 passes lmd itself, so a cell can `require` an `.lmd` module) and
+    /// the module roots it searches beyond the document's directory.
     pub fn new(
         runtime: Arc<dyn SystemRuntime>,
         target_format: &str,
         document_path: &Path,
         attribution: Option<Arc<dyn AttributionLookup>>,
         meta: &quarto_pandoc_types::config_value::ConfigValue,
-        dialects: &[Arc<dyn crate::dialect::SourceDialect>],
+        options: &crate::lua_options::LuaOptions,
     ) -> FilterResult<Self> {
         let lua = create_filter_environment_with(
             runtime,
             target_format,
             document_path,
             attribution,
-            dialects,
+            options,
         )?;
         // quarto.metadata.get / global `meta`: the document's merged
         // metadata, the same snapshot every cell sees.
@@ -195,6 +196,25 @@ impl LmdRuntime {
         classify_inline_value(&self.lua, value)
     }
 
+    /// Bind modules as globals before the document's first cell (`lmd:
+    /// modules:` in the metadata; bd-76ogq4ew, phase 3). Each `(global,
+    /// module)` pair runs `require(module)` through the scoped loader and
+    /// stores the result in `_G[global]`, in order. Stops at the first
+    /// failure and returns its index with the error (always
+    /// [`LmdCellError::Lua`]), so the caller can name the entry.
+    pub fn autoload(&self, modules: &[(String, String)]) -> Result<(), (usize, LmdCellError)> {
+        let globals = self.lua.globals();
+        for (i, (global, module)) in modules.iter().enumerate() {
+            let step = || -> mlua::Result<()> {
+                let require: mlua::Function = globals.get("require")?;
+                let value: Value = require.call(module.as_str())?;
+                globals.set(global.as_str(), value)
+            };
+            step().map_err(|e| (i, LmdCellError::Lua(e)))?;
+        }
+        Ok(())
+    }
+
     /// Diagnostics the cells recorded through `quarto.warn` / `quarto.error`, drained so the
     /// next call starts empty.
     pub fn take_diagnostics(&self) -> Vec<DiagnosticMessage> {
@@ -209,7 +229,7 @@ impl LmdRuntime {
 }
 
 /// Apply the cell return contract to a value.
-fn classify_cell_value(lua: &Lua, value: Value) -> Result<LmdCellValue, LmdCellError> {
+pub(crate) fn classify_cell_value(lua: &Lua, value: Value) -> Result<LmdCellValue, LmdCellError> {
     match &value {
         Value::Nil => Ok(LmdCellValue::Nothing),
         Value::UserData(ud) => {
@@ -384,7 +404,7 @@ mod tests {
             Path::new("doc.qmd"),
             None,
             &quarto_pandoc_types::config_value::ConfigValue::default(),
-            &[],
+            &crate::lua_options::LuaOptions::default(),
         )
         .expect("lmd runtime")
     }
@@ -658,6 +678,39 @@ mod tests {
                 .unwrap(),
         );
         assert_eq!(out.len(), 1);
+    }
+
+    /// bd-76ogq4ew phase 3: `lmd: modules:` binds a module to a global
+    /// before the first cell; a failure names the entry.
+    #[tokio::test]
+    async fn autoload_binds_modules_as_globals_and_names_a_failing_entry() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("greet.lua"), "return { word = 'hello' }").unwrap();
+        let rt = LmdRuntime::new(
+            Arc::new(NativeRuntime::new()),
+            "html",
+            &tmp.path().join("doc.qmd"),
+            None,
+            &quarto_pandoc_types::config_value::ConfigValue::default(),
+            &crate::lua_options::LuaOptions::default(),
+        )
+        .unwrap();
+        rt.autoload(&[("g".to_string(), "greet".to_string())])
+            .unwrap();
+        let out = blocks(
+            rt.run_cell("return pandoc.Para({pandoc.Str(g.word)})", "cell", 0)
+                .await
+                .unwrap(),
+        );
+        assert_eq!(out.len(), 1);
+        let (index, err) = rt
+            .autoload(&[
+                ("g".to_string(), "greet".to_string()),
+                ("missing".to_string(), "nowhere".to_string()),
+            ])
+            .unwrap_err();
+        assert_eq!(index, 1);
+        assert!(err.to_string().contains("nowhere"), "{err}");
     }
 
     #[tokio::test]

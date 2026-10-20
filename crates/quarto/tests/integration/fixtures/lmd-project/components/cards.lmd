@@ -1,0 +1,14 @@
+-- A module at the project root, autoloaded as `cards` by _quarto.yml.
+local M = {}
+
+function M.card(title, body)
+  return {=:
+::: {.card}
+### `{lmd} title`
+
+`{lmd} body`
+:::
+:=}
+end
+
+return M

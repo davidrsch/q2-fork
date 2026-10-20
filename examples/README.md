@@ -85,6 +85,7 @@ their rendered output.
 | [`lmd/07-walk`](lmd/07-walk/) | `Blocks:walk` on a fragment |
 | [`lmd/08-echo`](lmd/08-echo/) | `--| echo: true`, showing the desugared Lua above the result |
 | [`lmd/09-modules`](lmd/09-modules/) | `require` of a module written in lmd (`components/cards.lmd`), used by two cells |
+| [`lmd/10-project`](lmd/10-project/) | Modules across a project: `lmd: modules:` autoload from `_quarto.yml`, a project-root `require("/…")`, an extension's module by name, and `quarto.include` of two partials |
 
 ## Other example categories
 

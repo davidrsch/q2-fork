@@ -44,6 +44,7 @@ It is owed to:
 | document body, includes, engine output, listing templates, front-matter markdown, `pandoc.read(…, "markdown")` | the reader itself |
 | lmd fragments `{= … =}` / `{=: … :=}` / `{=[ … ]=}` | the reader (fragments are parsed by it; the emitter prints the result, `Table` included) |
 | lmd block-cell and inline-cell return values | `stage/stages/lmd_execute.rs`, per cell, over what the cell returned; a `Q-2-35` is relocated onto the cell |
+| `quarto.include(file, params)` from Lua | `pampa/src/lua/quarto_api.rs`: an `.lmd` or `.lua` include's returned blocks get the set (a `Q-2-35` is a Lua warning naming the file); a `.qmd` include is read by the reader, which applies it |
 | `pandoc.read(…, "json")` from Lua | `pampa/src/lua/readwrite.rs` |
 | pampa CLI `--from json` | `pampa/src/main.rs` |
 | document import (docx, odt, …) | `quarto-core/src/import/mod.rs` |

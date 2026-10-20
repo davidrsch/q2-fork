@@ -51,6 +51,7 @@ use pampa::utils::diagnostic_collector::DiagnosticCollector;
 use quarto_error_reporting::{DiagnosticMessage, DiagnosticMessageBuilder};
 use quarto_pandoc_types::attr::AttrSourceInfo;
 use quarto_pandoc_types::block::{Block, CodeBlock};
+use quarto_pandoc_types::config_value::ConfigValue;
 use quarto_pandoc_types::inline::{Code, Inline, Inlines};
 use quarto_source_map::{FileId, SourceContext, SourceInfo};
 use std::collections::HashMap;
@@ -447,6 +448,7 @@ fn block_cell_code_and_echo(
 pub async fn execute_lmd_cells(
     blocks: &mut Vec<Block>,
     runtime: &LmdRuntime,
+    meta: &ConfigValue,
     sources: &SourceContext,
     diagnostics: &mut Vec<DiagnosticMessage>,
 ) {
@@ -457,6 +459,34 @@ pub async fn execute_lmd_cells(
     }
     .blocks(blocks);
     if cells.is_empty() {
+        return;
+    }
+
+    // `lmd: modules:` (bd-76ogq4ew, phase 3): the prelude, bound before
+    // the first cell. A broken prelude fails the page once: every cell is
+    // left as written, rather than each failing on the missing global.
+    let entries = autoload_entries(meta, diagnostics);
+    let pairs: Vec<(String, String)> = entries
+        .iter()
+        .map(|e| (e.global.clone(), e.module.clone()))
+        .collect();
+    if let Err((index, err)) = runtime.autoload(&pairs) {
+        diagnostics.push(autoload_failure(&entries[index], &err));
+        diagnostics.extend(runtime.take_diagnostics());
+        let mut results: HashMap<usize, CellOutput> = HashMap::new();
+        for cell in &cells {
+            let output = match cell.kind {
+                CellKind::Block => {
+                    let (code, _echo, _) = block_cell_code_and_echo(cell, diagnostics);
+                    CellOutput::Blocks(vec![displayed_block_cell(&code, &cell.source_info)])
+                }
+                CellKind::Inline => {
+                    CellOutput::Inlines(vec![displayed_inline_cell(&cell.text, &cell.source_info)])
+                }
+            };
+            results.insert(cell.id, output);
+        }
+        splice_results(blocks, results);
         return;
     }
 
@@ -509,7 +539,11 @@ pub async fn execute_lmd_cells(
         results.insert(cell.id, output);
     }
     diagnostics.extend(runtime.take_diagnostics());
+    splice_results(blocks, results);
+}
 
+/// Replace every numbered cell in `blocks` with its output.
+fn splice_results(blocks: &mut Vec<Block>, mut results: HashMap<usize, CellOutput>) {
     for_each_block_list_mut(blocks, &mut |list| {
         if !list.iter().any(|b| numbered_block_cell_id(b).is_some()) {
             return;
@@ -540,6 +574,109 @@ pub async fn execute_lmd_cells(
             }
         }
     });
+}
+
+/// One `lmd: modules:` entry: the global it binds, the module name
+/// `require` is given, and where the entry is written.
+struct AutoloadEntry {
+    global: String,
+    module: String,
+    location: SourceInfo,
+}
+
+/// Read `lmd.modules` from the merged metadata. An item is a module name
+/// (the global is its last path segment: `components/cards` binds `cards`)
+/// or a one-key map `global: module`. A malformed item is reported as
+/// `Q-26-9` and skipped.
+fn autoload_entries(
+    meta: &ConfigValue,
+    diagnostics: &mut Vec<DiagnosticMessage>,
+) -> Vec<AutoloadEntry> {
+    let Some(items) = meta
+        .get("lmd")
+        .and_then(|lmd| lmd.get("modules"))
+        .and_then(|m| m.as_array())
+    else {
+        return Vec::new();
+    };
+    let mut entries = Vec::new();
+    for item in items {
+        let location = item.source_info.clone();
+        let parsed = if let Some(module) = item.as_plain_text() {
+            let global = module
+                .trim_end_matches('/')
+                .rsplit(['/', '.'])
+                .next()
+                .unwrap_or("")
+                .to_string();
+            Some((global, module))
+        } else if let Some(entries) = item.as_map_entries()
+            && let [entry] = entries
+            && let Some(module) = entry.value.as_plain_text()
+        {
+            Some((entry.key.clone(), module))
+        } else {
+            None
+        };
+        match parsed {
+            Some((global, module)) if is_lua_name(&global) => entries.push(AutoloadEntry {
+                global,
+                module,
+                location,
+            }),
+            Some((global, module)) => diagnostics.push(
+                DiagnosticMessageBuilder::error("lmd autoload failed")
+                    .with_code("Q-26-9")
+                    .with_location(location)
+                    .problem(format!(
+                        "`{module}` would bind the global `{global}`, which is not a Lua name"
+                    ))
+                    .add_hint(
+                        "Write the entry as a one-key map, `name: module`, to choose the global's name.",
+                    )
+                    .build(),
+            ),
+            None => diagnostics.push(
+                DiagnosticMessageBuilder::error("lmd autoload failed")
+                    .with_code("Q-26-9")
+                    .with_location(location)
+                    .problem(
+                        "an `lmd: modules:` entry must be a module name or a one-key map `global: module`"
+                            .to_string(),
+                    )
+                    .build(),
+            ),
+        }
+    }
+    entries
+}
+
+fn is_lua_name(s: &str) -> bool {
+    let mut chars = s.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// `Q-26-9` for an entry whose `require` failed.
+fn autoload_failure(entry: &AutoloadEntry, err: &LmdCellError) -> DiagnosticMessage {
+    let detail = match err {
+        LmdCellError::Lua(lua_err) => match pampa::dialect::ModuleCompileError::find_in(lua_err) {
+            Some(module_err) => module_err.to_string(),
+            None => lua_err.to_string(),
+        },
+        other => other.to_string(),
+    };
+    DiagnosticMessageBuilder::error("lmd autoload failed")
+        .with_code("Q-26-9")
+        .with_location(entry.location.clone())
+        .problem(format!(
+            "`lmd: modules:` could not load `{}` as `{}`: {detail}",
+            entry.module, entry.global
+        ))
+        .add_hint("Fix the module or the entry; the document's lmd cells are left as written.")
+        .build()
 }
 
 fn numbered_block_cell_id(block: &Block) -> Option<usize> {
@@ -612,7 +749,7 @@ impl PipelineStage for LmdExecuteStage {
             &ctx.document.input,
             attribution,
             &doc.ast.meta,
-            &crate::lmd::dialects(),
+            &crate::lmd::lua_options(&ctx.project),
         )
         .map_err(|err| PipelineError::stage_error(self.name(), err.to_string()))?;
 
@@ -620,6 +757,7 @@ impl PipelineStage for LmdExecuteStage {
         execute_lmd_cells(
             &mut doc.ast.blocks,
             &runtime,
+            &doc.ast.meta,
             &doc.source_context,
             &mut diagnostics,
         )
@@ -652,7 +790,7 @@ mod tests {
             document,
             None,
             meta,
-            &crate::lmd::dialects(),
+            &pampa::lua::LuaOptions::with_dialects(crate::lmd::dialects()),
         )
         .expect("lmd runtime")
     }
@@ -685,6 +823,7 @@ mod tests {
         pollster::block_on(execute_lmd_cells(
             &mut blocks,
             &runtime_at(&ast.meta, document),
+            &ast.meta,
             &sources,
             &mut diagnostics,
         ));
@@ -825,6 +964,77 @@ mod tests {
             diags[0].title.contains("cards.lmd") && diags[0].title.contains("cards.lua"),
             "{diags:?}"
         );
+    }
+
+    // ---- autoload: `lmd: modules:` (bd-76ogq4ew, phase 3) ----
+
+    #[test]
+    fn autoloaded_modules_are_globals_before_the_first_cell() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_module(tmp.path(), "components/cards.lmd", CARDS_LMD);
+        let (blocks, diags, _) = render_at(
+            "---\nlmd:\n  modules:\n    - components/cards\n    - ui: components/cards\n---\n\n```{lmd}\nreturn { cards.card(\"A\", {=[ one ]=}), ui.card(\"B\", {=[ two ]=}) }\n```\n",
+            &tmp.path().join("doc.qmd"),
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+        assert_eq!(blocks.len(), 2, "{blocks:?}");
+        assert!(
+            blocks.iter().all(|b| matches!(b, Block::Div(_))),
+            "{blocks:?}"
+        );
+    }
+
+    #[test]
+    fn a_failing_autoload_entry_is_q_26_9_and_leaves_every_cell_as_written() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (blocks, diags, sources) = render_at(
+            "---\nlmd:\n  modules:\n    - components/nowhere\n---\n\n```{lmd}\nreturn nowhere.thing()\n```\n\nInline `{lmd} nowhere.x` too.\n",
+            &tmp.path().join("doc.qmd"),
+        );
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert_eq!(diags[0].code.as_deref(), Some("Q-26-9"), "{diags:?}");
+        assert_eq!(located_text(&diags[0], &sources), "components/nowhere");
+        assert!(
+            problem_text(&diags[0]).contains("components/nowhere"),
+            "{diags:?}"
+        );
+        // Both cells are displayed, not run: no Q-26-4 for the missing global.
+        let cell = match &blocks[0] {
+            Block::CodeBlock(cb) => cb,
+            other => panic!("expected the displayed cell, got {other:?}"),
+        };
+        assert_eq!(cell.attr.1, vec!["lmd".to_string()]);
+        assert!(cell.attr.2.get(LMD_PENDING_ATTR).is_none());
+        let Block::Paragraph(p) = &blocks[1] else {
+            panic!("{blocks:?}")
+        };
+        assert!(
+            p.content
+                .iter()
+                .any(|i| matches!(i, Inline::Code(c) if c.attr.1 == vec!["lmd".to_string()])),
+            "{:?}",
+            p.content
+        );
+    }
+
+    #[test]
+    fn a_malformed_autoload_entry_is_reported_and_the_others_still_load() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_module(tmp.path(), "components/cards.lmd", CARDS_LMD);
+        let (blocks, diags, _) = render_at(
+            "---\nlmd:\n  modules:\n    - components/cards\n    - my-module\n    - [1, 2]\n---\n\n```{lmd}\nreturn cards.card(\"A\", {=[ one ]=})\n```\n",
+            &tmp.path().join("doc.qmd"),
+        );
+        assert_eq!(diags.len(), 2, "{diags:?}");
+        assert!(
+            diags.iter().all(|d| d.code.as_deref() == Some("Q-26-9")),
+            "{diags:?}"
+        );
+        assert!(
+            problem_text(&diags[0]).contains("not a Lua name"),
+            "{diags:?}"
+        );
+        assert!(matches!(blocks[0], Block::Div(_)), "{blocks:?}");
     }
 
     // ---- fragment gaps (bd-76ogq4ew, phase 2) ----

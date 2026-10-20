@@ -1,0 +1,9 @@
+project:
+  type: website
+  output-dir: _site
+website:
+  title: "lmd project"
+lmd:
+  modules:
+    - components/cards
+    - badges

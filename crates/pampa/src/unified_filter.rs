@@ -251,7 +251,7 @@ pub async fn apply_filter(
         runtime,
         attribution,
         base_dir,
-        &[],
+        &crate::lua_options::LuaOptions::default(),
     )
     .await
 }
@@ -267,10 +267,10 @@ pub async fn apply_filter_with(
     runtime: Arc<dyn SystemRuntime>,
     attribution: Option<Arc<dyn AttributionLookup>>,
     base_dir: &Path,
-    dialects: &[Arc<dyn crate::dialect::SourceDialect>],
+    options: &crate::lua_options::LuaOptions,
 ) -> Result<FilterOutput, FilterError> {
     #[cfg(not(feature = "lua-filter"))]
-    let _ = dialects;
+    let _ = options;
     match filter {
         FilterSpec::Citeproc => {
             let (new_pandoc, new_context, diagnostics, citation_manifest) =
@@ -304,7 +304,7 @@ pub async fn apply_filter_with(
                 target_format,
                 runtime,
                 attribution,
-                dialects,
+                options,
             )
             .await?;
             Ok(FilterOutput {
@@ -377,7 +377,7 @@ pub async fn apply_filters(
         runtime,
         attribution,
         base_dir,
-        &[],
+        &crate::lua_options::LuaOptions::default(),
     )
     .await
 }
@@ -393,7 +393,7 @@ pub async fn apply_filters_with(
     runtime: Arc<dyn SystemRuntime>,
     attribution: Option<Arc<dyn AttributionLookup>>,
     base_dir: &Path,
-    dialects: &[Arc<dyn crate::dialect::SourceDialect>],
+    options: &crate::lua_options::LuaOptions,
 ) -> Result<FilterOutput, FilterError> {
     let mut current_pandoc = pandoc;
     let mut current_context = context;
@@ -415,7 +415,7 @@ pub async fn apply_filters_with(
             runtime.clone(),
             attribution.clone(),
             base_dir,
-            dialects,
+            options,
         )
         .await?;
         current_pandoc = output.pandoc;

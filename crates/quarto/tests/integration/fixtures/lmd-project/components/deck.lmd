@@ -1,0 +1,11 @@
+-- Requires its neighbour beside it, then builds on it.
+local cards = require("cards")
+local M = {}
+
+function M.deck(titles)
+  return pandoc.List(titles):map(function(t)
+    return cards.card(t, {=[ in the deck ]=})
+  end)
+end
+
+return M

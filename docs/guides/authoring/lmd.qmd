@@ -481,6 +481,108 @@ A few things to know about modules:
 Plain Lua filters and shortcode handlers can `require` an `.lmd` module
 too; the loader is the same one.
 
+### Across a project
+
+Beside the requiring file and beside the document, `require` knows two
+more places:
+
+- **The project root**, with a leading slash: `require("/components/cards")`
+  finds `components/cards.lmd` at the root of the project however deep the
+  document sits (the same convention `components.src` uses). For a
+  single-file render the root is the document's directory. A path that
+  exists as an absolute path is still read as itself, so a Quarto 1 filter's
+  `require(quarto.utils.resolve_path(…))` keeps working.
+- **An extension, by its name**: `require("badges/pill")` finds
+  `_extensions/badges/pill.lmd`, and a bare `require("badges")` is that
+  extension's `init.lmd`. A local `badges/` directory beside the document
+  wins over an extension of the same name. An extension that exists only to
+  ship modules declares `contributes: modules: true` in its
+  `_extension.yml`.
+
+A module every page needs can be bound once, for the whole project or one
+document, so no cell has to `require` it. `lmd: modules:` lists modules to
+load before the first cell; each is bound to a global named after its last
+path segment, or after the key when the entry is a one-key map:
+
+```yaml
+lmd:
+  modules:
+    - components/cards        # cards.card(…) in every cell
+    - badges                  # the extension, as `badges`
+    - ui: components/widgets  # a chosen name
+```
+
+The modules load through the same `require`, so project-root and
+extension names work here too. A module that fails to load is reported once
+at its entry ([`Q-26-9`](../../errors/lmd/Q-26-9.qmd)) and the page's cells
+are left as written, instead of each failing on the missing name.
+
+Where `require` returns a module *value*, cached once per document,
+`quarto.include(file, params)` is a *call*: it evaluates a file every time
+and returns its blocks. An `.lmd` partial receives `params` as its vararg,
+and a `.qmd` or `.md` partial is read as markdown:
+
+````markdown
+```{lmd}
+-- partials/callout.lmd starts with `local p = ...`
+return quarto.include("partials/callout.lmd", { kind = "tip", body = {=[ Read this. ]=} })
+```
+
+```{lmd}
+return quarto.include("/partials/footer.md")
+```
+````
+
+The path is relative to the file that calls `quarto.include` (a module's
+function includes beside its module), or to the project root with a leading
+slash. Every file an lmd cell reaches, through `require` or
+`quarto.include`, is read through Quarto's own file layer, so the same
+modules load in the Quarto Hub preview, and a sandboxed render can limit
+what a document may read.
+
+@demo-project shows the four together in a small project:
+
+::::: {#demo-project .embed-example-iframe file="/examples/lmd/10-project/index.html"}
+````markdown
+---
+title: Modules across a project
+---
+
+Autoloaded from `_quarto.yml`:
+
+```{lmd}
+return cards.card("From the project", {=[ a module at the project root ]=})
+```
+
+An extension's module, autoloaded by the extension's name:
+
+```{lmd}
+return pandoc.Para({ badges.badge("new") })
+```
+
+An explicit project-root `require`, whose module requires its neighbour:
+
+```{lmd}
+local deck = require("/components/deck")
+return deck.deck({ "one", "two" })
+```
+
+A parameterised include:
+
+```{lmd}
+return quarto.include("partials/callout.lmd", { kind = "tip", body = {=[ from a *partial* ]=} })
+```
+
+A markdown partial from the project root:
+
+```{lmd}
+return quarto.include("/partials/footer.md")
+```
+````
+
+A project with `lmd: modules: [components/cards, badges]` in `_quarto.yml`, a `components/` directory at the root, a `badges` extension that ships an `init.lmd`, and two partials. [View source](https://github.com/quarto-dev/q2/tree/main/examples/lmd/10-project)
+:::::
+
 ## Conditional content
 
 A cell that returns `nil` vanishes, so an `if` around the `return` is all it
@@ -657,8 +759,10 @@ run, and are unique across the document. An explicit `{#id}` is kept.
 **What a cell can use.** The `pandoc` and `quarto` tables a Lua filter gets
 (constructors, `pandoc.utils`, `quarto.doc.is_format`, `quarto.utils`),
 `meta` and `quarto.metadata.get`, `quarto.markdown` for markdown held in a
-string, `FORMAT`, and `require` for a `.lua` or `.lmd` module next to the
-document (see [Reusable modules](#reusable-modules)).
+string, `FORMAT`, `require` for a `.lua` or `.lmd` module (beside the
+document, at the project root with `/`, or in an extension by name) and
+`quarto.include` for a partial (see [Reusable modules](#reusable-modules)
+and [Across a project](#across-a-project)).
 
 **Footnotes.** A note defined inside a fragment is paired with the
 fragment's references; a reference to a note defined in the document body
@@ -674,10 +778,6 @@ the page.
   title) are not evaluated.
 - **`pandoc.OrderedList`** needs explicit `pandoc.ListAttributes` for output
   formats other than HTML.
-- **Modules resolve next to the document.** `require` looks beside the
-  requiring file and beside the document; a project-wide module directory,
-  modules shipped by an extension, and a project-level autoload are not
-  there yet.
 
 ## Where this leads
 

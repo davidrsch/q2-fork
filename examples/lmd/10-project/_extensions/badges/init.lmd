@@ -1,0 +1,9 @@
+-- An extension's module: `require("badges")` resolves here by the
+-- extension's name, and _quarto.yml autoloads it as `badges`.
+local M = {}
+
+function M.badge(text)
+  return {=[ [`{lmd} text`]{.badge} ]=}
+end
+
+return M

@@ -43,3 +43,4 @@ projects:
   - lmd/07-walk
   - lmd/08-echo
   - lmd/09-modules
+  - lmd/10-project

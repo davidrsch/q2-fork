@@ -1,0 +1,55 @@
+---
+title: "lmd autoload failed"
+description: "A module listed under `lmd: modules:` could not be loaded before the document's first cell, or the entry is malformed. The document's lmd cells are left as written."
+code: Q-26-9
+subsystem: lmd
+status: stub
+since: "99.9.9"
+categories:
+  - lmd
+---
+
+# `Q-26-9` — lmd autoload failed
+
+> A module listed under `lmd: modules:` (in `_quarto.yml` or the front matter) could not be loaded before the document's first cell, or the entry is not a module name or a one-key `global: module` map. The document's lmd cells are left as written.
+
+## What this means
+
+`lmd: modules:` names modules to `require` before a document's first lmd
+cell runs, each bound to a global so every cell can use it without its
+own `require`:
+
+```yaml
+lmd:
+  modules:
+    - components/cards        # binds `cards`
+    - ui: components/widgets  # binds `ui`
+```
+
+One of the entries failed. The error is located on the entry, and
+because the cells of the page were written against the modules the
+entry promised, none of them runs: each is left displayed as code, the
+way a cell with an error is. A broken prelude fails the page once, not
+once per cell.
+
+## Why this happens
+
+- The module was not found where `require` looks: next to the
+  document, at the project root with a leading `/`, or in an extension
+  addressed by its name (`cards/deck` for `_extensions/cards/deck.lmd`).
+- The module did not compile ([`Q-26-8`](Q-26-8.qmd)) or raised while
+  loading; the message names the module file and line.
+- The entry is neither a string nor a one-key map, or the global it
+  would bind is not a Lua name (`my-module`; write `mine: my-module`).
+
+## How to fix
+
+Fix the entry or the module it names. A string entry binds the last
+segment of the module name (`components/cards` binds `cards`); when that
+is not a valid or convenient name, use the map form to choose one.
+
+## Related errors
+
+- [`Q-26-8`](Q-26-8.qmd): the module compiled badly.
+- [`Q-26-4`](Q-26-4.qmd): a cell failed at run time; with autoload
+  working, a cell that uses an unbound name reports this instead.

@@ -4570,6 +4570,7 @@ dependencies = [
  "dunce",
  "grass",
  "js-sys",
+ "quarto-util",
  "reqwest",
  "serde",
  "serde_json",

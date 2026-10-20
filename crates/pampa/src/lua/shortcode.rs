@@ -87,15 +87,20 @@ impl LuaShortcodeEngine {
         target_format: &str,
         runtime: Arc<dyn SystemRuntime>,
     ) -> std::result::Result<Self, LuaShortcodeError> {
-        Self::new_with(target_format, runtime, &[])
+        Self::new_with(
+            target_format,
+            runtime,
+            &crate::lua_options::LuaOptions::default(),
+        )
     }
 
-    /// [`new`](Self::new) with source dialects registered, so handler
-    /// scripts can `require` modules written in them (bd-76ogq4ew).
+    /// [`new`](Self::new) with the host's [`LuaOptions`]: source dialects
+    /// registered, so handler scripts can `require` modules written in
+    /// them, and module roots for `require` to search (bd-76ogq4ew).
     pub fn new_with(
         target_format: &str,
         runtime: Arc<dyn SystemRuntime>,
-        dialects: &[Arc<dyn crate::dialect::SourceDialect>],
+        options: &crate::lua_options::LuaOptions,
     ) -> std::result::Result<Self, LuaShortcodeError> {
         #[cfg(target_arch = "wasm32")]
         let lua = {
@@ -126,7 +131,10 @@ impl LuaShortcodeEngine {
         // modules (Q1 parity).
         super::quarto_api::register_scoped_require(&lua, runtime.clone())
             .map_err(LuaShortcodeError::LuaError)?;
-        for dialect in dialects {
+        super::quarto_api::set_module_roots(&lua, options.module_roots.clone());
+        super::quarto_api::register_quarto_include(&lua, runtime.clone())
+            .map_err(LuaShortcodeError::LuaError)?;
+        for dialect in &options.dialects {
             super::dialect::register_source_dialect(&lua, dialect.clone())
                 .map_err(LuaShortcodeError::LuaError)?;
         }

@@ -19,6 +19,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use pampa::dialect::{DialectError, SourceDialect};
+use pampa::lua_options::{ExtensionRoot, LuaOptions, ModuleRoots};
 
 use super::desugar::{DesugarOptions, EmitMode, LmdError, desugar_lua_with};
 
@@ -59,6 +60,30 @@ impl SourceDialect for LmdDialect {
 /// The dialects q2 registers on every Lua state it builds: lmd.
 pub fn dialects() -> Vec<Arc<dyn SourceDialect>> {
     vec![Arc::new(LmdDialect)]
+}
+
+/// The [`LuaOptions`] a document's Lua environments get: the lmd dialect,
+/// and the module roots the project provides (bd-76ogq4ew, phase 3). The
+/// project root serves `require("/components/cards")`; every discovered
+/// extension is addressable by name, `require("<name>/module")`, built-ins
+/// first so a user extension of the same name wins (the discovery order).
+/// For a single-file render the "project root" is the document's
+/// directory, which `ProjectContext::dir` already is.
+pub fn lua_options(project: &crate::project::ProjectContext) -> LuaOptions {
+    LuaOptions {
+        dialects: dialects(),
+        module_roots: ModuleRoots {
+            project: Some(project.dir.clone()),
+            extensions: project
+                .extensions
+                .iter()
+                .map(|ext| ExtensionRoot {
+                    name: ext.id.name.clone(),
+                    dir: ext.path.clone(),
+                })
+                .collect(),
+        },
+    }
 }
 
 #[cfg(test)]
@@ -142,7 +167,7 @@ mod tests {
             runtime,
             None,
             tmp.path(),
-            &dialects(),
+            &LuaOptions::with_dialects(dialects()),
         ))
         .expect("filter runs");
         assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
@@ -169,7 +194,9 @@ mod tests {
         );
         let runtime: Arc<dyn quarto_system_runtime::SystemRuntime> =
             Arc::new(quarto_system_runtime::NativeRuntime::new());
-        let mut engine = LuaShortcodeEngine::new_with("html", runtime, &dialects()).unwrap();
+        let mut engine =
+            LuaShortcodeEngine::new_with("html", runtime, &LuaOptions::with_dialects(dialects()))
+                .unwrap();
         pollster::block_on(engine.load_script(&tmp.path().join("cards-shortcode.lua"))).unwrap();
         let args = ShortcodeArgs {
             positional: vec!["Title".to_string(), "body".to_string()],

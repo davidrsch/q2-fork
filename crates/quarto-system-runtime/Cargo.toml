@@ -27,6 +27,9 @@ async-lock.workspace = true
 serde_json.workspace = true
 # Serde derive for fetch_url response deserialization
 serde.workspace = true
+# Lexical path normalization for the sandbox policy (`..` must not escape
+# an allow-listed directory).
+quarto-util.workspace = true
 
 # Native-only dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

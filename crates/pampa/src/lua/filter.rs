@@ -136,7 +136,13 @@ pub fn create_filter_environment(
     script_path: &Path,
     attribution: Option<Arc<dyn crate::attribution::AttributionLookup>>,
 ) -> FilterResult<Lua> {
-    create_filter_environment_with(runtime, target_format, script_path, attribution, &[])
+    create_filter_environment_with(
+        runtime,
+        target_format,
+        script_path,
+        attribution,
+        &crate::lua_options::LuaOptions::default(),
+    )
 }
 
 /// [`create_filter_environment`] with source dialects registered on the
@@ -147,7 +153,7 @@ pub fn create_filter_environment_with(
     target_format: &str,
     script_path: &Path,
     attribution: Option<Arc<dyn crate::attribution::AttributionLookup>>,
-    dialects: &[Arc<dyn crate::dialect::SourceDialect>],
+    options: &crate::lua_options::LuaOptions,
 ) -> FilterResult<Lua> {
     // Create Lua state
     // On WASM, we can't load all libraries (no package/io/os/debug support),
@@ -181,7 +187,9 @@ pub fn create_filter_environment_with(
     // On native the stock `require` remains the fallback for anything not
     // found relative to the script dirs.
     super::quarto_api::register_scoped_require(&lua, runtime.clone())?;
-    for dialect in dialects {
+    super::quarto_api::set_module_roots(&lua, options.module_roots.clone());
+    super::quarto_api::register_quarto_include(&lua, runtime.clone())?;
+    for dialect in &options.dialects {
         super::dialect::register_source_dialect(&lua, dialect.clone())?;
     }
 
@@ -265,7 +273,7 @@ pub async fn apply_lua_filter(
         target_format,
         runtime,
         attribution,
-        &[],
+        &crate::lua_options::LuaOptions::default(),
     )
     .await
 }
@@ -279,7 +287,7 @@ pub async fn apply_lua_filter_with(
     target_format: &str,
     runtime: Arc<dyn SystemRuntime>,
     attribution: Option<Arc<dyn crate::attribution::AttributionLookup>>,
-    dialects: &[Arc<dyn crate::dialect::SourceDialect>],
+    options: &crate::lua_options::LuaOptions,
 ) -> FilterResult<FilterOutput> {
     // Read filter file via runtime (supports VFS on WASM)
     let filter_bytes = runtime.file_read(filter_path).map_err(|e| {
@@ -293,7 +301,7 @@ pub async fn apply_lua_filter_with(
     })?;
 
     let lua =
-        create_filter_environment_with(runtime, target_format, filter_path, attribution, dialects)?;
+        create_filter_environment_with(runtime, target_format, filter_path, attribution, options)?;
     // quarto.metadata.get / `meta`: a snapshot of the document's metadata
     // as this filter starts (Q1 parity, quarto-cli PR 13246).
     super::metadata::register_quarto_metadata(&lua, &pandoc.meta)?;
@@ -381,7 +389,7 @@ pub async fn apply_lua_filters(
         target_format,
         runtime,
         attribution,
-        &[],
+        &crate::lua_options::LuaOptions::default(),
     )
     .await
 }
@@ -395,7 +403,7 @@ pub async fn apply_lua_filters_with(
     target_format: &str,
     runtime: Arc<dyn SystemRuntime>,
     attribution: Option<Arc<dyn crate::attribution::AttributionLookup>>,
-    dialects: &[Arc<dyn crate::dialect::SourceDialect>],
+    options: &crate::lua_options::LuaOptions,
 ) -> FilterResult<FilterOutput> {
     let mut current_pandoc = pandoc;
     let mut current_context = context;
@@ -412,7 +420,7 @@ pub async fn apply_lua_filters_with(
             target_format,
             runtime.clone(),
             attribution.clone(),
-            dialects,
+            options,
         )
         .await?;
         current_pandoc = output.pandoc;
