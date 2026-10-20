@@ -106,6 +106,54 @@ describe('mountPdfViewer', () => {
     container.remove();
   });
 
+  it('titles only the live frame: a frame still loading is hidden from assistive tech and from title lookups', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const viewer = mountPdfViewer(container, '/');
+    const frames = () => [...container.querySelectorAll('iframe')];
+    const live = () => [...container.querySelectorAll('iframe[title="PDF preview"]')];
+    const isHidden = (f: HTMLIFrameElement) => f.getAttribute('aria-hidden') === 'true' && f.inert;
+
+    const first = viewer.show(new Uint8Array([1]), { key: 'e', fileName: 'e.pdf' });
+    const [f1] = frames();
+    // The first document has drawn nothing yet: there is no PDF preview to name.
+    expect(live()).toEqual([]);
+    expect(isHidden(f1)).toBe(true);
+    const app1 = fakeViewerApp();
+    await boot(f1, app1);
+    app1.emit('pagesloaded');
+    app1.isInitialViewSet = true;
+    app1.renderingState = FINISHED;
+    app1.emit('pagerendered');
+    await first;
+    expect(live()).toEqual([f1]);
+    expect(f1.hasAttribute('aria-hidden')).toBe(false);
+    expect(f1.inert).toBe(false);
+
+    // During a recompile both frames are in the DOM (the new one painting underneath), but only one is the PDF preview.
+    const second = viewer.show(new Uint8Array([2]), { key: 'e', fileName: 'e.pdf' });
+    const f2 = frames()[1];
+    expect(frames()).toEqual([f1, f2]);
+    expect(live()).toEqual([f1]);
+    expect(isHidden(f2)).toBe(true);
+    // Hidden from assistive tech only: pdf.js must still lay out and paint it, or it never becomes ready.
+    expect(f2.style.display).not.toBe('none');
+    expect(f2.style.visibility).not.toBe('hidden');
+    const app2 = fakeViewerApp();
+    await boot(f2, app2);
+    app2.emit('pagesloaded');
+    app2.isInitialViewSet = true;
+    app2.renderingState = FINISHED;
+    app2.emit('pagerendered');
+    await second;
+    expect(live()).toEqual([f2]);
+    expect(f2.hasAttribute('aria-hidden')).toBe(false);
+    expect(f2.inert).toBe(false);
+
+    viewer.dispose();
+    container.remove();
+  });
+
   it('promotes on documentinit when the page drawn before it survives the initial view (no saved view to apply)', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

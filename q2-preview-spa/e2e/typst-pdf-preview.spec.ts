@@ -48,7 +48,13 @@ async function start(fixtureFiles: FixtureFile[]): Promise<PreviewServerHandle> 
   return server;
 }
 
+/**
+ * The live viewer. A recompile loads into a second iframe under it (`@quarto/pdf-viewer`); only the live one
+ * carries the title, so this stays a single match through the swap (bd-e4q7juv0).
+ */
 const pdfFrame = (page: Page): FrameLocator => page.frameLocator('iframe[title="PDF preview"]');
+/** Every viewer iframe, live or still loading. */
+const viewerFrames = (page: Page) => page.locator('iframe[src*="pdfjs/web/viewer.html"]');
 const textLayer = (page: Page) => pdfFrame(page).locator('.textLayer');
 
 /** All pages' text via pdf.js, for documents whose interesting page is not the first (text layers exist only for visible pages). */
@@ -81,6 +87,26 @@ test('an edit recompiles the PDF', async ({ page }) => {
   await expect(textLayer(page)).toContainText('Alpha heading', { timeout: 60_000 });
   await writeFile(path.join(s.projectDir, 'index.qmd'), doc('Beta heading'));
   await expect(textLayer(page)).toContainText('Beta heading', { timeout: 60_000 });
+});
+
+test('the text layer reads the live PDF while a recompile loads underneath it', async ({ page }) => {
+  const s = await start([{ path: 'index.qmd', content: doc('Alpha heading') }]);
+  // Hold the second viewer's script, so the recompile's frame stays loading under the live one until released.
+  let viewerLoads = 0;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(/\/pdfjs\/web\/viewer\.mjs(\?|$)/, async (route) => {
+    if (++viewerLoads === 2) await held;
+    await route.continue();
+  });
+  await page.goto(s.url);
+  await expect(textLayer(page)).toContainText('Alpha heading', { timeout: 60_000 });
+  await writeFile(path.join(s.projectDir, 'index.qmd'), doc('Beta heading'));
+  await expect(viewerFrames(page)).toHaveCount(2, { timeout: 60_000 });
+  await expect(textLayer(page)).toContainText('Alpha heading');
+  release();
+  await expect(textLayer(page)).toContainText('Beta heading', { timeout: 60_000 });
+  await expect(viewerFrames(page)).toHaveCount(1);
 });
 
 test('a broken edit shows the banner and keeps the last PDF', async ({ page }) => {

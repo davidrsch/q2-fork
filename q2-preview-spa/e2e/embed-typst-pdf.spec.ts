@@ -59,9 +59,12 @@ async function startEditor(files: { path: string; content: string }[]): Promise<
 
 const pdfFrame = (page: Page) => page.locator('[data-testid="pdf-preview-pane"] iframe[title="PDF preview"]');
 
-/** The viewer's own page text (pdf.js text layer), once it has drawn. */
+/**
+ * The live viewer's page text (pdf.js text layer), once it has drawn. Only the live frame carries the title, so
+ * the frame locator is a single match even while a recompile loads underneath (bd-e4q7juv0).
+ */
 async function pdfText(page: Page): Promise<string> {
-  const frame = page.frameLocator('[data-testid="pdf-preview-pane"] iframe[title="PDF preview"]').first();
+  const frame = page.frameLocator('[data-testid="pdf-preview-pane"] iframe[title="PDF preview"]');
   await frame.locator('.textLayer span').first().waitFor({ timeout: 60_000 });
   return (await frame.locator('.textLayer').first().innerText()) ?? '';
 }

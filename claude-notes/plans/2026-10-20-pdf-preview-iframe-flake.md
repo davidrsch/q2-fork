@@ -2,13 +2,27 @@
 title: 'q2-preview-spa e2e: ''an edit recompiles the PDF'' flakes on two PDF preview iframes (bd-e4q7juv0)'
 date: 2026-10-20
 description: 'The typst PDF preview e2e locator matches both iframes of the viewer''s by-design recompile swap; scope it to the live frame (test-side, or by marking the live frame in @quarto/pdf-viewer).'
-status: draft  # Investigation — pending design alignment with user; do not implement before the go-ahead
+status: in-progress
 braid:
   strand: bd-e4q7juv0
 ---
 
 **Branch:** `braid/bd-e4q7juv0-pdf-preview-iframe-flake` (topic branch in the main checkout, based on `main` @ `9758c3a2e`)
-**Do not start implementation until the user gives the go-ahead.**
+**Go-ahead given 2026-10-20.** Decisions below.
+
+## Decisions (2026-10-20)
+
+- **D1: option B.** The viewer marks the live frame. Carlos asked whether the two frames are ever
+  visible together (flash avoidance). They are not: both are *rendered*, the pending one stacked
+  underneath the opaque live one, and the swap is a single paint. B only changes accessibility
+  attributes and cannot affect painting. The constraint to carry forward: the pending frame must
+  never be hidden with CSS (`display:none`/`visibility:hidden`), or pdf.js never paints it and every
+  recompile hits the watchdog.
+- **D2: drop the title.** A frame gets `title="PDF preview"` only on promotion. Until then it has no
+  title, plus `aria-hidden="true"` and `inert`. This applies to the very first frame as well: a frame
+  that has not drawn a document is not "the PDF preview".
+- **D3: include the embed spec.** `embed-typst-pdf.spec.ts` drops `.first()` and relies on the same
+  single-match selector.
 
 ## Triage verdict
 
@@ -111,3 +125,25 @@ Options for Phase 1:
 - The Phase 0 repro depends on being able to slow one of two identical viewer loads through `page.route`.
   If that turns out to be fiddly, settle for a unit-level assertion on the viewer (B) and rely on the
   e2e as-is.
+
+## Work log
+
+- [x] **Phase 0.** Unit test `titles only the live frame…` in `hub-client/src/pandoc/pdfViewer.test.ts`
+  failed before the change (the first frame was titled before it drew). E2E repro
+  `the text layer reads the live PDF while a recompile loads underneath it` holds the second viewer's
+  `viewer.mjs` with `page.route`, keeping the swap window open. Against a build with the old viewer, it
+  and the existing `an edit recompiles the PDF` both failed locally with the CI error,
+  `strict mode violation: locator('iframe[title="PDF preview"]') resolved to 2 elements`.
+- [x] **Phase 1.** `pdfViewer.ts`: new frames start untitled, `aria-hidden` and `inert`; promotion sets
+  `title = VIEWER_TITLE` and clears both. The header comment records the never-hide-with-CSS rule.
+- [x] **Phase 2.** `embed-typst-pdf.spec.ts` drops `.first()`.
+- [x] Verified with a fixed build: `typst-pdf-preview.spec.ts` (chromium + firefox) and
+  `embed-typst-pdf.spec.ts` (embed), 20/20 passed. pdfViewer and PdfPane unit tests, and the hub-client
+  and q2-preview-spa typechecks, are clean.
+- [ ] hub-client changelog entry (needs the fix commit's hash).
+
+Local environment notes (not code issues): the earlier pre-flight failure of
+`editor_ui_serves_pdfjs_from_the_viewer_bundle` and the "no live preview" e2e overlay both came from stale
+local front-end artifacts: `q2-preview-spa/dist`, `hub-client/dist-preview-embed`, the WASM `pkg/`, and a
+`node_modules` missing the `@quarto/pdf-viewer` workspace link. `npm install`, `npm run build:wasm` and the
+two front-end builds fixed them.
