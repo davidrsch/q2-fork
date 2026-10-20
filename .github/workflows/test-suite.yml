@@ -197,6 +197,17 @@ jobs:
         env:
           RUSTFLAGS: "-D warnings"
 
+      # The wasm crates build pampa with `default-features = false` outside
+      # the workspace, so neither Clippy nor the tests compile their feature
+      # sets. This checks pampa natively under every such set (derived from
+      # the consumers' manifests), so a feature-gating mistake fails here
+      # instead of in the nightly/release wasm build (bd-yt3x1gwk).
+      - name: Check pampa consumer feature sets
+        shell: bash
+        run: cargo xtask check-feature-sets --profile ci
+        env:
+          RUSTFLAGS: "-D warnings"
+
       - name: Test block tree-sitter grammar
         shell: bash
         run: |
@@ -275,15 +286,18 @@ jobs:
       # every `cargo run --bin q2` rebuild quarto-preview + quarto, which
       # made `build-agents-docs` pay ~16s per example project (GH #870,
       # bd-7xlph6ki). Runs after the claude-notes render so target/ci/q2 is
-      # already built; the xtask is already built by "Run custom lints".
-      # `cargo xtask verify` runs the same check after its Rust build.
+      # already built. `cargo xtask verify` runs the same check after its
+      # Rust build.
       - name: Check no-op rebuild of q2
         if: runner.os == 'Linux' && !cancelled()
         shell: bash
-        # `--rustflags` must match the steps above (see the claude-notes
-        # render step). It is an argument, not env, so the xtask built by
-        # "Run custom lints" (no RUSTFLAGS) is reused rather than rebuilt.
-        run: cargo xtask check-noop-rebuild --profile ci --rustflags "-D warnings"
+        run: cargo xtask check-noop-rebuild --profile ci
+        env:
+          # Must match the steps above: it is inherited by the q2 builds
+          # (see the claude-notes render step), and it also matches the
+          # "Check pampa consumer feature sets" step, so the xtask that
+          # step built is reused rather than rebuilt.
+          RUSTFLAGS: "-D warnings"
 
   wasm-tests:
     name: WASM Tests

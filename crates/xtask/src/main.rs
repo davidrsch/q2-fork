@@ -9,6 +9,7 @@
 //! - `dev-setup`: Install required development tools (cargo-nextest, wasm-bindgen-cli)
 //! - `lint`: Run custom lint checks on the codebase
 //! - `create-worktree`: Create git worktree with CLAUDE.local.md context stub
+//! - `check-feature-sets`: `cargo check` pampa under every no-default feature set its consumers use
 //! - `braid-snapshot`: Write a backup-only `braid export` to `.braid/snapshot.jsonl`
 //! - `pandoc-check`: Check local pandoc against the pampa oracle tests
 //! - `render-corpus-diff`: Dev-only byte-identity corpus capture/diff harness
@@ -39,6 +40,7 @@ mod build_ts_bundle;
 mod capture_import_recordings;
 mod capture_pandoc_goldens;
 mod capture_pandoc_recordings;
+mod check_feature_sets;
 mod check_noop_rebuild;
 mod create_worktree;
 mod dev_setup;
@@ -117,6 +119,20 @@ enum Command {
     CreateWorktree {
         #[command(flatten)]
         args: create_worktree::Args,
+    },
+
+    /// Check pampa under every feature set a consumer builds it with after
+    /// turning its defaults off.
+    ///
+    /// The sets are derived from the consumers' manifests (via `cargo
+    /// metadata --no-deps`), so the out-of-workspace wasm crates' sets are
+    /// compiled natively on every PR instead of first in the nightly/release
+    /// wasm build (bd-yt3x1gwk). Also runs as part of `cargo xtask verify`.
+    CheckFeatureSets {
+        /// Cargo profile for the checks (CI passes `ci`, Clippy's profile,
+        /// to reuse its artifacts).
+        #[arg(long)]
+        profile: Option<String>,
     },
 
     /// Write a backup-only `braid export` snapshot to `.braid/snapshot.jsonl`.
@@ -201,7 +217,8 @@ enum Command {
     ///    (fails early; override with Q2_ALLOW_NODE_MISMATCH=1 for experiments)
     /// 1. Run custom lint checks (cargo xtask lint), hub-client lint:css, clippy
     /// 2. Check Rust formatting (cargo fmt --check)
-    /// 3. Build all Rust crates (cargo build --workspace, with -D warnings)
+    /// 3. Build all Rust crates (cargo build --workspace, with -D warnings),
+    ///    then check pampa's consumer feature sets
     /// 4. Test tree-sitter grammars (tree-sitter test)
     /// 5. Run all Rust tests (cargo nextest run --workspace, with -D warnings)
     /// 6. Build ts-packages workspaces + quarto-hub-mcp smoke check
@@ -268,6 +285,12 @@ enum Command {
         /// by --skip-rust-build.
         #[arg(long)]
         skip_claude_notes_render: bool,
+
+        /// Skip the check of pampa under its consumers' no-default feature
+        /// sets (cargo xtask check-feature-sets) that runs right after the
+        /// Rust build. Also skipped by --skip-rust-build.
+        #[arg(long)]
+        skip_feature_sets: bool,
 
         /// Include hub-client e2e tests (slower, requires browser).
         #[arg(long)]
@@ -544,6 +567,7 @@ fn main() -> Result<()> {
         }
         Command::CreateWorktree { args } => create_worktree::run(args),
         Command::BraidSnapshot {} => braid_snapshot::run(),
+        Command::CheckFeatureSets { profile } => check_feature_sets::run(profile.as_deref()),
         Command::SwitchTask {
             beads_id,
             from,
@@ -590,6 +614,7 @@ fn main() -> Result<()> {
             skip_hub_mcp_tests,
             skip_css_lint,
             skip_claude_notes_render,
+            skip_feature_sets,
             e2e,
             no_deny_warnings,
         } => {
@@ -608,6 +633,7 @@ fn main() -> Result<()> {
                 skip_hub_mcp_tests,
                 skip_css_lint,
                 skip_claude_notes_render,
+                skip_feature_sets,
                 include_e2e: e2e,
                 no_deny_warnings,
             };

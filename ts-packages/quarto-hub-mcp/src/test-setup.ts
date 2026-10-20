@@ -6,7 +6,9 @@
  *
  * When the global setup could not build the parser (toolchain-less CI
  * legs), it leaves a marker file instead: parser-tier test files gate on
- * PARSER_UNAVAILABLE and skip, like the network-gated live tests.
+ * PARSER_UNAVAILABLE and skip, like the network-gated live tests. Under
+ * QUARTO_QMD_PARSER_REQUIRED=1 (CI's parser-tier step) a failed build
+ * aborts the run instead, so no marker is written.
  */
 
 import { existsSync } from 'node:fs';

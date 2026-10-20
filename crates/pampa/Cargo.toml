@@ -28,6 +28,8 @@ required-features = ["terminal-support"]
 cargo-fuzz = true
 
 [features]
+# Consumers that disable defaults (the wasm crates) are checked under their
+# exact feature sets by `cargo xtask check-feature-sets` (bd-yt3x1gwk).
 default = ["terminal-support", "json-filter", "lua-filter", "template-fs"]
 terminal-support = ["dep:crossterm", "dep:supports-hyperlinks"]
 terminal-hyperlinks = ["dep:supports-hyperlinks"]

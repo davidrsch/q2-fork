@@ -63,8 +63,13 @@ fn git_short_hash() -> Option<String> {
 }
 
 fn git_is_dirty() -> Option<bool> {
+    // `--no-optional-locks`: a plain `git status` opportunistically rewrites
+    // `.git/index` when cached stat info is stale (after a checkout, merge,
+    // or CI's mtime restore). That index is a watched input of this very
+    // script, so the write made the *next* build rerun it and recompile
+    // quarto-core and everything above it (bd-7xlph6ki).
     let output = Command::new("git")
-        .args(["status", "--porcelain"])
+        .args(["--no-optional-locks", "status", "--porcelain"])
         .output()
         .ok()?;
     if !output.status.success() {

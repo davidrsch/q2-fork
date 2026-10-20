@@ -219,3 +219,20 @@ $ q2 docs llms --embed-info                # source: real, pages: 381
 
 I inspected the staged output in `docs/examples/*` and the `--embed-info`
 report by hand.
+
+## Found after merging main: the git-hash script rewrote its own input
+
+When I ran the CI invocation locally (`RUSTFLAGS="-D warnings" cargo xtask
+check-noop-rebuild --profile ci`) right after merging `origin/main`, it
+reported 10 recompiled units: the `quarto-trace` → `quarto-core` → … chain.
+The cause was `quarto-trace`\'s build script. It watches `.git/index` and then
+runs `git status`, and a plain `git status` opportunistically *rewrites*
+`.git/index` when cached stat info is racy or stale. That happens after a
+checkout, a merge, or CI's mtime-restore step. So the script modified its own
+watched input, and the next build reran it.
+
+To reproduce, run `touch .git/index; touch README.md` and build twice. Before
+the fix, the index mtime moved during build 1 and build 2 recompiled 10
+units. The fix is `git --no-optional-locks status --porcelain`. After it, the
+index is untouched and build 2 is a no-op (0.56s). The CI invocation passes
+(0.61s). This bug was already on main; the new check exposed it.

@@ -6,8 +6,10 @@
 //!    `node_version.rs`; skipped only when every npm-driven step is off)
 //! 1. Run custom lint checks, hub-client `lint:css`, and clippy
 //! 2. Check Rust formatting (cargo fmt --check)
-//! 3. Build all Rust crates (with -D warnings, matching CI), then render
-//!    claude-notes with `q2 render --strict` (matching CI's test-suite step)
+//! 3. Build all Rust crates (with -D warnings, matching CI), then check pampa
+//!    under its consumers' no-default feature sets (`check_feature_sets.rs`)
+//!    and render claude-notes with `q2 render --strict` (both matching CI's
+//!    test-suite steps)
 //! 4. Test tree-sitter grammars
 //! 5. Run all Rust tests (with -D warnings, matching CI)
 //! 6. Build ts-packages workspaces + quarto-hub-mcp smoke check
@@ -74,6 +76,8 @@ pub struct VerifyConfig {
     pub skip_css_lint: bool,
     /// Skip the strict claude-notes render (`q2 render --strict claude-notes`).
     pub skip_claude_notes_render: bool,
+    /// Skip the pampa consumer feature-set check (`check-feature-sets`).
+    pub skip_feature_sets: bool,
     /// Run hub-client e2e tests (slower, requires browser).
     pub include_e2e: bool,
     /// Do not set RUSTFLAGS="-D warnings" (allows warnings during iteration).
@@ -93,6 +97,13 @@ fn runs_css_lint(config: &VerifyConfig) -> bool {
 /// the caller asked not to build.
 fn runs_claude_notes_render(config: &VerifyConfig) -> bool {
     !config.skip_claude_notes_render && !config.skip_rust_build
+}
+
+/// Whether step 3 checks pampa's consumer feature sets. Off under
+/// `--skip-rust-build` too, like the claude-notes render: a caller skipping
+/// the Rust build has opted out of compiling Rust.
+fn runs_feature_set_check(config: &VerifyConfig) -> bool {
+    !config.skip_feature_sets && !config.skip_rust_build
 }
 
 /// Whether any npm-driven step is enabled, so the Node preflight has
@@ -305,6 +316,22 @@ pub fn run(config: &VerifyConfig) -> Result<()> {
         println!("✓ Rust build complete");
     } else {
         println!("\n━━━ Step 3/{}: Skipping Rust build ━━━\n", TOTAL_STEPS);
+    }
+
+    // The wasm crates build pampa with `default-features = false` outside
+    // the workspace, so the build above never compiles their feature sets; a
+    // gating mistake there first failed the v0.34.0 release (bd-yt3x1gwk).
+    // Same `rustflags` as the build, so the checks reuse its cache settings.
+    if runs_feature_set_check(config) {
+        println!("  ↳ pampa consumer feature sets (check-feature-sets)...");
+        crate::check_feature_sets::check(&project_root, None, rustflags)?;
+    } else {
+        let reason = if config.skip_rust_build {
+            "--skip-rust-build"
+        } else {
+            "--skip-feature-sets"
+        };
+        println!("  ↳ Skipping pampa feature-set check ({})", reason);
     }
 
     // claude-notes is a q2 website, and CI renders it with `--strict`
@@ -993,6 +1020,40 @@ mod tests {
         assert!(
             source.contains("render_args.extend_from_slice(&CLAUDE_NOTES_RENDER_ARGS);"),
             "`run` no longer passes CLAUDE_NOTES_RENDER_ARGS to q2"
+        );
+    }
+
+    #[test]
+    fn feature_set_check_runs_by_default_and_honours_skip_flags() {
+        assert!(runs_feature_set_check(&VerifyConfig::default()));
+        assert!(!runs_feature_set_check(&VerifyConfig {
+            skip_feature_sets: true,
+            ..VerifyConfig::default()
+        }));
+        assert!(!runs_feature_set_check(&VerifyConfig {
+            skip_rust_build: true,
+            ..VerifyConfig::default()
+        }));
+        assert!(runs_feature_set_check(&VerifyConfig {
+            skip_rust_tests: true,
+            ..VerifyConfig::default()
+        }));
+    }
+
+    /// CI and verify must both run the feature-set check (bd-yt3x1gwk: a
+    /// gap there let a feature-gating break through to the release).
+    #[test]
+    fn feature_set_check_is_wired_into_run_and_ci() {
+        let source = include_str!("verify.rs");
+        assert!(
+            source.contains("crate::check_feature_sets::check(&project_root, None, rustflags)?;"),
+            "`run` no longer calls the feature-set check"
+        );
+        let workflow = include_str!("../../../.github/workflows/test-suite.yml");
+        assert!(
+            workflow.contains("run: cargo xtask check-feature-sets"),
+            "test-suite.yml has no `run: cargo xtask check-feature-sets` step; \
+             keep CI and verify in sync"
         );
     }
 

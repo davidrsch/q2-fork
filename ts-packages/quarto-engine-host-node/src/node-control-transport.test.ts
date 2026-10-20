@@ -53,10 +53,13 @@ const collect = async (stream: ReadableStream<Uint8Array>, bytes: number) => {
 describe("connectControl", () => {
   it("writes the token first, then exchanges bytes in both directions", async () => {
     const received: Buffer[] = [];
+    const expected = "secret-token\nping";
     const port = await listen((socket) => {
+      // TCP has no message boundaries: the token and "ping" may arrive as one
+      // `data` event or several, so reply once after the whole request is in.
       socket.on("data", (chunk) => {
         received.push(chunk);
-        socket.write("pong");
+        if (Buffer.concat(received).length === expected.length) socket.write("pong");
       });
     });
     const stdin = fakeStdin("secret-token\nIGNORED");
@@ -70,7 +73,7 @@ describe("connectControl", () => {
     expect(await writer.write(new TextEncoder().encode("ping"))).toBe(4);
     expect((await collect(reader, 4)).toString()).toBe("pong");
     await writer.end();
-    expect(Buffer.concat(received).toString()).toBe("secret-token\nping");
+    expect(Buffer.concat(received).toString()).toBe(expected);
   });
 
   it("delivers a large write completely (backpressure)", async () => {

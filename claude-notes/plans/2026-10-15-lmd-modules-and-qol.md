@@ -2,7 +2,7 @@
 title: 'lmd infrastructure: `require` of `.lmd` modules, component call sites, and an ecosystem survey (bd-76ogq4ew)'
 date: 2026-10-15
 description: 'Survey of the JSX/MDX, Hugo/templating, Typst and Lua-dialect ecosystems for quality-of-life features worth borrowing into lmd, a design for loading `.lmd` modules through `require`, and a phased plan for the reusability work that follows the landed lmd feature.'
-status: in-progress  # survey 2026-10-15; Phase 1 (PR #856) and Phase 2 (PR #858) merged 2026-10-16; Phase 3 on braid/bd-76ogq4ew-lmd-phase3-project-modules with origin/main merged in and `cargo xtask verify` green (2026-10-20), PR #866 against main; all three phases of the plan are implemented
+status: done  # survey 2026-10-15; Phase 1 (PR #856) and Phase 2 (PR #858) merged 2026-10-16, Phase 3 (PR #866) merged 2026-10-20; strand bd-76ogq4ew closed; the `q2 lmd compile` stretch goal was deferred
 braid:
   strand: bd-76ogq4ew
   priority: P2
