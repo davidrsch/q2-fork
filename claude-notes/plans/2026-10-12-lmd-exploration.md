@@ -579,6 +579,7 @@ Scanner rules, so they are not re-derived: every `{=` opens a nested fragment wh
 - Filed as follow-up strands: bd-o7ujtnk3 (project-relative chunk names) and bd-f6tt2exg (`CodeBlock.text_source`). The snapshot suite is in.
 - Turn the demo documents into integration fixtures with snapshots of the `--to markdown` output.
 - The dispatch half proper: whether a cell's Lua should become a filter that other Lua filters compose with, rather than a chunk that runs once at its position.
+- Reuse across documents is in `2026-10-15-lmd-modules-and-qol.md` (bd-76ogq4ew): `require` of `.lmd` modules (PR #856), fragment call arguments, escapes, leveled delimiters and footnotes (PR #858), then project-root and extension modules, `lmd: modules:` autoload and `quarto.include` (phase 3). Open question 5, the name, stayed `lmd`.
 
 ## Verification (spike 1)
 

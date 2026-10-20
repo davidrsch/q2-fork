@@ -2,7 +2,7 @@
 title: 'lmd infrastructure: `require` of `.lmd` modules, component call sites, and an ecosystem survey (bd-76ogq4ew)'
 date: 2026-10-15
 description: 'Survey of the JSX/MDX, Hugo/templating, Typst and Lua-dialect ecosystems for quality-of-life features worth borrowing into lmd, a design for loading `.lmd` modules through `require`, and a phased plan for the reusability work that follows the landed lmd feature.'
-status: in-progress  # survey 2026-10-15; Phase 1 on PR #856, Phase 2 on PR #858, Phase 3 implemented on braid/bd-76ogq4ew-lmd-phase3-project-modules (stacked on Phase 2) with `cargo xtask verify` green (2026-10-16), PR pending the user's go-ahead to push; all three phases of the plan are implemented
+status: in-progress  # survey 2026-10-15; Phase 1 (PR #856) and Phase 2 (PR #858) merged 2026-10-16; Phase 3 on braid/bd-76ogq4ew-lmd-phase3-project-modules with origin/main merged in and `cargo xtask verify` green (2026-10-20), PR open against main; all three phases of the plan are implemented
 braid:
   strand: bd-76ogq4ew
   priority: P2
@@ -327,7 +327,7 @@ Tests first, per the TDD rule; each bullet names its pin.
 - [x] `crates/pampa/tests/wasm_lua.rs`: a cell requiring an `.lmd` module from the VFS; and a native test that a `SandboxedRuntime` denying the module\'s directory makes `require` fail with the policy\'s error. *The WASM test uses a toy dialect through `apply_lua_filters_with` (pampa cannot see lmd); it runs in Linux CI, not locally. `SandboxedRuntime` turned out to delegate every file operation unchecked (a `TODO`), so `SecurityPolicy::can_read` / `can_write` and their enforcement on the read and write operations landed with this, which is what makes the denial test real.*
 - [x] Snapshot fixture `tests/integration/fixtures/lmd/modules/` under `lmd_snapshots.rs`: a module, a consumer, an error inside the module. *`modules.qmd` plus `modules/{cards,broken,boom,shadowed}.lmd` and `shadowed.lua`; the harness now copies fixture subdirectories and its normalizer maps Lua\'s abbreviated chunk names for files under them.*
 - [ ] Stretch: `q2 lmd compile <file>` printing the pretty desugaring. *Not started; `quarto.lmd.compile` covers the "show me the Lua" need from inside a document.*
-- [ ] Update `2026-10-12-lmd-exploration.md`\'s open questions and this plan. *This plan is current as of the commits above; the exploration plan gets its pointer when Phase 1 merges.*
+- [x] Update `2026-10-12-lmd-exploration.md`\'s open questions and this plan. *Pointer added under the exploration plan\'s "Next spikes" on 2026-10-20, after #856 and #858 merged.*
 
 ### Phase 2: documentation and fragment gaps
 
