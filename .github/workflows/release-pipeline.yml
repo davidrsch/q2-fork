@@ -74,6 +74,12 @@
 #   distribution is `npx @quarto/hub-mcp` (bd-3tak0lyy); this tarball
 #   exists only until the npm channel lands (bd-sca6g1tu; plan
 #   claude-notes/plans/2026-06-19-release-standalone-hub-mcp-bundle.md).
+# - A `quarto-hub-client-wasm-<version>.tar.gz` asset (bd-m7oy2asc): the
+#   compiled crates/wasm-quarto-hub-client/pkg tree, packaged once in
+#   web-payloads with repo-relative paths, so Connect satellite editor
+#   builds (build-editor.sh in connect-satellites) can download the
+#   wasm-bindgen package for a pinned release instead of rebuilding it
+#   with a nightly Rust toolchain.
 # - The bundled quarto-hub.com OAuth defaults (QUARTO_HUB_BUNDLED_*)
 #   are injected from repo secrets/vars into the cargo build env —
 #   release builds only; see crates/quarto-mcp-launcher/src/defaults.rs
@@ -241,6 +247,40 @@ jobs:
       - name: Build WASM (hub-client)
         run: npm run build:wasm
         working-directory: hub-client
+
+      # Release asset for Connect satellite editor builds (bd-m7oy2asc):
+      # the same wasm-bindgen pkg the build legs embed, tarred with
+      # repo-relative paths so `tar -xzf ... -C <q2 checkout>` drops it
+      # exactly where the committed hub-client/wasm-quarto-hub-client
+      # symlink points. Packaged once here because the wasm is
+      # target-independent; signed and published by the release job like
+      # every other asset. Tar the real directory, never the symlink
+      # (same rule as the web-payloads artifact staging below).
+      - name: Package hub-client WASM pkg (satellite editor builds)
+        shell: bash
+        run: |
+          PKG=crates/wasm-quarto-hub-client/pkg
+          for f in wasm_quarto_hub_client.js wasm_quarto_hub_client_bg.wasm \
+                   wasm_quarto_hub_client.d.ts wasm_quarto_hub_client_bg.wasm.d.ts; do
+            test -s "$PKG/$f" || { echo "::error::$PKG/$f missing or empty"; exit 1; }
+          done
+          # Cheap syntax gate on the glue: a truncated .js fails here
+          # rather than in a satellite's vite build.
+          node --check --input-type=module < "$PKG/wasm_quarto_hub_client.js"
+          ASSET="quarto-hub-client-wasm-${{ inputs.version }}.tar.gz"
+          tar -czf "$ASSET" "$PKG"
+          sha256sum "$ASSET" > "$ASSET.sha256"
+          sha256sum -c "$ASSET.sha256"
+          tar -tzf "$ASSET"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hub-client-wasm-pkg
+          path: |
+            quarto-hub-client-wasm-${{ inputs.version }}.tar.gz
+            quarto-hub-client-wasm-${{ inputs.version }}.tar.gz.sha256
+          retention-days: 7
+          if-no-files-found: error
 
       # Same npm invocations as `cargo xtask build-trace-viewer` /
       # `build-q2-preview-spa`, without compiling xtask on this runner.
@@ -954,6 +994,14 @@ jobs:
           name: hub-mcp-bundle
           path: artifacts
 
+      # The hub-client WASM package for Connect satellite editor builds
+      # (bd-m7oy2asc), packaged in web-payloads — also its own artifact
+      # name, for the same reason.
+      - uses: actions/download-artifact@v8
+        with:
+          name: hub-client-wasm-pkg
+          path: artifacts
+
       - name: Validate all platforms present, combine and verify checksums
         run: |
           cd artifacts
@@ -977,6 +1025,19 @@ jobs:
           sha256sum -c checksums.sha256
           cat checksums.sha256
 
+      # Fail closed on a truncated or mispackaged satellite WASM asset:
+      # the four pkg files must sit at their repo-relative paths (the
+      # extraction contract documented in the notes below).
+      - name: Verify hub-client WASM package contents
+        run: |
+          ASSET=$(ls artifacts/quarto-hub-client-wasm-*.tar.gz)
+          tar -tzf "$ASSET"
+          for f in wasm_quarto_hub_client.js wasm_quarto_hub_client_bg.wasm \
+                   wasm_quarto_hub_client.d.ts wasm_quarto_hub_client_bg.wasm.d.ts; do
+            tar -tzf "$ASSET" | grep -qx "crates/wasm-quarto-hub-client/pkg/$f" \
+              || { echo "::error::$ASSET is missing crates/wasm-quarto-hub-client/pkg/$f"; exit 1; }
+          done
+
       # Trusted comment = archive filename: it is part of the signed
       # payload, and install.sh compares it against the file they asked
       # for, so a signature cannot be replayed from another artifact.
@@ -999,9 +1060,12 @@ jobs:
           # here instead of shipping artifacts no installer can verify.
           PUBKEY="$(sed -n 's/^MINISIGN_PUBKEY="\(.*\)"$/\1/p' install.sh)"
           test -n "$PUBKEY"
-          # The q2 platform archives plus the standalone MCP bundle. Each
-          # gets a signature whose trusted comment is its own filename.
-          for ARCHIVE in artifacts/q2-*.tar.gz artifacts/quarto-hub-mcp-*.tar.gz; do
+          # The q2 platform archives, the standalone MCP bundle, and the
+          # hub-client WASM package. Each gets a signature whose trusted
+          # comment is its own filename. (An unmatched glob stays literal
+          # and fails minisign, so a missing asset fails closed here.)
+          for ARCHIVE in artifacts/q2-*.tar.gz artifacts/quarto-hub-mcp-*.tar.gz \
+                         artifacts/quarto-hub-client-wasm-*.tar.gz; do
             NAME="$(basename "$ARCHIVE")"
             minisign -Sm "$ARCHIVE" -s "$key" -t "$NAME"
             minisign -Vm "$ARCHIVE" -P "$PUBKEY"
@@ -1095,6 +1159,16 @@ jobs:
             echo "the bundled \`README.md\` for the OAuth env vars to set."
             echo "_(Experimental, temporary channel — \`npx\` distribution is planned.)_"
             echo
+            echo "## Hub client WASM package (Connect satellite builds)"
+            echo
+            echo "\`quarto-hub-client-wasm-${VERSION}.tar.gz\` carries the compiled"
+            echo "\`crates/wasm-quarto-hub-client/pkg/\` tree (wasm-bindgen web target,"
+            echo "\`wasm-opt -Oz\`) — the render engine the Quarto Hub editor loads."
+            echo "Extract it at the root of a q2 checkout of this tag"
+            echo "(\`tar -xzf quarto-hub-client-wasm-${VERSION}.tar.gz -C /path/to/q2\`);"
+            echo "Connect satellite builds (\`build-editor.sh\`) consume it that way."
+            echo "Most users do not need this asset."
+            echo
             if [ -n "$RANGE" ]; then
               echo "## Changes (${RANGE%%..*} → ${SHA:0:12})"
               echo
@@ -1146,6 +1220,8 @@ jobs:
             artifacts/q2-*.zip artifacts/q2-*.zip.sha256 \
             artifacts/quarto-hub-mcp-*.tar.gz artifacts/quarto-hub-mcp-*.tar.gz.sha256 \
             artifacts/quarto-hub-mcp-*.tar.gz.minisig \
+            artifacts/quarto-hub-client-wasm-*.tar.gz artifacts/quarto-hub-client-wasm-*.tar.gz.sha256 \
+            artifacts/quarto-hub-client-wasm-*.tar.gz.minisig \
             artifacts/checksums.sha256
 
       # Dry run: everything above ran (build, verify gates, signing), and

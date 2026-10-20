@@ -48,6 +48,20 @@ server bundle (bd-sca6g1tu):
 > (those are embedded into the `q2` binary only) — its `README.md`
 > documents the OAuth env vars a direct user must set.
 
+Plus, once per release (bd-m7oy2asc), the hub-client WASM package for
+Connect satellite editor builds:
+
+- `quarto-hub-client-wasm-<version>.tar.gz` — the compiled
+  `crates/wasm-quarto-hub-client/pkg/` tree (wasm-bindgen `--target web`,
+  `wasm-opt -Oz`), packaged once in `web-payloads` with repo-relative
+  paths. Connect satellites extract it at the root of a q2 checkout of
+  the same tag (`tar -xzf ... -C /path/to/q2`) so `build-editor.sh` does
+  not need a nightly-Rust WASM rebuild. Plan:
+  `claude-notes/plans/2026-10-20-release-hub-client-wasm-artifact.md`.
+- `quarto-hub-client-wasm-<version>.tar.gz.sha256` / `.minisig` — checksum +
+  signature (same minisign key as the binaries; its `.sha256` is also
+  folded into `checksums.sha256`).
+
 Released binaries carry the bundled quarto-hub.com OAuth defaults, so
 `q2 mcp` connects with zero configuration. Users install with the
 one-liner in the README / release notes.
