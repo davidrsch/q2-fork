@@ -30,6 +30,7 @@ import {
 } from '@quarto/preview-renderer/utils/makeSelfContainedHtml';
 import { forceRevealPrintMode } from '@quarto/preview-renderer/utils/revealPrintMode';
 import { injectPrintStylesheet } from '@quarto/preview-renderer/utils/printStylesheet';
+import { isSlidesFormat } from '../components/render/getQ2Format';
 
 /** Bind the self-contained inliner's readers to the live WASM VFS. */
 function vfsReaders(): SelfContainedReaders {
@@ -51,7 +52,7 @@ function vfsReaders(): SelfContainedReaders {
  * pseudo-format and `revealjs` land here.
  */
 export function isPrintableSlidesFormat(format: string | null): boolean {
-  return format === 'revealjs' || format === 'q2-slides';
+  return isSlidesFormat(format);
 }
 
 /**
