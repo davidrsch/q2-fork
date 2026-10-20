@@ -53,14 +53,10 @@ fn main() {
         make_placeholder_dist()
     };
 
-    // Re-run if the real dist/ tree changes. Directory-mtime watches
-    // miss in-place file rewrites (vite emits hashed filenames so this
-    // matters); emit per-file rerun-if-changed entries to catch
-    // content edits, plus the directory entry for additions.
-    println!("cargo:rerun-if-changed={}", real_dist.display());
-    if real_dist.is_dir() {
-        watch_recursive(&real_dist);
-    }
+    // Re-run if the real dist/ tree changes, appears, or vanishes.
+    // `watch_path` never watches a missing path: cargo would treat it as
+    // always stale and rebuild this crate on every build (bd-7xlph6ki).
+    quarto_build_support::watch_path(&real_dist);
 
     // Editor embed (Phase 4). The viewer dist is only a dedupe target
     // when it is what the viewer embed actually serves — stripping
@@ -74,10 +70,8 @@ fn main() {
     } else {
         make_editor_placeholder()
     };
-    println!("cargo:rerun-if-changed={}", editor_dist.display());
-    if editor_dist.is_dir() {
-        watch_recursive(&editor_dist);
-    }
+    // Usually missing: only `cargo xtask build-hub-client-embed` builds it.
+    quarto_build_support::watch_path(&editor_dist);
 
     // WASM dedupe (plan 2026-10-13): strip the Vite-hashed render WASM
     // from the viewer archive — quarto-wasm-embed carries it instead,
@@ -156,7 +150,9 @@ fn archive_embed_dir(dir: &Path, archive_name: &str, exclude: Option<&str>) -> P
 
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let archive = out_dir.join(archive_name);
-    std::fs::write(&archive, zst).expect("write embed archive");
+    // Unchanged bytes keep the archive's mtime, so `include_bytes!` of it
+    // does not recompile this crate.
+    quarto_build_support::write_if_changed(&archive, &zst).expect("write embed archive");
     archive
 }
 
@@ -200,21 +196,6 @@ fn find_hashed_wasm(dist: &Path) -> Option<String> {
         .collect();
     matches.sort();
     (matches.len() == 1).then(|| format!("assets/{}", matches[0]))
-}
-
-fn watch_recursive(root: &Path) {
-    let entries = match std::fs::read_dir(root) {
-        Ok(it) => it,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        println!("cargo:rerun-if-changed={}", path.display());
-        let is_dir = entry.file_type().is_ok_and(|t| t.is_dir());
-        if is_dir {
-            watch_recursive(&path);
-        }
-    }
 }
 
 /// Produce the editor embed directory in `OUT_DIR`: a copy of

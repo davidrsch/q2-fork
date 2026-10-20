@@ -57,12 +57,15 @@ fn main() {
     // hashed WASM appearing or vanishing; the per-file entries catch
     // in-place rewrites (same hashed name, new bytes cannot happen —
     // the hash is content-derived — but a rebuilt dist can carry a new
-    // name, which the dir watch sees).
-    println!("cargo:rerun-if-changed={}", spa_assets.display());
+    // name, which the dir watch sees). Either candidate may be missing;
+    // `watch_entry`/`watch_path` then watch the nearest existing ancestor,
+    // never the missing path, which cargo would treat as always stale
+    // (bd-7xlph6ki).
+    quarto_build_support::watch_entry(&spa_assets);
     for path in &selected.watched {
-        println!("cargo:rerun-if-changed={}", path.display());
+        quarto_build_support::watch_path(path);
     }
-    println!("cargo:rerun-if-changed={}", bundle_wasm.display());
+    quarto_build_support::watch_path(&bundle_wasm);
 
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let archive = out_dir.join("wasm.zst");
@@ -86,11 +89,13 @@ fn main() {
             }
             std::io::Write::write_all(&mut encoder, &bytes).expect("zstd compress");
             let zst = encoder.finish().expect("zstd finish");
-            std::fs::write(&archive, zst).expect("write wasm.zst");
+            // Unchanged bytes keep the archive's mtime, so `include_bytes!`
+            // of it does not recompile this crate.
+            quarto_build_support::write_if_changed(&archive, &zst).expect("write wasm.zst");
         }
         None => {
             // Placeholder: an empty archive means `wasm_bytes()` is None.
-            std::fs::write(&archive, []).expect("write empty wasm.zst");
+            quarto_build_support::write_if_changed(&archive, &[]).expect("write empty wasm.zst");
         }
     }
     println!(

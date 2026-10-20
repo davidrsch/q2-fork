@@ -13,5 +13,9 @@ serde_json.workspace = true
 sha2 = "0.11"
 thiserror.workspace = true
 
+[build-dependencies]
+# rerun-if-changed watches that never go permanently stale (bd-7xlph6ki).
+quarto-build-support.workspace = true
+
 [lints]
 workspace = true

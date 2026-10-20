@@ -565,7 +565,12 @@ This runs:
    `cargo run --bin q2 -- render --strict claude-notes` - render the notes
    website the way CI does, so a note that fails to parse or warns fails
    here too (seconds; skipped by `--skip-rust-build`, or alone with
-   `--skip-claude-notes-render`)
+   `--skip-claude-notes-render`), then `cargo xtask check-noop-rebuild` -
+   a second `cargo build --bin q2` must compile nothing (CI runs it too).
+   It fails when a build script is always stale, typically one emitting
+   `cargo:rerun-if-changed` for a path that doesn't exist; build scripts
+   watch inputs through `quarto_build_support::watch_path` to avoid that
+   (bd-7xlph6ki)
 2. `cargo nextest run --workspace` - Run all Rust tests
 3. `npm run build --if-present -w ts-packages/...` - Build the ts-packages
    workspaces, then smoke-check the quarto-hub-mcp server (`node

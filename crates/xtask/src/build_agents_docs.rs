@@ -8,7 +8,8 @@
 //!    gitignored tree as a project resource and `q2 render` fails hard on
 //!    a missing declared resource, so on a fresh checkout (the release
 //!    workflow) the docs render cannot even start without this.
-//! 2. Render `docs/` in place with `q2` (via `cargo run --bin q2`),
+//! 2. Render `docs/` in place with `q2` (built once up front and shared
+//!    with step 1 — see `util::build_q2`),
 //!    exactly like CI's docs build. The render's llms-txt pass writes
 //!    `docs/_site/llms.txt`, `docs/_site/llms-full.txt`, one `.md`
 //!    companion per page, and the ledger
@@ -29,9 +30,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use crate::util::nested_command;
-
-pub fn run() -> Result<()> {
+/// `release` picks the profile of the `q2` that renders (`build-all
+/// --release` passes it so the release binary it just built is reused).
+pub fn run(release: bool) -> Result<()> {
     let root = find_project_root()?;
 
     // Capture provenance BEFORE rendering: the render writes into
@@ -49,11 +50,17 @@ pub fn run() -> Result<()> {
     // Ordered after `embed_info` on purpose: staging renders the example
     // projects in place, which would otherwise make the provenance read
     // as dirty.
+    // Build q2 once; every render below runs the binary directly instead of
+    // a nested `cargo run` per render (bd-7xlph6ki). A stale or
+    // placeholder-embed binary is fine — the renders don't consume the
+    // embed.
+    let q2 = crate::util::build_q2(&root, release)?;
+
     println!("━━━ Staging docs/examples/ (embedded example projects) ━━━");
-    crate::stage_doc_examples::run()?;
+    crate::stage_doc_examples::stage_all(&root, &q2)?;
 
     println!("━━━ Rendering docs/ (llms.txt artifacts) ━━━");
-    render_docs(&root)?;
+    render_docs(&root, &q2)?;
 
     println!("━━━ Staging agents-docs-dist/ ━━━");
     let manifest_path = root.join("docs").join(".quarto").join("llms-manifest.json");
@@ -80,16 +87,13 @@ pub fn run() -> Result<()> {
 }
 
 /// Render the docs website in place (`docs/_site`), the same render CI
-/// runs. `q2` is invoked through a nested cargo so a stale or
-/// placeholder-embed binary is fine — the render doesn't consume the
-/// embed.
-fn render_docs(root: &Path) -> Result<()> {
-    let mut cmd = nested_command("cargo");
-    cmd.current_dir(root)
-        .args(["run", "--bin", "q2", "--", "render", "docs"]);
-    let status = cmd
+/// runs, with the already-built `q2` binary.
+fn render_docs(root: &Path, q2: &Path) -> Result<()> {
+    let status = std::process::Command::new(q2)
+        .current_dir(root)
+        .args(["render", "docs"])
         .status()
-        .context("spawning `cargo run --bin q2 -- render docs`")?;
+        .with_context(|| format!("spawning `{} render docs`", q2.display()))?;
     if !status.success() {
         bail!("`q2 render docs` failed (exit {:?})", status.code());
     }

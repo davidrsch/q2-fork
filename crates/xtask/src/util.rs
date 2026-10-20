@@ -218,3 +218,72 @@ mod tests {
         assert_eq!(with_native_separators(&p), p);
     }
 }
+
+/// Build the `q2` binary once (`cargo build --bin q2 [--release]`) and return
+/// the path of the executable cargo produced, read from its JSON message
+/// stream so `CARGO_TARGET_DIR`, the profile, and the platform's `.exe`
+/// suffix are all honored without guessing.
+///
+/// For xtasks that run `q2` many times (rendering each example project, then
+/// the docs): one build plus direct invocations, instead of one nested
+/// `cargo run` per render that each re-checks fingerprints (bd-7xlph6ki).
+pub fn build_q2(root: &Path, release: bool) -> anyhow::Result<PathBuf> {
+    use anyhow::{Context, bail};
+
+    let mut args = vec![
+        "build",
+        "--bin",
+        "q2",
+        "--message-format=json-render-diagnostics",
+    ];
+    if release {
+        args.push("--release");
+    }
+    let output = nested_command("cargo")
+        .args(&args)
+        .current_dir(root)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .output()
+        .context("spawning `cargo build --bin q2`")?;
+    if !output.status.success() {
+        bail!(
+            "`cargo build --bin q2` failed (exit {:?})",
+            output.status.code()
+        );
+    }
+    q2_executable(&String::from_utf8_lossy(&output.stdout))
+        .context("`cargo build --bin q2` reported no q2 executable")
+}
+
+/// The `executable` of the `q2` bin's `compiler-artifact` message in cargo's
+/// JSON stream.
+fn q2_executable(json_lines: &str) -> Option<PathBuf> {
+    json_lines
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|msg| msg["reason"] == "compiler-artifact" && msg["target"]["name"] == "q2")
+        .find_map(|msg| msg["executable"].as_str().map(PathBuf::from))
+}
+
+#[cfg(test)]
+mod build_q2_tests {
+    use super::q2_executable;
+    use std::path::PathBuf;
+
+    #[test]
+    fn finds_the_q2_executable_among_other_artifacts() {
+        let stream = r#"{"reason":"compiler-artifact","target":{"name":"serde"},"executable":null}
+{"reason":"compiler-artifact","target":{"name":"q2"},"executable":"/t/release/q2"}
+{"reason":"build-finished","success":true}"#;
+        assert_eq!(q2_executable(stream), Some(PathBuf::from("/t/release/q2")));
+    }
+
+    #[test]
+    fn no_q2_artifact_is_none() {
+        assert_eq!(
+            q2_executable(r#"{"reason":"build-finished","success":true}"#),
+            None
+        );
+    }
+}

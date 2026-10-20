@@ -78,6 +78,8 @@ open = "5"
 openssl-sys = { version = "0.9", optional = true }
 
 [build-dependencies]
+# rerun-if-changed watches that never go permanently stale (bd-7xlph6ki).
+quarto-build-support.workspace = true
 
 [features]
 # Release-build knob (plan D4, bd-c6l13j79): samod →

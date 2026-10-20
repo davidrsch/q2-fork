@@ -15,6 +15,7 @@
 //! - `test`: Run workspace tests with platform-appropriate crate exclusions
 //! - `ts-test`: Regenerate, build, and test a tree-sitter grammar with a per-checkout grammar cache
 //! - `verify`: Run full project verification (build + tests for Rust and hub-client)
+//! - `check-noop-rebuild`: Fail if a second `cargo build --bin q2` recompiles anything
 //! - `build-all`: Fresh-clone build orchestration (npm install + hub-client + Rust workspace)
 //! - `build-trace-viewer`: Build just the trace-viewer SPA
 //! - `build-hub-client-embed`: Build the hub-client editor bundle for `q2 preview --ui editor`
@@ -38,6 +39,7 @@ mod build_ts_bundle;
 mod capture_import_recordings;
 mod capture_pandoc_goldens;
 mod capture_pandoc_recordings;
+mod check_noop_rebuild;
 mod create_worktree;
 mod dev_setup;
 mod gen_math_spec;
@@ -353,7 +355,30 @@ enum Command {
     /// `docs/examples/<entry>/`, where the docs `.embed-example-iframe`
     /// placeholders point. The staged output is generated and gitignored —
     /// regenerate with this command; never commit it. See bd-z1smhvuo.
-    StageDocExamples {},
+    StageDocExamples {
+        /// Build and render with the release-profile `q2`.
+        #[arg(long)]
+        release: bool,
+    },
+
+    /// Fail if a second `cargo build --bin q2` recompiles anything.
+    ///
+    /// Guards against build scripts that are always stale (for example,
+    /// ones watching a path that does not exist), which turn every
+    /// `cargo run --bin q2` into a rebuild (bd-7xlph6ki). `cargo xtask
+    /// verify` runs this after its workspace build; CI runs it with
+    /// `--profile ci`.
+    CheckNoopRebuild {
+        /// Cargo profile to build with (e.g. `ci`); defaults to `dev`.
+        #[arg(long)]
+        profile: Option<String>,
+
+        /// `RUSTFLAGS` for both builds. Pass it here rather than in the
+        /// environment so the xtask itself is not rebuilt with them; it
+        /// must match the build that came before (CI: `-D warnings`).
+        #[arg(long, allow_hyphen_values = true)]
+        rustflags: Option<String>,
+    },
 
     /// Build just the trace-viewer SPA.
     ///
@@ -392,7 +417,11 @@ enum Command {
     /// commit it. The tree is picked up on the next `cargo build --bin
     /// q2` (via `include_dir!`); without it the binary embeds a
     /// placeholder. See bd-hwop1zii.
-    BuildAgentsDocs {},
+    BuildAgentsDocs {
+        /// Build and render with the release-profile `q2`.
+        #[arg(long)]
+        release: bool,
+    },
 
     /// Build just the q2-preview SPA.
     ///
@@ -593,8 +622,11 @@ fn main() -> Result<()> {
         Command::RenderCorpusDiff { base, corpus, keep } => {
             render_corpus_diff::run(render_corpus_diff::Args { base, corpus, keep })
         }
-        Command::BuildAgentsDocs {} => build_agents_docs::run(),
-        Command::StageDocExamples {} => stage_doc_examples::run(),
+        Command::BuildAgentsDocs { release } => build_agents_docs::run(release),
+        Command::StageDocExamples { release } => stage_doc_examples::run(release),
+        Command::CheckNoopRebuild { profile, rustflags } => {
+            check_noop_rebuild::run(profile.as_deref(), rustflags.as_deref())
+        }
         Command::BuildTraceViewer {} => build_trace_viewer::run(),
         Command::PullExtensionSubtree { name, table } => {
             pull_extension_subtree::run(pull_extension_subtree::Args { name, table })
