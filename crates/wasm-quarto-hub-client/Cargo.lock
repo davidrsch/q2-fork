@@ -700,7 +700,7 @@ dependencies = [
 
 [[package]]
 name = "comrak-to-pandoc"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "comrak",
  "hashlink",
@@ -4212,7 +4212,7 @@ checksum = "edecfcd5d755a5e5d98e24cf43113e7cdaec5a070edd0f6b250c03a573da30fa"
 
 [[package]]
 name = "quarto-analysis"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "quarto-error-reporting",
  "quarto-pandoc-types",
@@ -4234,7 +4234,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-brand"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "hashlink",
  "pathdiff",
@@ -4246,7 +4246,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-citeproc"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "glob",
  "hashlink",
@@ -4277,7 +4277,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-core"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4295,6 +4295,7 @@ dependencies = [
  "imagesize",
  "include_dir",
  "jupyter-protocol",
+ "libc",
  "lol_html",
  "pagefind",
  "pampa",
@@ -4342,13 +4343,14 @@ dependencies = [
  "tree-sitter-r",
  "typst-gather",
  "uuid",
+ "walkdir",
  "which",
  "yaml-rust2",
 ]
 
 [[package]]
 name = "quarto-csl"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "quarto-error-reporting",
  "quarto-source-map",
@@ -4399,7 +4401,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-highlight"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "once_cell",
  "quarto-highlight-encoding",
@@ -4427,7 +4429,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-highlight-encoding"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4435,7 +4437,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-lsp-core"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "pampa",
  "pollster",
@@ -4456,7 +4458,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-math"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "mitex-lexer",
  "mitex-parser",
@@ -4472,7 +4474,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-navigation"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "quarto-config",
  "quarto-pandoc-types",
@@ -4483,7 +4485,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-node-discovery"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "dirs",
  "thiserror 2.0.21",
@@ -4517,7 +4519,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-project-create"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "quarto-doctemplate",
  "serde",
@@ -4527,7 +4529,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-sass"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "include_dir",
  "once_cell",
@@ -4560,7 +4562,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-system-runtime"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "async-lock",
  "async-trait",
@@ -4580,7 +4582,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-trace"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "flate2",
  "serde",
@@ -4591,7 +4593,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-transpile"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "oxc_allocator",
  "oxc_codegen",
@@ -4612,7 +4614,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-util"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "dirs",
  "serde",
@@ -4621,7 +4623,7 @@ dependencies = [
 
 [[package]]
 name = "quarto-xml"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "quarto-error-reporting",
  "quarto-source-map",
@@ -7154,7 +7156,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-printf-fmt"
-version = "0.33.0"
+version = "0.34.0"
 
 [[package]]
 name = "wasm-quarto-hub-client"

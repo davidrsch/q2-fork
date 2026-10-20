@@ -836,57 +836,33 @@ fn cells_to_lua_list(lua: &Lua, cells: &[Cell]) -> Result<Value> {
 /// not one of Pandoc's constructor names (Pandoc's `peekRead` errors
 /// with `Could not read: <value>`).
 pub(crate) fn parse_list_number_style(s: &str) -> Result<ListNumberStyle> {
-    match s {
-        "DefaultStyle" => Ok(ListNumberStyle::Default),
-        "Example" => Ok(ListNumberStyle::Example),
-        "Decimal" => Ok(ListNumberStyle::Decimal),
-        "LowerRoman" => Ok(ListNumberStyle::LowerRoman),
-        "UpperRoman" => Ok(ListNumberStyle::UpperRoman),
-        "LowerAlpha" => Ok(ListNumberStyle::LowerAlpha),
-        "UpperAlpha" => Ok(ListNumberStyle::UpperAlpha),
-        other => Err(invalid_value_error(
+    ListNumberStyle::from_pandoc_name(s).ok_or_else(|| {
+        invalid_value_error(
             "list number style",
-            other,
+            s,
             "DefaultStyle, Example, Decimal, LowerRoman, UpperRoman, LowerAlpha, or UpperAlpha",
-        )),
-    }
+        )
+    })
 }
 
 pub(crate) fn list_number_style_name(style: &ListNumberStyle) -> &'static str {
-    match style {
-        ListNumberStyle::Default => "DefaultStyle",
-        ListNumberStyle::Example => "Example",
-        ListNumberStyle::Decimal => "Decimal",
-        ListNumberStyle::LowerRoman => "LowerRoman",
-        ListNumberStyle::UpperRoman => "UpperRoman",
-        ListNumberStyle::LowerAlpha => "LowerAlpha",
-        ListNumberStyle::UpperAlpha => "UpperAlpha",
-    }
+    style.pandoc_name()
 }
 
 /// Parse a ListNumberDelim name; loud error on garbage (see
 /// [`parse_list_number_style`]).
 pub(crate) fn parse_list_number_delim(s: &str) -> Result<ListNumberDelim> {
-    match s {
-        "DefaultDelim" => Ok(ListNumberDelim::Default),
-        "Period" => Ok(ListNumberDelim::Period),
-        "OneParen" => Ok(ListNumberDelim::OneParen),
-        "TwoParens" => Ok(ListNumberDelim::TwoParens),
-        other => Err(invalid_value_error(
+    ListNumberDelim::from_pandoc_name(s).ok_or_else(|| {
+        invalid_value_error(
             "list number delimiter",
-            other,
+            s,
             "DefaultDelim, Period, OneParen, or TwoParens",
-        )),
-    }
+        )
+    })
 }
 
 pub(crate) fn list_number_delim_name(delim: &ListNumberDelim) -> &'static str {
-    match delim {
-        ListNumberDelim::Default => "DefaultDelim",
-        ListNumberDelim::Period => "Period",
-        ListNumberDelim::OneParen => "OneParen",
-        ListNumberDelim::TwoParens => "TwoParens",
-    }
+    delim.pandoc_name()
 }
 
 /// Wrapper for a Pandoc `ListAttributes` triple as typed Lua userdata,
@@ -4791,6 +4767,58 @@ mod tests {
         assert_eq!(result, "DefaultStyle");
     }
 
+    /// D-numtext (bd-q4gnd5os): a number or boolean reads as its
+    /// `tostring` text wherever an Inline is expected; block positions
+    /// stay strict.
+    #[test]
+    fn numbers_and_booleans_read_as_text_in_inline_positions_only() {
+        let lua = create_lua_env();
+        let got: Vec<String> = lua
+            .load(
+                r#"
+                local s = pandoc.utils.stringify
+                local mixed = pandoc.Inlines({ "v", 12.1, true })
+                local out = {
+                  s(pandoc.Strong(3)),
+                  s(pandoc.Emph(12.1)),
+                  s(pandoc.Span(false)),
+                  s(pandoc.Para({ "n", 1e15 })),
+                  mixed[1].t .. ":" .. mixed[1].text,
+                  mixed[2].t .. ":" .. mixed[2].text,
+                  mixed[3].t .. ":" .. mixed[3].text,
+                  s(pandoc.Str(7)),
+                  s(pandoc.Nodes(42)),
+                  s(pandoc.Nodes({ "a", 2 })),
+                  tostring(1e15) == s(pandoc.Strong(1e15)),
+                }
+                for i, v in ipairs(out) do out[i] = tostring(v) end
+                return out
+            "#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(
+            got,
+            vec![
+                "3", "12.1", "false", "n1e+15", "Str:v", "Str:12.1", "Str:true", "7", "42", "a2",
+                "true"
+            ]
+        );
+
+        for src in [
+            "pandoc.Div(3)",
+            "pandoc.Blocks({ 3 })",
+            "pandoc.BulletList({ { 3 } })",
+            "pandoc.Div(true)",
+        ] {
+            let err = lua.load(src).eval::<Value>().unwrap_err().to_string();
+            assert!(
+                err.contains("expected, got number") || err.contains("expected, got boolean"),
+                "{src}: {err}"
+            );
+        }
+    }
+
     // ========== Alignment sentinel tests ==========
 
     #[test]
@@ -4989,8 +5017,11 @@ mod tests {
 
     #[test]
     fn test_inlines_constructor_invalid() {
+        // A number is text since D-numtext (bd-q4gnd5os); a function is
+        // still nothing an Inlines can be made of.
         let lua = create_lua_env();
-        let result: mlua::Result<Value> = lua.load(r#"return pandoc.Inlines(123)"#).eval();
+        let result: mlua::Result<Value> =
+            lua.load(r#"return pandoc.Inlines(function() end)"#).eval();
         assert!(result.is_err());
     }
 

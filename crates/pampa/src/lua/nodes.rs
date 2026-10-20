@@ -35,7 +35,8 @@
 use mlua::{Error, Lua, MetaMethod, Result, Table, UserData, UserDataMethods, Value};
 
 use super::types::{
-    LuaBlock, LuaInline, filter_source_info, lua_facing_type_name, split_string_to_inlines,
+    LuaBlock, LuaInline, block_structurally_eq, filter_source_info, inline_structurally_eq,
+    lua_facing_type_name, split_string_to_inlines, text_scalar_to_string,
 };
 use crate::pandoc::block::Plain;
 use crate::pandoc::inline::Str;
@@ -97,6 +98,22 @@ impl LuaNodes {
         }
     }
 
+    /// Same shape and structurally equal contents, source info ignored,
+    /// like `==` on an Inline or Block. Two `Nodes` holding nothing are
+    /// equal whatever shape they were built with.
+    pub fn structurally_eq(&self, other: &LuaNodes) -> bool {
+        match (&self.shape, &other.shape) {
+            _ if self.len() == 0 && other.len() == 0 => true,
+            (NodesShape::Inlines(a), NodesShape::Inlines(b)) => {
+                a.len() == b.len() && a.iter().zip(b).all(|(x, y)| inline_structurally_eq(x, y))
+            }
+            (NodesShape::Blocks(a), NodesShape::Blocks(b)) => {
+                a.len() == b.len() && a.iter().zip(b).all(|(x, y)| block_structurally_eq(x, y))
+            }
+            _ => false,
+        }
+    }
+
     fn shape_name(&self) -> &'static str {
         match &self.shape {
             NodesShape::Empty => "empty",
@@ -136,6 +153,15 @@ impl UserData for LuaNodes {
             Ok(format!("Nodes({} {})", this.len(), this.shape_name()))
         });
         methods.add_meta_method(MetaMethod::Len, |_, this, ()| Ok(this.len()));
+        methods.add_meta_method(MetaMethod::Eq, |_, this, other: Value| {
+            Ok(match other {
+                Value::UserData(ud) => match ud.borrow::<LuaNodes>() {
+                    Ok(other) => this.structurally_eq(&other),
+                    Err(_) => false,
+                },
+                _ => false,
+            })
+        });
     }
 }
 
@@ -145,10 +171,16 @@ impl UserData for LuaNodes {
 /// (a `pandoc.Blocks`, a `pandoc.Inlines`, or a plain list) whose elements
 /// are blocks, inlines, strings, or `Nodes` of a matching shape. Strings
 /// inside a table become single `Str`s (element-wise, no word split), a
-/// bare string is word-split, matching the two `peek` conventions.
+/// bare string is word-split, matching the two `peek` conventions. A
+/// number or boolean reads as its `tostring` text, like a string
+/// (divergence D-numtext).
 pub fn build_nodes(lua: &Lua, value: Value) -> Result<LuaNodes> {
     let shape = match &value {
         Value::String(s) => NodesShape::Inlines(split_string_to_inlines(&s.to_str()?)),
+        Value::Integer(_) | Value::Number(_) | Value::Boolean(_) => {
+            let text = text_scalar_to_string(lua, &value)?;
+            NodesShape::Inlines(split_string_to_inlines(&text.to_str()?))
+        }
         Value::UserData(ud) => {
             if let Ok(block) = ud.borrow::<LuaBlock>() {
                 NodesShape::Blocks(vec![block.extract_flushed(lua)?])
@@ -170,6 +202,12 @@ pub fn build_nodes(lua: &Lua, value: Value) -> Result<LuaNodes> {
                         text: s.to_str()?.to_string(),
                         source_info: filter_source_info(lua),
                     })),
+                    Value::Integer(_) | Value::Number(_) | Value::Boolean(_) => {
+                        inlines.push(Inline::Str(Str {
+                            text: text_scalar_to_string(lua, &item)?.to_str()?.to_string(),
+                            source_info: filter_source_info(lua),
+                        }))
+                    }
                     Value::UserData(ud) => {
                         if let Ok(block) = ud.borrow::<LuaBlock>() {
                             blocks.push(block.extract_flushed(lua)?);
@@ -490,12 +528,12 @@ mod tests {
             err.contains("cannot hold blocks and inlines together"),
             "{err}"
         );
-        let err = eval_err(&lua, "pandoc.Nodes({42})");
+        let err = eval_err(&lua, "pandoc.Nodes({function() end})");
         assert!(err.contains("element 1 must be"), "{err}");
         let err = eval_err(&lua, "pandoc.Nodes(nil)");
         assert!(err.contains("got nil"), "{err}");
-        let err = eval_err(&lua, "pandoc.Nodes(42)");
-        assert!(err.contains("got number"), "{err}");
+        let err = eval_err(&lua, "pandoc.Nodes(function() end)");
+        assert!(err.contains("got function"), "{err}");
     }
 
     #[test]
@@ -543,6 +581,41 @@ mod tests {
             one(&format!("pandoc.Nodes(pandoc.Nodes({{{PARA_X}}}))")).shape,
             NodesShape::Blocks(_)
         ));
+    }
+
+    /// bd-lt7rgi90: `==` (and so `pandoc.utils.equals`) compares shape and
+    /// contents structurally, not identity.
+    #[test]
+    fn equality_is_structural_over_shape_and_contents() {
+        let lua = env();
+        let cases = [
+            (
+                "pandoc.Nodes('a b') == pandoc.Nodes({pandoc.Str('a'), pandoc.Space(), pandoc.Str('b')})",
+                true,
+            ),
+            ("pandoc.Nodes('a') == pandoc.Nodes('b')", false),
+            ("pandoc.Nodes('a') == pandoc.Nodes('a b')", false),
+            (
+                "pandoc.Nodes(pandoc.Para{'x'}) == pandoc.Nodes({pandoc.Para{'x'}})",
+                true,
+            ),
+            (
+                "pandoc.Nodes(pandoc.Para{'x'}) == pandoc.Nodes(pandoc.Plain{'x'})",
+                false,
+            ),
+            ("pandoc.Nodes('x') == pandoc.Nodes(pandoc.Para{'x'})", false),
+            ("pandoc.Nodes({}) == pandoc.Nodes(pandoc.Inlines{})", true),
+            ("pandoc.Nodes('x') == pandoc.Str('x')", false),
+            ("pandoc.Nodes('x') == 'x'", false),
+            (
+                "pandoc.utils.equals(pandoc.Nodes('x'), pandoc.Nodes('x'))",
+                true,
+            ),
+        ];
+        for (src, want) in cases {
+            let got: bool = lua.load(format!("return {src}")).eval().unwrap();
+            assert_eq!(got, want, "{src}");
+        }
     }
 
     #[test]
