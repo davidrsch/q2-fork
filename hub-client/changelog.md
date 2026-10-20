@@ -25,6 +25,7 @@ WASM rebuild is needed for a changelog-only edit.
 
 ### 2026-10-20
 
+- [`2b566a68e`](https://github.com/quarto-dev/q2/commits/2b566a68e): Screen readers now see a single PDF preview frame while a typst document recompiles, instead of the visible one plus the one still loading underneath.
 - [`4540c20c2`](https://github.com/quarto-dev/q2/commits/4540c20c2): Upgrade KaTeX to 0.18.9, which keeps trailing rows in `align` environments.
 
 ### 2026-10-15

@@ -140,7 +140,7 @@ Options for Phase 1:
 - [x] Verified with a fixed build: `typst-pdf-preview.spec.ts` (chromium + firefox) and
   `embed-typst-pdf.spec.ts` (embed), 20/20 passed. pdfViewer and PdfPane unit tests, and the hub-client
   and q2-preview-spa typechecks, are clean.
-- [ ] hub-client changelog entry (needs the fix commit's hash).
+- [x] hub-client changelog entry for `2b566a68e`.
 
 Local environment notes (not code issues): the earlier pre-flight failure of
 `editor_ui_serves_pdfjs_from_the_viewer_bundle` and the "no live preview" e2e overlay both came from stale
