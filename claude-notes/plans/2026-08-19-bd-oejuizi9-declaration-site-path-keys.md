@@ -110,10 +110,10 @@ Policy rationale:
 - [x] Contract: update the inventory (move include/theme rows from
       VIOLATIONS to conforming; note residual keys); record any contract
       tweaks below.
-- [ ] Braid: comment + close-or-update bd-oejuizi9 (theme+include done; css
+- [x] Braid: comment + close-or-update bd-oejuizi9 (theme+include done; css
       was done; residual keys under bd-hjv5o); update bd-rdcvjy2s; comment
       on GH #455 is the user's call.
-- [ ] `cargo xtask verify --skip-hub-build` (quarto-core touched: consider
+- [x] `cargo xtask verify --skip-hub-build` (passed 2026-08-19); full verify (WASM leg) (quarto-core touched: consider
       full verify per CLAUDE.md before any push).
 
 ### Phase notes
