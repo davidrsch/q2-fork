@@ -886,7 +886,7 @@ title = "KaTeX (html-math-method: katex)"
 paths = ["crates/quarto-core/src/stage/stages/math_js.rs"]
 policy = "track"
 group = "cdn"
-version = "0.18.9"
+version = "0.19.0"
 version_sources = [
   { kind = "file-regex", file = "crates/quarto-core/src/stage/stages/math_js.rs", regex = 'npm/katex@([0-9.]+)/dist/";' },
   { kind = "file-regex", file = "package.json", regex = '"katex": "\^?([0-9.]+)"' },
@@ -895,7 +895,13 @@ upstream = { kind = "npm", package = "katex" }
 guards = ["quarto-core katex_cdn_version_matches_npm_pin"]
 license = "MIT"
 last_reviewed = "2026-10-21"
-notes = "Pinned to the npm `katex` the preview bundles, so render and preview agree; bump the npm pins in the same commit."
+notes = '''
+Pinned to the npm `katex` the preview bundles, so render and preview agree;
+bump the npm pins (root and hub-client/quarto-hub-sandboxed-preview) in the
+same commit. KaTeX is pre-1.0: read the release notes' BREAKING CHANGES
+(0.19.0 changed `strict` reporting of missing glyph metrics; q2 sets no
+`strict`, so only console warnings changed).
+'''
 
 [[asset]]
 id = "cdn-mathjax"
@@ -911,7 +917,8 @@ last_reviewed = "2026-10-21"
 notes = '''
 Floats on the MathJax 3 major, matching Pandoc's and Quarto 1's default
 URL. MathJax 4 changes the loader paths (no es5/), so a major bump is a
-code change, not a URL edit.
+code change, not a URL edit. DECISION (2026-10-21, bd-u1l2llha): stay on 3
+for Quarto 1 / Pandoc parity; revisit when Quarto 1 moves to MathJax 4.
 '''
 
 [[asset]]
@@ -925,7 +932,12 @@ version_sources = [{ kind = "file-regex", file = "crates/quarto-core/src/transfo
 upstream = { kind = "npm", package = "algoliasearch" }
 license = "MIT"
 last_reviewed = "2026-10-21"
-notes = "Same version Quarto 1 loads; coupled to the vendored autocomplete 1.19.1 API."
+notes = '''
+Same version Quarto 1 loads; coupled to the vendored autocomplete 1.19.1
+API. DECISION (2026-10-21, bd-u1l2llha): stay on 4.5.1 for Quarto 1 parity;
+bd-d88bj5r1 (a Quarto-owned search overlay) may remove Algolia
+Autocomplete entirely, which would make a v5 migration moot.
+'''
 
 [[asset]]
 id = "cdn-algolia-insights"
