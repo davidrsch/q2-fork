@@ -22,8 +22,10 @@ vendored.
 ## Vendored subtrees
 
 - **`orange-book/`** — the default Typst book extension, subtreed from
-  `quarto-ext/orange-book`, pinned to upstream tag `0.2.0` (book-projects
-  P2, plan item 80). Refresh with
+  `quarto-ext/orange-book` (book-projects P2, plan item 80). First vendored
+  at upstream tag `0.2.0` (`2b59b7672`); the subtree row tracks `main`, so
+  the durable pin is the latest `git-subtree-split` trailer, recorded as
+  `version` of `subtree-orange-book` in `resources/vendored.toml`. Refresh with
   `cargo xtask pull-extension-subtree orange-book`.
 - **`julia-engine/`** — the [Julia engine](https://github.com/PumasAI/quarto-julia-engine),
   subtreed from the `q2/node-port` branch of

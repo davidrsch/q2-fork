@@ -2,7 +2,7 @@
 title: 'Vendored dependencies: a checked registry, an `outdated` command, and an upgrade skill (bd-xm7l)'
 date: 2026-10-21
 description: 'Assessment of how the repo records and refreshes vendored third-party assets after PR #876, and a proposed design: a machine-readable registry that a lint keeps honest, an xtask that asks upstream what is newer, and a skill that turns the answer into strands.'
-status: draft  # proposal for review; no implementation yet
+status: in-progress  # design approved 2026-10-21 (see "Decisions"); implementing Phases 1–4
 braid:
   strand: bd-xm7l
   priority: P2
@@ -60,6 +60,23 @@ A naive "compare with latest" check would therefore produce mostly noise: one st
 ### Hermeticity is a second, related invariant
 
 PR #876's bug wasn't really "outdated". It was "embedded content imports a package we don't ship". The new test pins that invariant for the orange-book template only. The general invariant is: every `@preview/<name>:<version>` import in any embedded `.typ` must be in `resources/typst-packages/`. That covers `resources/pandoc-filters/typst-template/`, the built-in extensions, and the extension subtrees\' `_extensions/`. It's cheap to check offline. It also catches the update case: when a subtree refresh bumps an import, the test fails until the package is re-vendored.
+
+## Decisions (review, 2026-10-21)
+
+1. **TOML, at `resources/vendored.toml`.** The project historically prefers YAML, but xtask's TOML ergonomics win here.
+2. **Scope.** The registry covers the download manifests and the CDN URLs. The vendored Rust crates are *referenced* from the registry with `policy = "external"` pointing at `upgrade-cargo-deps/PINS.md`, not duplicated. Every entry gets a free-form, multi-line `notes` field (TOML `'''…'''`). It holds context for the agent doing an upgrade: local patches, coupling, gotchas, and what "newer" does and doesn't mean for that asset.
+3. **The skill is survey-only.** The agent reads the survey output and the repo and proposes a plan. There is no `--apply`. Automation can come later if the scale warrants it.
+4. **A separate sibling skill**, `upgrade-vendored-deps`, not a phase of `upgrade-cargo-deps`.
+5. **bd-xm7l is reused** as the home strand.
+
+### Design refinements found while implementing
+
+- **quarto-cli is not one pin.** pandoc-filters and typst-packages are at tag `v1.11.3`. `resources/language` is at commit `45caede32`, and the highlight styles at `2e6695811`. Bootstrap SCSS records no ref at all. So each asset records its *own* upstream ref, and `group` is only a reporting key (one strand per group per survey). For a quarto-cli-derived asset, "outdated" means **the upstream paths it was copied from changed between its ref and the latest tag**, not "a newer tag exists". `outdated` answers this with a blobless bare clone cached under `target/`, running `git log <ref>..<latest> -- <paths>`. It never touches `external-sources/`.
+- **List.js is a quarto-cli copy, not an npm copy.** It is byte-identical to quarto-cli's patched `list.min.js` (special-character fix, `d57aae7aa`). Its upstream is quarto-cli, and the npm `list.js` release is irrelevant. This kind of fact is what `notes` is for.
+- **Subtree pins live in git history** (`git-subtree-split` trailers). CI may use shallow clones, so the offline lint does not verify them. Instead it cross-checks the registry against `pull_extension_subtree::subtrees()` (path, remote, branch). `outdated` verifies the trailer, since it needs full history and the network anyway.
+- **`version_source` kinds**, as implemented: `file-contains` (a README or banner contains the version string literally), `file-regex`, `json-key`, `path-segment`, and `subtree-split`.
+- **Coverage is file-based, not macro-based.** Every committed file under the coverage roots (`resources/`, `hub-client/public/`, `crates/*/vendor/`) must fall under some registry entry, including `native` ones. This is simpler and stronger than parsing `include_*!` arguments.
+- **The hermeticity test scans Lua too.** `callout.lua` and `theorem.lua` emit `#import "@preview/…"` strings into generated Typst, so `.typ` files alone are not the whole import set.
 
 ## Proposed design
 
@@ -163,36 +180,49 @@ This sits alongside `upgrade-cargo-deps` and follows the same shape so the two f
 
 ### Phase 1 — registry and migration
 
-- [ ] Define the registry schema, as a serde struct in `crates/xtask/src/vendored/registry.rs`, with a short schema section in the registry file's header comment.
-- [ ] Populate `resources/vendored.toml` with every asset from the 2026-10-21 survey (about 35 entries across the groups `quarto-cli`, `reveal.js`, `bootstrap`, and `hephaestus`), plus `native` and `frozen` entries for the known false positives.
-- [ ] Close the gaps the survey found: record List.js's version, add `resources/formats/README.md`, and fix the orange-book subtree README's "tag 0.2.0" wording to match the actual `main` + split-trailer pin.
-- [ ] Retire `claude-notes/research/vendored-dependencies-inventory.md`: replace its body with a pointer to the registry and keep the dead-scaffolding guidance, which is still useful.
-- [ ] Mention the registry in `CLAUDE.md` § External Sources Policy: "adding a vendored asset? register it in `resources/vendored.toml`".
+- [x] Registry schema as serde structs in `crates/xtask/src/vendored/registry.rs` (`deny_unknown_fields`, so typos fail), documented in the registry file's header comment.
+- [x] Populate `resources/vendored.toml`: 55 entries in 7 groups (quarto-cli, bootstrap, reveal-js, typst, pandoc, cdn, rust-vendored) plus ungrouped assets, and `native`/`frozen`/`external` entries for the known false positives and the PINS.md-managed crates.
+- [x] Close the gaps the survey found: `resources/listing/README.md` (List.js is Quarto 1's *patched* build, byte-identical to quarto-cli `19a7da95d`), `resources/formats/README.md`, and the orange-book subtree README's "pinned to tag 0.2.0" wording.
+- [x] Retire `claude-notes/research/vendored-dependencies-inventory.md` (pointer + the dead-scaffolding guidance), and mark the May plan superseded.
+- [x] Mention the registry in `AGENTS.md` § External Sources Policy, and add `vendored outdated` to `.claude/rules/xtask.md`.
 
-### Phase 2 — offline checks (TDD: each check first fails on a deliberately broken fixture registry)
+### Phase 2 — offline checks
 
-- [ ] `vendored-registry` lint: consistency checks (paths, `version_source`, `copy_of`, `follows`).
-- [ ] `vendored-registry` lint: coverage over embed-macro targets, `hub-client/public/`, and `crates/*/vendor/`.
-- [ ] Generalized typst hermeticity test over all embedded `.typ` sources.
+- [x] `vendored-registry` lint (`crates/xtask/src/lint/vendored_registry.rs`): consistency (paths, version sources, `copy_of`, `follows` refs and cycles, policy shape, procedure files, dates). Synthetic-tree unit tests for each failure, plus a real-tree test. Sanity-checked on the real tree by planting a version bump and an unregistered file.
+- [x] Coverage over committed **and untracked** files under `resources/`, `hub-client/public/` and `crates/*/vendor/`, so a new asset fails before it is committed. (The planted-file check found the registry itself unclaimed.)
+- [x] Cross-check against `pull_extension_subtree::subtrees()`.
+- [x] `copy_of` means "every file of the copy is byte-identical to the source", not a mirror: the orange-book subtree's payload has a `template/` that the hermetic copy deliberately omits.
+- [x] Generalized Typst hermeticity test, `test_vendored_packages_cover_every_embedded_preview_import` in `typst_compile.rs`. It scans the embedded Lua filters, Typst template, built-in extensions and subtree payloads (Lua included: `callout.lua` and `theorem.lua` emit imports). Verified failing on a planted `@preview/fontawesome:0.5.9`. The PR #876 orange-book test is kept as an explicit case.
 
 ### Phase 3 — `cargo xtask vendored outdated`
 
-- [ ] Upstream query per kind (`git ls-remote`, `curl`), each with a recorded-response unit test so CI never hits the network.
-- [ ] Leader grouping, table output, and `--json` output.
-- [ ] First real run, done by hand, with the results recorded in this plan.
+- [x] Upstream queries: npm, Typst Universe, crates.io (`curl`), git tags and branches (`git ls-remote`), and path-scoped git history via a blobless bare clone cache in `target/vendored-cache/`. The parsers and version comparison have recorded-response unit tests.
+- [x] Follower grouping, a grouped table, and `--json` (group notes plus per-asset reports that include `notes`, `guards`, `procedure`). Queries run in parallel; a full run takes about 10 s warm.
+- [x] First real run (results below).
 
 ### Phase 4 — the skill
 
-- [ ] `.claude/skills/upgrade-vendored-deps/SKILL.md` (steps 1–6 above).
-- [ ] First run via the skill. Refine it from that experience, then close bd-xm7l or narrow it to the `--apply` follow-up.
+- [x] `.claude/skills/upgrade-vendored-deps/SKILL.md`: pre-flight, discovery sweep for what the lint can't see, survey, reconcile `Vendored:` strands, file one strand per group, bump `last_reviewed`, plan doc, commit. Survey-only.
+- [ ] First run via the skill; refine it from that experience.
 
 ### Later / optional
 
-- [ ] `--apply <leader>` mode.
-- [ ] A scheduled GitHub workflow that runs `outdated --json` weekly and opens an issue when a leader moves. Without it, the skill stays on demand, like the cargo one.
-- [ ] Pin `mathjax@3` and the other unpinned CDN URLs, recording them as `cdn` assets. This is a separate strand: pinning them changes behaviour, while the rest of this plan only adds bookkeeping.
+- [ ] A scheduled GitHub workflow that runs `outdated --json` and opens an issue when an upstream moves. Without it, the skill stays on demand, like the cargo one.
+- [ ] Pin the unpinned CDN URLs (`search-insights`, `@marimo-team/islands`). A separate strand, since pinning changes behaviour.
+- [ ] Record the quarto-cli refs for the `unrecorded` assets (`bootstrap-quarto-layer`, `quarto-builtin-extensions`, `knitr-r-scripts`, `quarto-search-js`, `pandoc-html-template`, `reveal-menu-css`) the next time each is refreshed.
 
-## Open questions for review
+## First real run (2026-10-21)
+
+`cargo xtask vendored outdated` against `main` @ `f6e950d29`:
+
+- **Path-scoped quarto-cli checks work as intended.** `pandoc-filters` is `outdated`: 7 upstream commits touch the copied filter paths between v1.11.3 and v1.11.6 (Typst lof/lot, px image sizes, heading detection with footnotes, …). `language` is `outdated` with 4 commits (Azerbaijani, nav landmark labels, skip-to-content). Meanwhile `typst-packages`, `formats`, `highlight-styles` and `quarto-listing-js` are `current` even though v1.11.6 exists, because nothing they copied changed.
+- **Version bumps available:** Bootstrap 5.3.1 → 5.3.8, Bootstrap Icons 1.13.1 → 1.13.2, reveal.js 6.0.0 → 6.0.2, pandoc 3.11 → 3.12.1, pdf.js 6.3.289 → 6.4.299, React 19.2.7 → 19.3.1, KaTeX 0.18.9 → 0.19.0.
+- **Majors** (code changes, not refreshes): mermaid 11 → 12, MathJax 3 → 4, algoliasearch 4 → 5.
+- **Subtrees** (orange-book, julia-engine), mitex, hephaestus, headroom, clipboard and typst-wasm are current.
+- **Six `unrecorded` assets** show their last upstream change, e.g. `bootstrap-quarto-layer` (d742b9083, a focus-indicator fix in `_bootstrap-rules.scss`) and `knitr-r-scripts` (e24bcbd1f).
+- **`chicago-author-date-csl` is `manual`**: its version is the style's own `<updated>` stamp (2025-08-07), not a git ref. Upstream last changed the file on 2026-04-14 ("Chicago: supply `sub-verbo` with shortened note"), so a newer style probably exists.
+
+## Open questions for review (answered 2026-10-21 — see "Decisions")
 
 1. **Registry location and format.** I proposed `resources/vendored.toml`. Alternatives are a repo-root `VENDORED.toml` (more visible, but adds root clutter) or YAML (matches `_quarto.yml` habits, but xtask parses TOML more naturally).
 2. **Scope.** Should the registry cover the *download manifests* (`pandoc-wasm.json`, `typst-wasm.json`, `pdfjs-viewer.json`) and the *CDN URLs*? I lean yes for all three manifests: each records an upstream version, and pandoc-wasm already has a bump runbook. CDN URLs would be recorded but not enforced until they're pinned. The vendored Rust crates (`lua-src-wasm`, `wasm-bindgen-futures-patch`) already have a home in `upgrade-cargo-deps/PINS.md`. I'd reference them from the registry rather than duplicate them.
