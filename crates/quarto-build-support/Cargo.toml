@@ -1,0 +1,16 @@
+[package]
+name = "quarto-build-support"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Helpers shared by the workspace's build scripts (rerun-if-changed watches that never go permanently stale, write-if-changed outputs)."
+
+[dependencies]
+filetime = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

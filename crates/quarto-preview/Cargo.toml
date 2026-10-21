@@ -52,6 +52,8 @@ percent-encoding = "2"
 tempfile = "3"
 
 [build-dependencies]
+# rerun-if-changed watches that never go permanently stale (bd-7xlph6ki).
+quarto-build-support.workspace = true
 # Writes the editor embed's spa-manifest.json over the post-dedupe,
 # post-resolution file view (live-share plan Phase 2, design decision
 # 4 — only this script knows that file set).

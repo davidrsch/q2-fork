@@ -7,7 +7,8 @@
 //! For each entry in `examples/manifest.yml` (an explicit allow-list — no
 //! globs, so a stray directory is never rendered or published by accident):
 //!
-//! 1. render `examples/<entry>` with `q2` (via `cargo run --bin q2`), and
+//! 1. render `examples/<entry>` with `q2` (built once up front, then run
+//!    directly for every entry — see `util::build_q2`), and
 //! 2. copy the project's **static output** — every top-level `*.html` file
 //!    and `*_files/` directory — into `docs/examples/<entry>/`.
 //!
@@ -39,8 +40,16 @@ struct Manifest {
     projects: Vec<String>,
 }
 
-pub fn run() -> Result<()> {
+/// `cargo xtask stage-doc-examples`: build `q2` (release profile when
+/// `release`), then stage every manifest entry with it.
+pub fn run(release: bool) -> Result<()> {
     let root = repo_root()?;
+    let q2 = crate::util::build_q2(&root, release)?;
+    stage_all(&root, &q2)
+}
+
+/// Stage every manifest entry, rendering with the already-built `q2` binary.
+pub fn stage_all(root: &Path, q2: &Path) -> Result<()> {
     let examples_dir = root.join("examples");
     let manifest_path = examples_dir.join("manifest.yml");
 
@@ -63,7 +72,7 @@ pub fn run() -> Result<()> {
     );
 
     for entry in &manifest.projects {
-        stage_one(&root, &examples_dir, &docs_examples_dir, entry)?;
+        stage_one(q2, &examples_dir, &docs_examples_dir, entry)?;
     }
 
     println!("stage-doc-examples: done.");
@@ -72,12 +81,7 @@ pub fn run() -> Result<()> {
 
 /// Render `examples/<entry>` and copy its static output to
 /// `docs/examples/<entry>/`.
-fn stage_one(
-    root: &Path,
-    examples_dir: &Path,
-    docs_examples_dir: &Path,
-    entry: &str,
-) -> Result<()> {
+fn stage_one(q2: &Path, examples_dir: &Path, docs_examples_dir: &Path, entry: &str) -> Result<()> {
     let src_project = examples_dir.join(entry);
     if !src_project.is_dir() {
         anyhow::bail!(
@@ -87,7 +91,7 @@ fn stage_one(
     }
 
     println!("  • rendering examples/{entry}");
-    render_project(root, &src_project)
+    render_project(q2, &src_project)
         .with_context(|| format!("rendering example project `{entry}`"))?;
 
     let dest = docs_examples_dir.join(entry);
@@ -113,20 +117,13 @@ fn stage_one(
     Ok(())
 }
 
-/// Render a single example project in place with `q2`.
-fn render_project(root: &Path, project: &Path) -> Result<()> {
-    // We are a nested `cargo` invocation; strip the outer `cargo xtask`'s
-    // package env vars so the child cargo fingerprints q2 as a fresh shell
-    // would. Without this, an inherited `CARGO_MANIFEST_DIR` forces a full
-    // rebuild of q2's TLS-stack dependency closure on every run. See
-    // `util::strip_inherited_cargo_env` (bd-awchm8w7).
-    let mut cmd = crate::util::nested_command("cargo");
-    cmd.current_dir(root)
-        .args(["run", "--bin", "q2", "--", "render"])
-        .arg(project);
-    let status = cmd
+/// Render a single example project in place with the `q2` binary at `q2`.
+fn render_project(q2: &Path, project: &Path) -> Result<()> {
+    let status = std::process::Command::new(q2)
+        .arg("render")
+        .arg(project)
         .status()
-        .context("spawning `cargo run --bin q2 -- render`")?;
+        .with_context(|| format!("spawning `{} render`", q2.display()))?;
     if !status.success() {
         anyhow::bail!(
             "`q2 render {}` failed (exit {:?})",

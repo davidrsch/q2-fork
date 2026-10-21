@@ -264,7 +264,9 @@ pub fn run(config: &BuildAllConfig) -> Result<()> {
             total,
             "Staging + embedding docs for `q2 docs llms`",
         );
-        crate::build_agents_docs::run()?;
+        // Same profile as the workspace build above, so its q2 is reused
+        // for the renders rather than a second (dev) q2 being built.
+        crate::build_agents_docs::run(config.release)?;
         let mut args: Vec<&str> = vec!["build", "--bin", "q2"];
         if config.release {
             args.push("--release");

@@ -53,16 +53,14 @@ fn main() {
 
     let selected = select_wasm(&spa_assets, &bundle_wasm);
 
-    // Re-run when the candidates change: the assets dir entry catches a
-    // hashed WASM appearing or vanishing; the per-file entries catch
-    // in-place rewrites (same hashed name, new bytes cannot happen —
-    // the hash is content-derived — but a rebuilt dist can carry a new
-    // name, which the dir watch sees).
-    println!("cargo:rerun-if-changed={}", spa_assets.display());
-    for path in &selected.watched {
-        println!("cargo:rerun-if-changed={}", path.display());
-    }
-    println!("cargo:rerun-if-changed={}", bundle_wasm.display());
+    // Re-run when the candidates change. Cargo scans a watched directory
+    // recursively, so watching the SPA `dist/` and the MCP `dist-bundle/`
+    // catches a hashed WASM appearing, vanishing, or being rewritten, and
+    // the bundle copy changing. Either tree may be missing; `watch_dir`
+    // then creates it empty rather than watching a missing path, which
+    // cargo would treat as always stale (bd-7xlph6ki).
+    quarto_build_support::watch_dir(spa_assets.parent().expect("assets has a parent"));
+    quarto_build_support::watch_dir(bundle_wasm.parent().expect("bundle WASM has a parent"));
 
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let archive = out_dir.join("wasm.zst");
@@ -86,11 +84,13 @@ fn main() {
             }
             std::io::Write::write_all(&mut encoder, &bytes).expect("zstd compress");
             let zst = encoder.finish().expect("zstd finish");
-            std::fs::write(&archive, zst).expect("write wasm.zst");
+            // Unchanged bytes keep the archive's mtime, so `include_bytes!`
+            // of it does not recompile this crate.
+            quarto_build_support::write_if_changed(&archive, &zst).expect("write wasm.zst");
         }
         None => {
             // Placeholder: an empty archive means `wasm_bytes()` is None.
-            std::fs::write(&archive, []).expect("write empty wasm.zst");
+            quarto_build_support::write_if_changed(&archive, &[]).expect("write empty wasm.zst");
         }
     }
     println!(
@@ -101,9 +101,6 @@ fn main() {
 
 struct Selection {
     file: Option<PathBuf>,
-    /// Candidate files worth a per-file rerun watch (every hashed WASM
-    /// found, plus the selected bundle copy).
-    watched: Vec<PathBuf>,
 }
 
 /// The exactly-one rule for the SPA dist's hashed WASM (mirrored by
@@ -128,14 +125,11 @@ fn select_wasm(spa_assets: &Path, bundle_wasm: &Path) -> Selection {
     if hashed.len() == 1 {
         return Selection {
             file: Some(hashed[0].clone()),
-            watched: hashed,
         };
     }
     // Zero matches (no SPA dist) or several (a dirty dist the preview
     // refuses to strip): fall back to the MCP bundle's own copy.
-    let file = bundle_wasm.is_file().then(|| bundle_wasm.to_path_buf());
     Selection {
-        watched: [hashed, file.clone().into_iter().collect()].concat(),
-        file,
+        file: bundle_wasm.is_file().then(|| bundle_wasm.to_path_buf()),
     }
 }

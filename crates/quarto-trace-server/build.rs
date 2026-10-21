@@ -31,36 +31,12 @@ fn main() {
         embed_dir.display()
     );
 
-    // Re-run if the real dist/ tree changes. `cargo:rerun-if-changed` on a
-    // directory only tracks the directory's own mtime, which on most
-    // filesystems changes when files are added/removed/renamed but NOT when
-    // existing files are overwritten in place. `vite build` rewrites
-    // `assets/index-<hash>.js`, so a plain directory watch silently misses
-    // content-only changes. Emit one rerun-if-changed per file so cargo
-    // notices any content change. Also keep the directory entry so we pick
-    // up additions of new files not yet seen by the walker.
-    println!("cargo:rerun-if-changed={}", real_dist.display());
-    if real_dist.is_dir() {
-        watch_recursive(&real_dist);
-    }
-}
-
-/// Emit `cargo:rerun-if-changed=<path>` for every file and directory under
-/// `root`. Directory entries are included so cargo also reacts to newly
-/// added files; file entries are the bit that picks up content edits.
-fn watch_recursive(root: &Path) {
-    let entries = match std::fs::read_dir(root) {
-        Ok(it) => it,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        println!("cargo:rerun-if-changed={}", path.display());
-        let is_dir = entry.file_type().is_ok_and(|t| t.is_dir());
-        if is_dir {
-            watch_recursive(&path);
-        }
-    }
+    // Re-run if the real dist/ tree changes, appears, or vanishes.
+    // Cargo scans a watched directory recursively, so in-place rewrites
+    // (`vite build` rewrites `assets/index-<hash>.js`) are caught; a
+    // missing dist is never watched directly, which cargo would treat as
+    // always stale (bd-7xlph6ki).
+    quarto_build_support::watch_dir(&real_dist);
 }
 
 fn make_placeholder_dist() -> PathBuf {

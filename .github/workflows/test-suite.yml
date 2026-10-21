@@ -281,6 +281,24 @@ jobs:
           # step — PR #809) instead of reusing target/ci/q2.
           RUSTFLAGS: "-D warnings"
 
+      # A second `cargo build --bin q2` must compile nothing. A build script
+      # that watches a missing path (or is otherwise always stale) makes
+      # every `cargo run --bin q2` rebuild quarto-preview + quarto, which
+      # made `build-agents-docs` pay ~16s per example project (GH #870,
+      # bd-7xlph6ki). Runs after the claude-notes render so target/ci/q2 is
+      # already built. `cargo xtask verify` runs the same check after its
+      # Rust build.
+      - name: Check no-op rebuild of q2
+        if: runner.os == 'Linux' && !cancelled()
+        shell: bash
+        run: cargo xtask check-noop-rebuild --profile ci
+        env:
+          # Must match the steps above: it is inherited by the q2 builds
+          # (see the claude-notes render step), and it also matches the
+          # "Check pampa consumer feature sets" step, so the xtask that
+          # step built is reused rather than rebuilt.
+          RUSTFLAGS: "-D warnings"
+
   wasm-tests:
     name: WASM Tests
     runs-on: ubuntu-latest

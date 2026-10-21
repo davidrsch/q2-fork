@@ -58,12 +58,11 @@ fn main() {
         embed_dir.display()
     );
 
-    // Re-run if the real bundle changes. Per-file entries catch
-    // in-place content rewrites that a directory-mtime watch misses.
-    println!("cargo:rerun-if-changed={}", real_bundle.display());
-    if real_bundle.is_dir() {
-        watch_recursive(&real_bundle);
-    }
+    // Re-run if the real bundle changes, appears, or vanishes. Cargo scans
+    // a watched directory recursively, so in-place rewrites are caught; a
+    // missing bundle is never watched directly, which cargo would treat as
+    // always stale (bd-7xlph6ki).
+    quarto_build_support::watch_dir(&real_bundle);
 }
 
 /// The filtered embed copy of `bundle` in `OUT_DIR`: every bundle file
@@ -106,21 +105,6 @@ fn copy_filtered(root: &Path, dir: &Path, embed: &Path, strip_wasm: bool) {
             std::fs::create_dir_all(parent).expect("create embed subdir");
         }
         std::fs::copy(&path, &dest).expect("copy bundle file");
-    }
-}
-
-fn watch_recursive(root: &Path) {
-    let entries = match std::fs::read_dir(root) {
-        Ok(it) => it,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        println!("cargo:rerun-if-changed={}", path.display());
-        let is_dir = entry.file_type().is_ok_and(|t| t.is_dir());
-        if is_dir {
-            watch_recursive(&path);
-        }
     }
 }
 

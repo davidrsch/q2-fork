@@ -362,6 +362,15 @@ pub fn run(config: &VerifyConfig) -> Result<()> {
         println!("  ↳ Skipping claude-notes render ({})", reason);
     }
 
+    // A second `cargo build --bin q2` must be a no-op: an always-stale
+    // build script turns every `cargo run --bin q2` into a rebuild
+    // (bd-7xlph6ki). CI runs the same check in test-suite.yml. Same
+    // `rustflags` as the build, or cargo rebuilds the whole tree.
+    if !config.skip_rust_build {
+        println!("  ↳ no-op rebuild check (cargo xtask check-noop-rebuild)...");
+        crate::check_noop_rebuild::run(None, rustflags)?;
+    }
+
     // Step 4: Tree-sitter grammar tests
     if !config.skip_treesitter_tests {
         println!(

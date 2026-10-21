@@ -6953,6 +6953,7 @@ dependencies = [
  "pampa",
  "pollster",
  "quarto-brand",
+ "quarto-build-support",
  "quarto-core",
  "quarto-doctemplate",
  "quarto-error-catalog",
@@ -7026,6 +7027,14 @@ dependencies = [
  "serde_json",
  "serde_yaml 0.9.34+deprecated",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "quarto-build-support"
+version = "0.34.0"
+dependencies = [
+ "filetime",
+ "tempfile",
 ]
 
 [[package]]
@@ -7392,6 +7401,7 @@ dependencies = [
  "fs2",
  "include_dir",
  "libc",
+ "quarto-build-support",
  "quarto-node-discovery",
  "quarto-wasm-embed",
  "serde",
@@ -7504,6 +7514,7 @@ dependencies = [
  "pampa",
  "percent-encoding",
  "pollster",
+ "quarto-build-support",
  "quarto-core",
  "quarto-error-reporting",
  "quarto-hub",
@@ -7662,6 +7673,7 @@ name = "quarto-trace"
 version = "0.34.0"
 dependencies = [
  "flate2",
+ "quarto-build-support",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -7677,6 +7689,7 @@ dependencies = [
  "http",
  "http-body-util",
  "include_dir",
+ "quarto-build-support",
  "quarto-trace",
  "serde",
  "serde_json",
@@ -7723,6 +7736,7 @@ dependencies = [
 name = "quarto-wasm-embed"
 version = "0.34.0"
 dependencies = [
+ "quarto-build-support",
  "sha2 0.11.0",
  "zstd",
 ]

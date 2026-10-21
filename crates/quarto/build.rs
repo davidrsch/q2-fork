@@ -34,30 +34,10 @@ fn main() {
         embed_dir.display()
     );
 
-    // Re-run if the staged tree changes. A directory-mtime watch misses
-    // in-place file rewrites (re-staging overwrites files at the same
-    // paths), so emit one rerun-if-changed per file; the directory
-    // entry picks up additions and removals.
-    println!("cargo:rerun-if-changed={}", real_dist.display());
-    if real_dist.is_dir() {
-        watch_recursive(&real_dist);
-    }
-}
-
-/// Emit `cargo:rerun-if-changed=<path>` for every file and directory
-/// under `root`.
-fn watch_recursive(root: &Path) {
-    let entries = match std::fs::read_dir(root) {
-        Ok(it) => it,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        println!("cargo:rerun-if-changed={}", path.display());
-        if entry.file_type().is_ok_and(|t| t.is_dir()) {
-            watch_recursive(&path);
-        }
-    }
+    // Re-run if the staged tree changes, appears, or vanishes. A missing
+    // tree is created empty rather than watched missing (always stale) or
+    // via the workspace root (stale after every build) (bd-7xlph6ki).
+    quarto_build_support::watch_dir(&real_dist);
 }
 
 fn make_placeholder_dist() -> PathBuf {

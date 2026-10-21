@@ -10,6 +10,8 @@ description = "Embeds the wasm-quarto-hub-client render WASM exactly once into t
 zstd.workspace = true
 
 [build-dependencies]
+# rerun-if-changed watches that never go permanently stale (bd-7xlph6ki).
+quarto-build-support.workspace = true
 sha2 = "0.11"
 zstd.workspace = true
 

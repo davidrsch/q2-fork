@@ -306,8 +306,8 @@ jobs:
       # like the SPA dists, so it is staged once here rather than on
       # every build leg — where cross-compiled targets could not run the
       # `q2` that renders the docs anyway. `build-agents-docs` builds a
-      # host `q2` itself (via `cargo run --bin q2`); a debug binary is
-      # fine, it only has to render.
+      # host `q2` itself (once, dev profile, then runs it per render); a
+      # debug binary is fine, it only has to render.
       # The xtask also stages `docs/examples/` (a gitignored resource the
       # docs declare) first — on this fresh checkout nothing else does,
       # and `q2 render docs` fails hard without it (v0.27.0 attempt 1).

@@ -18,10 +18,36 @@ fn main() {
     };
     println!("cargo:rustc-env=QUARTO_GIT_HASH={}", value);
 
-    // Re-run when HEAD or the index changes so the hash stays fresh.
-    // These paths are relative to the crate root; missing .git is handled gracefully.
-    println!("cargo:rerun-if-changed=../../.git/HEAD");
-    println!("cargo:rerun-if-changed=../../.git/index");
+    // Re-run when HEAD or the index changes so the hash stays fresh. Ask
+    // git where they live: in a linked worktree `.git` is a file, so a
+    // hard-coded `../../.git/HEAD` never exists, and cargo treats a missing
+    // watched path as always stale, rebuilding this crate and everything
+    // above it (quarto-core, …) on every build (bd-7xlph6ki). Without git
+    // (tarball builds) there is nothing to watch and the hash is `unknown`.
+    for name in ["HEAD", "index"] {
+        if let Some(path) = git_path(name) {
+            quarto_build_support::watch_file(&path);
+        }
+    }
+}
+
+/// The path of `name` inside the git directory (`git rev-parse
+/// --git-path`), resolved against the crate root, where cargo runs build
+/// scripts.
+fn git_path(name: &str) -> Option<std::path::PathBuf> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--git-path", name])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if s.is_empty() {
+        return None;
+    }
+    let manifest_dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").ok()?);
+    Some(manifest_dir.join(s))
 }
 
 fn git_short_hash() -> Option<String> {
@@ -37,8 +63,13 @@ fn git_short_hash() -> Option<String> {
 }
 
 fn git_is_dirty() -> Option<bool> {
+    // `--no-optional-locks`: a plain `git status` opportunistically rewrites
+    // `.git/index` when cached stat info is stale (after a checkout, merge,
+    // or CI's mtime restore). That index is a watched input of this very
+    // script, so the write made the *next* build rerun it and recompile
+    // quarto-core and everything above it (bd-7xlph6ki).
     let output = Command::new("git")
-        .args(["status", "--porcelain"])
+        .args(["--no-optional-locks", "status", "--porcelain"])
         .output()
         .ok()?;
     if !output.status.success() {
