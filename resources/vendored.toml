@@ -501,7 +501,7 @@ title = "React / ReactDOM ES modules for quarto.component"
 paths = ["resources/js/react"]
 policy = "follow"
 follows = "react-npm"
-version = "19.2.7"
+version = "19.3.1"
 version_sources = [{ kind = "json-key", file = "resources/js/react/build-info.json", key = "react" }]
 guards = ["quarto-core vendored_react_matches_build_info"]
 procedure = "resources/js/react/README.md"
@@ -513,7 +513,7 @@ id = "react-npm"
 title = "react / react-dom npm dependency (decides the vendored React build)"
 paths = ["package-lock.json"]
 policy = "track"
-version = "19.2.7"
+version = "19.3.1"
 version_sources = [
   { kind = "json-key", file = "package-lock.json", key = "packages.node_modules/react.version" },
   { kind = "json-key", file = "package-lock.json", key = "packages.node_modules/react-dom.version" },
