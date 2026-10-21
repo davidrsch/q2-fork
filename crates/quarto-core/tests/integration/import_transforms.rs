@@ -299,6 +299,35 @@ fn nested_ranges_wrap_innermost_first() {
     assert_eq!(out.counts, TransformCounts::default());
 }
 
+/// pandoc ≥ 3.12 spells the marker id `comment-id` (older readers: `id`).
+/// Pairing must follow it, or nested ranges are matched to the wrong end.
+#[test]
+fn nested_ranges_pair_by_comment_id_as_pandoc_3_12_writes_it() {
+    let start_v312 = |id: &str, text: &str| {
+        span(
+            &["comment-start"],
+            &[("comment-id", id), ("author", "Ann"), ("date", DATE)],
+            words(text),
+        )
+    };
+    let end_v312 = |id: &str| span(&["comment-end"], &[("comment-id", id)], vec![]);
+    let inl = cat(vec![
+        vec![start_v312("0", "outer")],
+        words("one"),
+        vec![sp(), start_v312("1", "inner")],
+        words("two"),
+        vec![end_v312("1"), sp()],
+        words("three"),
+        vec![end_v312("0")],
+    ]);
+    let out = run(&doc(vec![para(inl)]));
+    assert_eq!(
+        body(&out.qmd),
+        format!("[one [two[>> inner]{ANN}] three[>> outer]{ANN}]")
+    );
+    assert_eq!(out.counts, TransformCounts::default());
+}
+
 #[test]
 fn a_reply_shares_its_parents_wrapper() {
     // start 0, start 1, range, end 0 [ end 1 ]  (P1 T3 (a))

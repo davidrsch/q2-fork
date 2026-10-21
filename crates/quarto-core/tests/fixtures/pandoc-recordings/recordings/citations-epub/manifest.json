@@ -6,13 +6,13 @@
   },
   {
     "path": "capture/citations.epub",
-    "size": 32061,
-    "sha256": "927704fb95ea2862bc33726ebb1220d1e491165dbb2b3841abafc318f08b0aeb"
+    "size": 32059,
+    "sha256": "166854067ff631d47307f0f6799413ee06ccac3aadf8e569239f4addc8233d74"
   },
   {
     "path": "env.json",
-    "size": 8568,
-    "sha256": "e7d8aee5c7d08c68dfda5c8d437a6b1369d7b3013ea1264a310a5ff81794f529"
+    "size": 8964,
+    "sha256": "80ec81ca52475980ac4a1d72eda31850676f25ee3c3d7bcc9b99850b95fef4af"
   },
   {
     "path": "fs/__q2_doc__/citations.qmd",
@@ -41,17 +41,17 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 22857,
-    "sha256": "dbb9ab3e65296d5d9c518c0df5012bf192bd5fbedbde69a0961267bf942f8cec"
+    "size": 23854,
+    "sha256": "d65069fd246cf0f091cb9f0b7641dc1b9c7d82329e8115bf352b85921d82e9ec"
   },
   {
     "path": "meta.json",
     "size": 185,
-    "sha256": "46a556d5856b795a6c5c43e1791d37fea7f7345d9312cfdddaf1733283553ad7"
+    "sha256": "2290b0f85bf185eb5e6efd07279fe06a47a6cf3c608f747f1c665908bac4e638"
   },
   {
     "path": "reference/citations.epub",
-    "size": 32061,
-    "sha256": "da2e49f9d92157a7935e94a4069f7b3bf031f324c199631ec18cbebb5468f2a3"
+    "size": 32062,
+    "sha256": "dc17bd99775a8d560c21a7703eb37e65d0242cf0ec46e1e973ed6449f964f97f"
   }
 ]

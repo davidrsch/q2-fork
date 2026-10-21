@@ -27,8 +27,8 @@ pub mod typst_highlight;
 pub mod typst_params;
 pub mod version;
 
-pub const QUARTO_CLI_PIN: &str = "v1.11.3";
-pub const PANDOC_PIN: &str = "3.11";
+pub const QUARTO_CLI_PIN: &str = "v1.11.6";
+pub const PANDOC_PIN: &str = "3.12.1";
 
 pub static FILTERS_DIR: include_dir::Dir =
     include_dir!("$CARGO_MANIFEST_DIR/../../resources/pandoc-filters/filters");
@@ -41,7 +41,7 @@ pub static DATADIR_DIR: include_dir::Dir =
 pub static FORMATS_DIR: include_dir::Dir =
     include_dir!("$CARGO_MANIFEST_DIR/../../resources/formats");
 /// The 5 docx callout-icon PNGs (P7 Task 4), vendored from
-/// `v1.11.3:src/resources/formats/docx/` — outside P4's traced
+/// `src/resources/formats/docx/` (v1.11.3; unchanged through v1.11.6) — outside P4's traced
 /// `src/resources/filters/` vendoring closure, so extracted into the share
 /// tree separately by [`bundle::extract_share_tree`].
 pub static FORMATS_DOCX_DIR: include_dir::Dir =

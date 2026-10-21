@@ -33,11 +33,12 @@ fn embedded_catalog_has_expected_shape() {
         names.contains(&BASE_LANGUAGE_FILE),
         "base {BASE_LANGUAGE_FILE} must be embedded"
     );
-    // 34 per-language variants shipped from Quarto 1 at the time of the copy.
+    // 35 per-language variants shipped from Quarto 1 at the time of the copy
+    // (v1.11.6 added Azerbaijani, `_language-az.yml`).
     let variants = names.iter().filter(|n| **n != BASE_LANGUAGE_FILE).count();
     assert_eq!(
-        variants, 34,
-        "expected exactly 34 per-language files, found {variants}: {names:?}"
+        variants, 35,
+        "expected exactly 35 per-language files, found {variants}: {names:?}"
     );
 }
 

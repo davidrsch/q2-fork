@@ -110,12 +110,16 @@ fn has_good_pandoc_version() -> bool {
 /// yet. To bump the ceiling: run `cargo xtask pandoc-check`, and if it
 /// reports green, edit `PANDOC_ORACLE_MAX_VERSION` to the value it prints.
 ///
+/// 3.12 was calibrated with `markdown/049.qmd` parked as `049.qmd-FAILING`:
+/// pandoc 3.12 trims the newlines inside display math, pampa does not yet
+/// (quarto-dev/q2#886).
+///
 /// Adding a 5th test that calls [`assert_good_pandoc_version`]? Also add its
 /// name to `ORACLE_TEST_NAMES` in `crates/xtask/src/pandoc_check.rs` — that
 /// list is hand-maintained, not derived from this file, so a new gated test
 /// silently isn't covered by `cargo xtask pandoc-check` until you do.
 const PANDOC_ORACLE_MIN_VERSION: (u32, u32) = (3, 6);
-const PANDOC_ORACLE_MAX_VERSION: (u32, u32) = (3, 11);
+const PANDOC_ORACLE_MAX_VERSION: (u32, u32) = (3, 12);
 
 /// Parse the first line of `pandoc --version` output into `(major, minor)`.
 /// Expects format like "pandoc 3.6.1" or "pandoc 3.6". Malformed or empty
@@ -354,10 +358,73 @@ fn matches_pandoc_markdown_reader(input: &str) -> bool {
         serde_json::from_str(&json_output).expect("Failed to parse our JSON");
     remove_location_fields(&mut our_value);
     remove_quarto_pandoc_reader_opts(&mut our_value);
+    let pandoc_trims_display_math = local_pandoc_version() >= PANDOC_TRIMS_DISPLAY_MATH_SINCE;
+    if pandoc_trims_display_math {
+        trim_display_math_newlines(&mut our_value);
+    }
     let json_output = serde_json::to_string(&our_value).expect("Failed to serialize our JSON");
+    // With the adjustment applied, derive the native form from the adjusted
+    // JSON (through pandoc) so both comparisons check the same AST.
+    let native_output = if pandoc_trims_display_math {
+        canonicalize_pandoc_ast(&json_output, "json", "native")
+    } else {
+        native_output
+    };
 
     matches_canonical_pandoc_format(input, &native_output, "markdown", "native")
         && matches_canonical_pandoc_format(input, &json_output, "markdown", "json")
+}
+
+/// pandoc 3.12's markdown reader trims the leading and trailing newlines of
+/// `$$ … $$` display math (`$$\n1\n  + 2\n$$` reads as `"1\n  + 2"`; earlier
+/// readers kept `"\n1\n  + 2\n"`, as pampa does), apparently a side effect of
+/// the `mathDisplay` rewrite in jgm/pandoc#11887. The difference is invisible
+/// once rendered (TeX ignores it, and q2 hands pandoc pampa's AST, never
+/// markdown), so pampa keeps its source-faithful content and the oracle
+/// applies the trim to pampa's side only when the local pandoc does it —
+/// `pandoc-match-corpus/markdown/049.qmd` is the corpus case. Nothing else is
+/// normalized.
+const PANDOC_TRIMS_DISPLAY_MATH_SINCE: (u32, u32) = (3, 12);
+
+fn local_pandoc_version() -> (u32, u32) {
+    let output = Command::new("pandoc")
+        .arg("--version")
+        .output()
+        .expect("Failed to execute pandoc command");
+    parse_pandoc_version(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// Trim leading/trailing `\n` from every `Math DisplayMath` string in a
+/// pandoc JSON AST (see [`PANDOC_TRIMS_DISPLAY_MATH_SINCE`]).
+fn trim_display_math_newlines(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            let is_display_math = map.get("t").and_then(|t| t.as_str()) == Some("Math")
+                && map
+                    .get("c")
+                    .and_then(|c| c.get(0))
+                    .and_then(|k| k.get("t"))
+                    .and_then(|t| t.as_str())
+                    == Some("DisplayMath");
+            if is_display_math {
+                if let Some(text) = map.get_mut("c").and_then(|c| c.get_mut(1))
+                    && let Some(s) = text.as_str()
+                {
+                    *text = serde_json::Value::String(s.trim_matches('\n').to_string());
+                }
+                return;
+            }
+            for v in map.values_mut() {
+                trim_display_math_newlines(v);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for v in items {
+                trim_display_math_newlines(v);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn matches_pandoc_commonmark_reader(input: &str) -> bool {

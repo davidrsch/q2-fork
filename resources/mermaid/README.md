@@ -11,12 +11,19 @@ Policy (see root `AGENTS.md`) and mirrors `resources/revealjs/`.
 
 ## Source & version
 
-- **mermaid `11.12.0`** — MIT licensed (see `LICENSE`).
+- **mermaid `12.2.0`** — MIT licensed (see `LICENSE`).
 - Homepage: https://mermaid.js.org
 - Copied verbatim from the npm tarball's `dist/mermaid.min.js`
-  (`https://registry.npmjs.org/mermaid/-/mermaid-11.12.0.tgz`).
+  (`https://registry.npmjs.org/mermaid/-/mermaid-12.2.0.tgz`).
 - SHA-256 of `mermaid.min.js`:
-  `07e37dfa97b337ccc85365d57eddf99b9706f09db3b59b260d0333b23b343c4b`
+  `a8a6a6f805b074a8261a2825c86f99c8054acb3b35f50bb7e24a4f9f2c3c3b9f`
+
+Mermaid 12 is ahead of Quarto 1 (which ships 11.12.0) by decision
+(bd-2qy6mdhq, 2026-10-21). Its defaults differ from 11: diagrams that set
+no `layout` are laid out with ELK, and the default look is `neo`; authors
+can restore the 11 look per diagram with `layout: dagre`, `look: classic`.
+ELK is inlined into this IIFE build, which roughly doubled it
+(2.7 MB → 5.5 MB, ~+500 KB gzipped).
 
 ## Files
 

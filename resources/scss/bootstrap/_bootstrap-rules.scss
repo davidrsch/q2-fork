@@ -1378,6 +1378,12 @@ aside,
   display: block;
 }
 
+// Fix for light/dark renderings in column-margin: when light-content is hidden
+// in dark mode, remove padding-top from dark-content so it aligns correctly
+body.quarto-dark .column-margin.column-container > .light-content + .dark-content {
+  padding-top: 0;
+}
+
 .column-margin.column-container > *.collapse:not(.show) {
   display: none;
 }
@@ -1743,6 +1749,16 @@ td code:not(.sourceCode) {
   > .modal-content
   > .modal-header {
   padding: 0.7rem;
+}
+
+// These buttons are bare .btn elements (no btn-* variant class), so
+// Bootstrap's .btn:focus-visible leaves them with no focus indicator.
+// Restore the browser's ring; unlike box-shadow it survives forced colors.
+// See https://github.com/quarto-dev/quarto-cli/issues/14774
+.quarto-btn-toggle:focus-visible,
+.quarto-search-button:focus-visible,
+.code-tools-button:focus-visible {
+  outline: revert;
 }
 
 .code-tools-button {
@@ -2209,6 +2225,11 @@ kbd,
 .callout:not(.callout-titled) .callout-body > :last-child,
 .callout:not(.callout-titled) .callout-body > div > :last-child {
   margin-bottom: 0.2rem;
+}
+
+.callout.callout-style-simple:not(.callout-titled) .callout-body > :last-child,
+.callout.callout-style-simple:not(.callout-titled) .callout-body > div > :last-child {
+  margin-bottom: 0.5em;
 }
 
 $code-block-border-left-color: $table-border-color !default;

@@ -24,6 +24,7 @@
 //! - `build-engine-host-bundle`: Build the committed engine-host-node.mjs bundle
 //! - `build-ts-bundle`: Build the committed ts-bundle.mjs driver for `q2 call build-ts-extension`
 //! - `vendor-react`: Rebuild the vendored React ES modules under `resources/js/react/`
+//! - `vendored outdated`: Ask each vendored asset's upstream (per `resources/vendored.toml`) what is newer
 //! - `build-agents-docs`: Stage the docs-site llms.txt artifacts for `q2 docs llms`
 //! - `stage-doc-examples`: Render `examples/manifest.yml` projects into `docs/examples/`
 //! - `pull-extension-subtree`: Sync vendored extension subtrees under `resources/extension-subtrees/`
@@ -58,6 +59,7 @@ mod treesitter_crlf;
 mod ts_packages;
 mod util;
 mod vendor_react;
+mod vendored;
 mod verify;
 
 use anyhow::Result;
@@ -70,6 +72,24 @@ use clap::{Parser, Subcommand};
 struct Cli {
     #[command(subcommand)]
     command: Command,
+}
+
+#[derive(Subcommand)]
+enum VendoredAction {
+    /// Query every `track` asset's upstream and report what is newer.
+    /// Needs the network (curl, git); keeps git history caches under
+    /// `target/vendored-cache/`.
+    Outdated {
+        /// Emit JSON (groups + one report per asset) instead of a table.
+        #[arg(long)]
+        json: bool,
+        /// Only survey this asset id.
+        #[arg(long)]
+        id: Option<String>,
+        /// Only survey assets in this group.
+        #[arg(long)]
+        group: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -476,6 +496,13 @@ enum Command {
     /// after bumping `react` / `react-dom`.
     VendorReact {},
 
+    /// Vendored third-party assets registered in `resources/vendored.toml`
+    /// (bd-xm7l). The registry itself is checked offline by `lint`.
+    Vendored {
+        #[command(subcommand)]
+        action: VendoredAction,
+    },
+
     /// Build the committed engine-host-node.mjs bundle (Plan 1b).
     ///
     /// Produces `ts-packages/quarto-engine-host-node/dist/engine-host-node.mjs`
@@ -661,6 +688,9 @@ fn main() -> Result<()> {
         Command::BuildHubClientEmbed {} => build_hub_client_embed::run(),
         Command::BuildHubMcpBundle {} => build_hub_mcp_bundle::run(),
         Command::VendorReact {} => vendor_react::run(),
+        Command::Vendored {
+            action: VendoredAction::Outdated { json, id, group },
+        } => vendored::outdated::run(vendored::outdated::Args { json, id, group }),
         Command::BuildEngineHostBundle {} => build_engine_host_bundle::run(),
         Command::BuildTsBundle {} => build_ts_bundle::run(),
         Command::BuildAll {

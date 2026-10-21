@@ -27,6 +27,12 @@ WASM rebuild is needed for a changelog-only edit.
 
 - [`f4c4ec189`](https://github.com/quarto-dev/q2/commits/f4c4ec189): A figure whose caption is also its image's alt text is announced once by screen readers: the caption is hidden from assistive technology and the image keeps its alt text.
 - [`08a1d37da`](https://github.com/quarto-dev/q2/commits/08a1d37da): An image's `fig-alt` now becomes its alt text in the preview and in every rendered format (HTML, slides, Word, Typst), instead of being dropped.
+- [`b7126df57`](https://github.com/quarto-dev/q2/commits/b7126df57): Sync the Quarto 1 filters, Typst templates, translations and knitr scripts with Quarto 1.11.6: Typst documents can show lists of figures and tables, inline images with alt text keep their pixel sizes, Azerbaijani is available, and keyboard focus rings return on toolbar buttons.
+- [`57087e9bd`](https://github.com/quarto-dev/q2/commits/57087e9bd): Upgrade pandoc to 3.12.1 for "Download as" and document import; Word output now styles the paragraph after a figure, table or callout as "First Paragraph", and importing Word documents with nested comments pairs each comment with its own text again.
+- [`f89adae50`](https://github.com/quarto-dev/q2/commits/f89adae50): Upgrade mermaid to 12.2.0; diagrams without an explicit layout now use the ELK layout and mermaid's new default look.
+- [`8e2bc84aa`](https://github.com/quarto-dev/q2/commits/8e2bc84aa): Upgrade KaTeX to 0.19.0 in the preview and in rendered pages.
+- [`b0bd4e353`](https://github.com/quarto-dev/q2/commits/b0bd4e353): Upgrade the PDF preview viewer to pdf.js 6.4.299.
+- [`a3b6b4f79`](https://github.com/quarto-dev/q2/commits/a3b6b4f79): Upgrade reveal.js to 6.0.2 for presentation preview and rendering.
 - [`6e3157e01`](https://github.com/quarto-dev/q2/commits/6e3157e01): Widen the WebKit timeout for the PDF preview status indicator in the pandoc-pdf-viewer harness spec, fixing a CI flake (bd-ynqwyyi7).
 
 ### 2026-10-20

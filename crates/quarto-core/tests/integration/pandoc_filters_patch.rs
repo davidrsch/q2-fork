@@ -130,7 +130,7 @@ fn test_marker_inventory() {
 /// bd-ykjwiqcc: the #15077 docx backport is present and registered.
 ///
 /// Revert hunk: re-vendor `quarto-post/docx.lua` or `main.lua` from the
-/// v1.11.3 pin (overwriting the backport) -> one of the assertions below
+/// v1.11.6 pin (overwriting the backport) -> one of the assertions below
 /// goes RED, and docx loses the description of every standalone image
 /// (see `crates/quarto-core/src/pandoc_filters/image_alt_encode.rs`).
 #[test]

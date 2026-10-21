@@ -111,6 +111,7 @@
           subfloat-numbering(n-super, subfloat-idx)
         })
         show figure.where(kind: kind): set figure.caption(position: position)
+        show figure.where(kind: kind): set figure(outlined: false)
 
         show figure: it => {
           let num = numbering(subcapnumbering, n-super, quartosubfloatcounter.get().first() + 1)
@@ -289,6 +290,10 @@
   toc_title: none,
   toc_depth: none,
   toc_indent: 1.5em,
+  lof: false,
+  lof-title: none,
+  lot: false,
+  lot-title: none,
   doc,
 ) = {
   // Set document metadata for PDF accessibility
@@ -393,6 +398,18 @@
     ]
   }
 
+  if lof {
+    block(above: 0em, below: 2em)[
+    #outline(title: lof-title, target: figure.where(kind: "quarto-float-fig"));
+    ]
+  }
+
+  if lot {
+    block(above: 0em, below: 2em)[
+    #outline(title: lot-title, target: figure.where(kind: "quarto-float-tbl"));
+    ]
+  }
+
   doc
 }
 
@@ -465,6 +482,7 @@ See #ref(<fig-elephant>, supplement: [Figure]) for an illustration
   [E], [F], [G],
   [A], [G], [G],
 )
+
 ], caption: figure.caption(
 position: top, 
 [

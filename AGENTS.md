@@ -708,17 +708,19 @@ However, any resources that are needed at compile time or runtime **must be copi
 2. **Version control**: Changes to resources are tracked in the repository
 3. **CI/CD compatibility**: CI builds don't need to check out quarto-cli
 
-### Current Local Resource Directories
+### The vendored registry
 
-- `resources/scss/` - SCSS resources (Bootstrap, themes, templates) - see `resources/scss/README.md`
-- `resources/` (future) - Other resources as needed
+Every vendored third-party asset — whether copied from `external-sources/quarto-cli` or from anywhere else (npm, Typst Universe, git subtrees, fetched WASM manifests, CDN URLs) — is registered in **`resources/vendored.toml`**, with its paths, pinned version, what decides that version, its upstream, guards, and the README holding its refresh procedure. The `vendored-registry` rule in `cargo xtask lint` fails on any file under `resources/`, `hub-client/public/` or `crates/*/vendor/` that no registry entry claims, and on any registry version that disagrees with the tree.
+
+- **Adding a vendored asset**: add an `[[asset]]` to `resources/vendored.toml` (its header documents the fields) and a README with provenance next to the bytes.
+- **Checking for upstream updates**: `cargo xtask vendored outdated`, or the `/upgrade-vendored-deps` skill for a full survey that files strands.
 
 ### Updating Local Resources
 
 When TypeScript Quarto updates resources (e.g., Bootstrap version bump):
 1. Copy updated files from `external-sources/` to the appropriate local directory
-2. Update any related documentation (README.md files)
-3. Run relevant tests to verify compatibility
+2. Update any related documentation (README.md files) and the asset's `version` in `resources/vendored.toml`
+3. Run relevant tests to verify compatibility (the registry entry's `guards`), plus `cargo xtask lint`
 4. Commit the updated resources
 
 ### Acceptable Uses of external-sources/

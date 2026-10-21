@@ -203,9 +203,10 @@ function calloutDocx(node)
 end
 
 -- QUARTO-PATCH(upstream PR quarto-dev/quarto-cli#15077, c1800b927; not in
--- the v1.11.3 pin): backported verbatim. q2 respells a standalone image's
--- alt text as fig-alt at the Pandoc cut (pandoc_filters::image_alt_encode,
--- bd-ykjwiqcc) and relies on this fixup to fold it back for docx.
+-- any tag through the v1.11.6 pin): backported verbatim. q2 respells a
+-- standalone image's alt text as fig-alt at the Pandoc cut
+-- (pandoc_filters::image_alt_encode, bd-ykjwiqcc) and relies on this fixup
+-- to fold it back for docx.
 -- The DOCX writer uses Image.caption for the picture description. Apply
 -- fig-alt after layout has extracted the visible figure caption.
 function render_docx_fixups()

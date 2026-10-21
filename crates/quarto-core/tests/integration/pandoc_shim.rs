@@ -2341,6 +2341,8 @@ const Q1_SLOT_MAPPING: &[(&str, Option<&[&str]>)] = &[
 ];
 
 /// Route-N global arity, read from the `v1.11.3` sources cited in Task 4
+/// (re-verified for `v1.11.6`: `crossref/format.lua` and the cited
+/// customnode files are unchanged between the two tags, bd-jsfg1494)
 /// (`crossref/format.lua:51-121`, `crossref/options.lua:16-19`,
 /// `common/pandoc.lua:125-127`).
 const ROUTE_N_GLOBAL_ARITY: &[(&str, i64)] = &[
@@ -2358,7 +2360,7 @@ const ROUTE_N_GLOBAL_ARITY: &[(&str, i64)] = &[
 /// `test_arity_table_is_pinned` goes RED the moment the real pin is bumped
 /// by a re-vendor, forcing the arity table to be re-verified against the
 /// new sources before this constant is updated to match.
-const ROUTE_N_ARITY_RECORDED_AGAINST_PIN: &str = "v1.11.3";
+const ROUTE_N_ARITY_RECORDED_AGAINST_PIN: &str = "v1.11.6";
 
 /// L-TIER
 ///

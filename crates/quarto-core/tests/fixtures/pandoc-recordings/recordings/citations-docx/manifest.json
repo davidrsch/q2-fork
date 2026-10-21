@@ -6,13 +6,13 @@
   },
   {
     "path": "capture/citations.docx",
-    "size": 10751,
-    "sha256": "2ce3c600830ba0126c2083e75e8253b6bbf3b01b54aef7be24f782ab703396dd"
+    "size": 10742,
+    "sha256": "8a8591e9262b3c1d1581cc6985b3c33b98245de539d1de19596cb0c6ccaf34c1"
   },
   {
     "path": "env.json",
-    "size": 8996,
-    "sha256": "c215c96339973a20f00fd0347d759b05201547f56e3b1ec54df7a86ccb1bf4bb"
+    "size": 9392,
+    "sha256": "4ff7cda831638979a7d95287d289d1609695a509f3a6e026941c0b5bb9d53f75"
   },
   {
     "path": "fs/__q2_doc__/citations.qmd",
@@ -31,17 +31,17 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 22857,
-    "sha256": "8f6afb25d32d52454cd269bbf37a0624826d8bbdb99bb0c51e240751d2fea04f"
+    "size": 23854,
+    "sha256": "f80d6070b7b1b5962cacf9de956d387461c0ec86027287f51182cf50ee45f525"
   },
   {
     "path": "meta.json",
     "size": 185,
-    "sha256": "f0fab2c8dd075e7b3335174b9c825ff90cddfc20e57e758bd4ee7b5c4c62efb2"
+    "sha256": "a2c006ce1080f745ddf8423ff21b1da10882feedf8f01bb50fc47bea9b253a23"
   },
   {
     "path": "reference/citations.docx",
-    "size": 10751,
-    "sha256": "2ce3c600830ba0126c2083e75e8253b6bbf3b01b54aef7be24f782ab703396dd"
+    "size": 10742,
+    "sha256": "8a8591e9262b3c1d1581cc6985b3c33b98245de539d1de19596cb0c6ccaf34c1"
   }
 ]

@@ -139,7 +139,7 @@ fn version_gate_stops_the_stage_before_anything_runs() {
 
 #[test]
 fn stage_runs_the_prepared_request_through_the_native_executor() {
-    let (fake, _) = install_fake("3.11", false);
+    let (fake, _) = install_fake(quarto_core::pandoc_filters::PANDOC_PIN, false);
     let r = render_docx();
     r.result.expect("render with a fake pandoc succeeds");
 
@@ -167,7 +167,7 @@ fn stage_runs_the_prepared_request_through_the_native_executor() {
 /// `execute()` applies a request as data: dirs, files, share tree, argv, env.
 #[test]
 fn execute_applies_dirs_files_share_tree_argv_and_env() {
-    let (fake, fake_bin) = install_fake("3.11", false);
+    let (fake, fake_bin) = install_fake(quarto_core::pandoc_filters::PANDOC_PIN, false);
     let scratch = tempfile::tempdir().unwrap();
     let mut request: PandocRequest =
         serde_json::from_str(include_str!("../../schemas/pandoc-request.golden.json")).unwrap();
@@ -212,7 +212,7 @@ fn execute_applies_dirs_files_share_tree_argv_and_env() {
 
 #[test]
 fn execute_failure_is_q_20_3_and_keeps_the_temp_json() {
-    let (_fake, fake_bin) = install_fake("3.11", true);
+    let (_fake, fake_bin) = install_fake(quarto_core::pandoc_filters::PANDOC_PIN, true);
     let scratch = tempfile::tempdir().unwrap();
     let mut request: PandocRequest =
         serde_json::from_str(include_str!("../../schemas/pandoc-request.golden.json")).unwrap();
@@ -252,7 +252,7 @@ fn scratch_request(scratch: &Path) -> PandocRequest {
 #[test]
 fn execute_with_deadline_kills_a_slow_pandoc() {
     use quarto_core::child_runner::ChildLimits;
-    let (_fake, fake_bin) = install_fake("3.11", false);
+    let (_fake, fake_bin) = install_fake(quarto_core::pandoc_filters::PANDOC_PIN, false);
     unsafe { std::env::set_var("FAKE_SLEEP", "30") };
     let scratch = tempfile::tempdir().unwrap();
     let request = scratch_request(scratch.path());
@@ -277,7 +277,7 @@ fn execute_with_deadline_kills_a_slow_pandoc() {
 fn execute_with_cancellation_kills_pandoc_with_a_distinct_error() {
     use quarto_core::child_runner::ChildLimits;
     use quarto_core::stage::Cancellation;
-    let (_fake, fake_bin) = install_fake("3.11", false);
+    let (_fake, fake_bin) = install_fake(quarto_core::pandoc_filters::PANDOC_PIN, false);
     unsafe { std::env::set_var("FAKE_SLEEP", "30") };
     let scratch = tempfile::tempdir().unwrap();
     let request = scratch_request(scratch.path());

@@ -6,8 +6,8 @@
   },
   {
     "path": "pandoc.json",
-    "sha256": "8cd89c7d570169592a966428cd3efc5c5ec6937c858f84584597faac9cac40ef",
-    "size": 15672
+    "sha256": "52f19228fcee0b84027830812fe62f524b42f29dcef817aadd961a416cbe5186",
+    "size": 15784
   },
   {
     "path": "source.docx",

@@ -21,12 +21,14 @@ nodejs-semver = "5"
 proc-macro2 = { workspace = true }
 quarto-output-extract = { path = "../quarto-output-extract" }
 quarto-pandoc-recording = { path = "../quarto-pandoc-recording" }
+regex = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 syn = { workspace = true }
 tempfile = "3"
 time = { version = "0.3", features = ["macros", "formatting"] }
+toml = { workspace = true }
 walkdir = { workspace = true }
 # Same version and features as quarto-core; `capture-import-recordings generate` patches docx.
 zip = { version = "9.0.4", default-features = false, features = ["deflate-flate2-zlib-rs"] }

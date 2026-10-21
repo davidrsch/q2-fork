@@ -880,4 +880,123 @@ mod tests {
             result.stats.skipped
         );
     }
+
+    /// Collect every `@preview/<name>:<version>` reference in the text files
+    /// of an embedded `include_dir` tree.
+    fn collect_preview_imports_from_dir(
+        dir: &include_dir::Dir<'_>,
+        re: &regex::Regex,
+        out: &mut std::collections::BTreeMap<String, String>,
+    ) {
+        for entry in dir.entries() {
+            match entry {
+                include_dir::DirEntry::Dir(d) => collect_preview_imports_from_dir(d, re, out),
+                include_dir::DirEntry::File(f) => {
+                    if let Some(text) = f.contents_utf8() {
+                        for c in re.captures_iter(text) {
+                            out.insert(c[0].to_string(), f.path().display().to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Same, for an extracted on-disk tree. Skips Typst package payloads
+    /// (`…/typst/packages/…`) that extensions ship: their READMEs and
+    /// `template/` dirs show example imports nothing renders, and the
+    /// packages' own imports are resolved transitively by `gather_packages`.
+    fn collect_preview_imports_from_path(
+        root: &Path,
+        re: &regex::Regex,
+        out: &mut std::collections::BTreeMap<String, String>,
+    ) {
+        for entry in walkdir::WalkDir::new(root)
+            .into_iter()
+            .filter_map(Result::ok)
+        {
+            let path = entry.path();
+            let unix = path.to_string_lossy().replace('\\', "/");
+            if !entry.file_type().is_file() || unix.contains("/typst/packages/") {
+                continue;
+            }
+            if let Ok(text) = std::fs::read_to_string(path) {
+                for c in re.captures_iter(&text) {
+                    out.insert(c[0].to_string(), unix.clone());
+                }
+            }
+        }
+    }
+
+    /// Hermeticity invariant, generalizing the orange-book test above
+    /// (bd-xm7l): every `@preview/<name>:<version>` import that any embedded
+    /// source can emit — the vendored Quarto 1 Lua filters (callout.lua and
+    /// theorem.lua write `#import` lines into generated Typst), the Typst
+    /// template partials, the built-in extensions and every extension
+    /// subtree payload — must be covered by `resources/typst-packages/`, so
+    /// `gather_packages` stages nothing from packages.typst.org. A refresh
+    /// that bumps any of those imports fails here until the package is
+    /// re-vendored (see `resources/vendored.toml`).
+    #[test]
+    fn test_vendored_packages_cover_every_embedded_preview_import() {
+        use quarto_system_runtime::NativeRuntime;
+
+        let re = regex::Regex::new(r"@preview/[a-z0-9-]+:[0-9]+\.[0-9]+\.[0-9]+").unwrap();
+        // import -> one place it was found, for the failure message.
+        let mut imports = std::collections::BTreeMap::new();
+        collect_preview_imports_from_dir(&crate::pandoc_filters::FILTERS_DIR, &re, &mut imports);
+        collect_preview_imports_from_dir(
+            &crate::pandoc_filters::TYPST_TEMPLATE_DIR,
+            &re,
+            &mut imports,
+        );
+        let runtime = NativeRuntime::new();
+        let builtin = crate::extension::builtin_extensions_path(&runtime)
+            .expect("built-in extensions should extract");
+        collect_preview_imports_from_path(&builtin, &re, &mut imports);
+        for root in crate::extension::builtin_extension_subtree_roots(&runtime) {
+            collect_preview_imports_from_path(&root, &re, &mut imports);
+        }
+        // Guard against the scan silently finding nothing.
+        for expected in [
+            "@preview/marginalia:0.3.1",
+            "@preview/orange-book:0.7.1",
+            "@preview/theorion:0.4.1",
+        ] {
+            assert!(
+                imports.contains_key(expected),
+                "scan did not find {expected}; found {:?}",
+                imports.keys().collect::<Vec<_>>()
+            );
+        }
+
+        let temp = tempfile::TempDir::new().unwrap();
+        let packages_dir = temp.path().join("typst-packages");
+        std::fs::create_dir_all(&packages_dir).unwrap();
+        crate::pandoc_filters::bundle::extract_typst_packages(&packages_dir).unwrap();
+        let package_cache_dir = packages_dir.join("packages");
+
+        let typ_input = temp.path().join("all-imports.typ");
+        let source: String = imports
+            .keys()
+            .map(|spec| format!("#import \"{spec}\"\n"))
+            .collect();
+        std::fs::write(&typ_input, source).unwrap();
+
+        let result = typst_gather::gather_packages(
+            &package_cache_dir,
+            Vec::new(),
+            std::slice::from_ref(&typ_input),
+            &HashSet::new(),
+        )
+        .expect("gather_packages should succeed offline");
+        assert!(
+            result.stats.downloaded == 0 && result.stats.failed == 0,
+            "embedded sources import @preview packages that resources/typst-packages/ \
+             does not vendor ({} downloaded, {} failed). Imports and where they occur:\n{:#?}",
+            result.stats.downloaded,
+            result.stats.failed,
+            imports
+        );
+    }
 }

@@ -193,7 +193,7 @@ fn run_git(root: &Path, args: &[&str]) -> Result<String> {
 /// Find the most recent `git-subtree-split:` commit for `prefix`, by
 /// grepping commit bodies for the `git-subtree-dir:` trailer `git subtree`
 /// writes into its squash commit. Mirrors Q1's `findLastSplit`.
-fn find_last_split(root: &Path, prefix: &str) -> Result<Option<String>> {
+pub(crate) fn find_last_split(root: &Path, prefix: &str) -> Result<Option<String>> {
     let grep = format!("--grep=git-subtree-dir: {prefix}$");
     let log = run_git(root, &["log", &grep, "-1", "--pretty=%b"])?;
     Ok(log.lines().find_map(|line| {

@@ -1,7 +1,7 @@
 {
-  "asset_name": "pandoc-3.11.wasm.zip",
-  "upstream_zip_sha256": "bd856c19094f5333ee92f239dd93d288a05429f1d957efef1c37e7bb97ac14bd",
-  "wasm_sha256": "44829227ac8f74fb57387d12ac7e347e89fa851510e089263d27f5af2e266332",
+  "asset_name": "pandoc-3.12.1.wasm.zip",
+  "upstream_zip_sha256": "976eedd4e516b4b137cda2091595d1bd998c7d66553de4cf65337b44a2c72c2d",
+  "wasm_sha256": "784497e55d1f23eb8bb5e21633cb76e6503360fede48536cad64a911fb623bbc",
   "share_root": "/__q2_share__",
   "limits": {
     "image_bytes": 26214400,

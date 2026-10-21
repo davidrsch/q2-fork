@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "kind": "pandoc",
-  "job_id": "1f12547f0cce8150",
+  "job_id": "ad59640b7fc64b59",
   "writer": "json",
   "argv": [
     "pandoc",
@@ -29,7 +29,7 @@
   "stage_name": "import",
   "json_path": "/__q2_share__/import/source.docx",
   "post": "none",
-  "expected_pandoc_wasm_sha256": "44829227ac8f74fb57387d12ac7e347e89fa851510e089263d27f5af2e266332",
+  "expected_pandoc_wasm_sha256": "784497e55d1f23eb8bb5e21633cb76e6503360fede48536cad64a911fb623bbc",
   "share_tree_version": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "typst_available_fonts": null,
   "host_inputs": [

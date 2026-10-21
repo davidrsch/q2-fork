@@ -5,7 +5,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { fetchPdfjsViewer } from './fetch-pandoc-wasm.mjs';
 
 const repo = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const zip = path.join(repo, '.cache/pdfjs/pdfjs-6.3.289-dist.zip');
+const { asset_name } = JSON.parse(readFileSync(path.join(repo, 'resources/pdfjs-viewer.json'), 'utf8'));
+const zip = path.join(repo, '.cache/pdfjs', asset_name);
 
 const files = (dir, rel = '') =>
   readdirSync(path.join(dir, rel)).flatMap((n) => {
