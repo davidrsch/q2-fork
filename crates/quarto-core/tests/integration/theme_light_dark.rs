@@ -451,12 +451,18 @@ fn light_dark_map_injects_color_mode_script_at_top_of_body() {
         .expect("inline color-mode script with config data attributes");
     assert!(script > body, "script must be inside body");
     // Nothing paintable between <body ...> and the script: only the
-    // body tag itself (and whitespace) may precede it.
+    // body tag itself, whitespace, and the skip-to-content link may
+    // precede it. The link (bd-rbd3jq4n) comes first as in Q1, and is
+    // not paintable: `.visually-hidden-focusable` clips it until it gets
+    // keyboard focus, and that rule is in the <head> stylesheet.
     let between = &html[body..script];
-    let after_tag = &between[between.find('>').unwrap() + 1..];
+    let after_tag = between[between.find('>').unwrap() + 1..].trim();
+    let after_skip_link = after_tag
+        .strip_prefix(r##"<a id="quarto-skip-link" class="visually-hidden-focusable" href="#quarto-document-content">Skip to main content</a>"##)
+        .unwrap_or(after_tag);
     assert!(
-        after_tag.trim().is_empty(),
-        "color-mode script must be the first thing in <body>, found: {after_tag:?}"
+        after_skip_link.trim().is_empty(),
+        "color-mode script must be the first paintable thing in <body>, found: {after_tag:?}"
     );
     assert!(
         html.contains("window.quartoToggleColorScheme"),

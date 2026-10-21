@@ -83,6 +83,7 @@ use crate::Result;
 use crate::format::{Format, is_revealjs_target};
 use crate::language::LanguageTerms;
 use crate::render::RenderContext;
+use crate::template::escape_html_text;
 use crate::transform::{AstTransform, TransformPhase};
 use crate::transforms::website_favicon::append_to_rendered_header;
 
@@ -188,13 +189,6 @@ fn append_to_rendered_header_once(meta: &mut ConfigValue, html: String) {
         return;
     }
     append_to_rendered_header(meta, html);
-}
-
-/// Escape a string for HTML *text* context (not attributes).
-fn escape_html_text(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
 }
 
 #[cfg(test)]

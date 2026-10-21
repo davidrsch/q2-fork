@@ -134,6 +134,13 @@ fn escape_html_attr(value: &str) -> String {
         .replace('<', "&lt;")
 }
 
+/// Escape a string for HTML *text* context (not attributes).
+pub(crate) fn escape_html_text(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 const MINIMAL_HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
 <html$if(lang)$ lang="$lang$"$endif$>
 <head>
@@ -286,6 +293,7 @@ $header-includes$
 $endfor$
 </head>
 <body class="$body-classes$">
+$skip-link()$
 $if(color-mode-script)$
 $color-mode-script$
 $endif$
@@ -339,7 +347,7 @@ $endif$
 $endif$
 $endif$
 
-<main class="content$if(main-column)$ $main-column$$endif$$if(rendered.title-block-banner)$ quarto-banner-title-block$endif$" id="quarto-document-content">
+<main class="content$if(main-column)$ $main-column$$endif$$if(rendered.title-block-banner)$ quarto-banner-title-block$endif$" id="quarto-document-content" tabindex="-1">
 
 $if(rendered.title-block-banner)$
 $else$
@@ -695,6 +703,21 @@ $rendered.navigation.secondary-nav$
 $endif$
 </header>"#;
 
+/// The skip-to-content link (bd-rbd3jq4n; Quarto 1 #14685, WCAG 2.4.1
+/// Bypass Blocks): the first element of `<body>`, visually hidden by
+/// Bootstrap's `.visually-hidden-focusable` until a keyboard user tabs
+/// to it, so they can jump past the navbar and sidebar.
+///
+/// It targets `#quarto-document-content`, the full template's `<main>`,
+/// which carries `tabindex="-1"` so activating the link moves keyboard
+/// focus, not just the scroll position. `$skip-to-content-text$` is the
+/// localized `skip-to-content` term, computed and HTML-escaped by
+/// [`render_with_compiled_template`]. Q1 injects the link in a DOM
+/// postprocessor; q2 has no such stage, so the built-in template calls
+/// this partial and a custom template opts in with `$skip-link()$`
+/// (it then needs its own `id="quarto-document-content"` target).
+pub const SKIP_LINK_PARTIAL: &str = r##"<a id="quarto-skip-link" class="visually-hidden-focusable" href="#quarto-document-content">$skip-to-content-text$</a>"##;
+
 /// Resolver holding the built-in HTML template partials.
 ///
 /// Each partial is registered under both its bare name
@@ -709,6 +732,7 @@ pub fn builtin_html_partials() -> MemoryResolver {
         ("_title-meta-author", TITLE_META_AUTHOR_PARTIAL),
         ("toc-block", TOC_BLOCK_PARTIAL),
         ("quarto-header", QUARTO_HEADER_PARTIAL),
+        ("skip-link", SKIP_LINK_PARTIAL),
     ] {
         resolver.add(name, content);
         resolver.add(format!("{name}.html"), content);
@@ -842,7 +866,22 @@ pub fn render_with_compiled_template(
             // Q1 offers no author override, so a stray metadata key
             // must not reach `$main-column$`.
             "main-column",
+            // Computed below from the language terms, and escaped there.
+            "skip-to-content-text",
         ],
+    );
+
+    // The skip-link label (see `SKIP_LINK_PARTIAL`). Escaped here because
+    // doctemplate does not escape interpolations and term files are
+    // user-editable via `language:`. The English literal matches Q1's
+    // `format.language[kSkipToContent] || "Skip to main content"` and
+    // covers callers that never ran `LanguageResolveStage`.
+    let skip_text = crate::language::LanguageTerms::from_meta(meta)
+        .and_then(|terms| terms.get("skip-to-content").map(str::to_string))
+        .unwrap_or_else(|| "Skip to main content".to_string());
+    ctx.insert(
+        "skip-to-content-text",
+        TemplateValue::String(escape_html_text(&skip_text)),
     );
 
     // Build combined CSS list: default resources first, then user-specified
@@ -873,9 +912,11 @@ pub fn render_with_compiled_template(
     //   `respect-user-color-scheme: true` offers both so the UA picks
     //   per `prefers-color-scheme`.
     // - `color-mode-script` → the inline color-mode runtime, injected
-    //   as the FIRST child of `<body>` so the initial variant
-    //   selection happens synchronously before first paint (the FOUC
-    //   hard constraint). Configured via data attributes.
+    //   at the top of `<body>` so the initial variant selection
+    //   happens synchronously before first paint (the FOUC hard
+    //   constraint). Only the skip link precedes it, as in Q1: one
+    //   inline element ahead of a synchronous inline script opens no
+    //   paint window. Configured via data attributes.
     //
     // Only the full template references these variables; setting them
     // elsewhere is inert.
@@ -4053,5 +4094,155 @@ mod tests {
             TemplateValue::String("plain code".to_string()),
             "generic conversion must remain plain-text flattening"
         );
+    }
+
+    // ─────────── bd-rbd3jq4n: skip-to-content link ───────────
+
+    /// Render through the full template the way `ApplyTemplateStage`
+    /// does, so the computed `$skip-to-content-text$` variable is set.
+    fn render_full_compiled(meta: &ConfigValue) -> String {
+        let template = full_html_template().expect("full template compiles");
+        let (html, _diags) =
+            render_with_compiled_template(&template, "<p>body</p>", meta, &[], &[])
+                .expect("template renders");
+        html
+    }
+
+    /// `meta` carrying a resolved `quarto.language` table with one term,
+    /// the shape `LanguageResolveStage` writes.
+    fn meta_with_language_term(key: &str, value: &str) -> ConfigValue {
+        let table = ConfigValue::new_map(
+            vec![entry(
+                key,
+                ConfigValue::new_string(value, dummy_source_info()),
+            )],
+            dummy_source_info(),
+        );
+        let quarto = ConfigValue::new_map(vec![entry("language", table)], dummy_source_info());
+        ConfigValue::new_map(vec![entry("quarto", quarto)], dummy_source_info())
+    }
+
+    /// The markup that follows `<body ...>`, with leading whitespace
+    /// trimmed.
+    fn after_body_open(html: &str) -> &str {
+        let start = html.find("<body").expect("has <body");
+        let end = html[start..].find('>').expect("<body closes") + start + 1;
+        html[end..].trim_start()
+    }
+
+    #[test]
+    fn skip_link_is_first_element_of_body() {
+        let html = render_full_compiled(&ConfigValue::new_map(vec![], dummy_source_info()));
+        assert!(
+            after_body_open(&html).starts_with(
+                r##"<a id="quarto-skip-link" class="visually-hidden-focusable" href="#quarto-document-content">Skip to main content</a>"##
+            ),
+            "skip link must be the first element of <body>; got: {html}"
+        );
+    }
+
+    #[test]
+    fn skip_link_target_main_is_focusable() {
+        let html = render_full_compiled(&ConfigValue::new_map(vec![], dummy_source_info()));
+        assert!(
+            html.contains(r#"id="quarto-document-content" tabindex="-1">"#),
+            "<main> must carry tabindex=-1 so the skip link moves focus; got: {html}"
+        );
+    }
+
+    #[test]
+    fn skip_link_precedes_color_mode_script() {
+        // A recorded light/dark pair is what makes the template emit
+        // the color-mode script.
+        let theme = ConfigValue::new_map(
+            vec![entry(
+                "dark-is-default",
+                ConfigValue::new_bool(false, dummy_source_info()),
+            )],
+            dummy_source_info(),
+        );
+        let rendered = ConfigValue::new_map(vec![entry("theme", theme)], dummy_source_info());
+        let meta = ConfigValue::new_map(vec![entry("rendered", rendered)], dummy_source_info());
+        let html = render_full_compiled(&meta);
+        let link = html
+            .find(r#"id="quarto-skip-link""#)
+            .expect("skip link present");
+        let script = html
+            .find(r#"id="quarto-color-mode""#)
+            .expect("color-mode script present");
+        assert!(
+            link < script,
+            "skip link must come before the color-mode script"
+        );
+    }
+
+    #[test]
+    fn skip_link_text_is_localized_and_escaped() {
+        let meta = meta_with_language_term("skip-to-content", "Aller au <contenu> & plus");
+        let html = render_full_compiled(&meta);
+        assert!(
+            html.contains(
+                r##"href="#quarto-document-content">Aller au &lt;contenu&gt; &amp; plus</a>"##
+            ),
+            "skip link text must come from the language term, HTML-escaped; got: {html}"
+        );
+    }
+
+    #[test]
+    fn skip_link_text_is_not_author_settable() {
+        let meta = ConfigValue::new_map(
+            vec![entry(
+                "skip-to-content-text",
+                ConfigValue::new_string("<b>injected</b>", dummy_source_info()),
+            )],
+            dummy_source_info(),
+        );
+        let html = render_full_compiled(&meta);
+        assert!(
+            !html.contains("injected"),
+            "metadata must not reach $skip-to-content-text$"
+        );
+        assert!(html.contains(">Skip to main content</a>"));
+    }
+
+    #[test]
+    fn minimal_template_has_no_skip_link() {
+        let template = minimal_html_template().expect("minimal template compiles");
+        let (html, _diags) = render_with_compiled_template(
+            &template,
+            "<p>body</p>",
+            &ConfigValue::new_map(vec![], dummy_source_info()),
+            &[],
+            &[],
+        )
+        .expect("template renders");
+        assert!(!html.contains("quarto-skip-link"), "got: {html}");
+    }
+
+    /// Custom templates opt in with the built-in `skip-link` partial.
+    #[test]
+    fn custom_template_can_use_skip_link_partial() {
+        for call in ["$skip-link()$", "$skip-link.html()$"] {
+            let source = format!(
+                "<body>\n{call}\n<main id=\"quarto-document-content\">$body$</main>\n</body>"
+            );
+            let template = Template::compile_with_resolver(
+                &source,
+                Path::new("custom.html"),
+                &builtin_html_partials(),
+                0,
+            )
+            .expect("custom template compiles");
+            let meta = meta_with_language_term("skip-to-content", "Ir al contenido");
+            let (html, _diags) =
+                render_with_compiled_template(&template, "<p>body</p>", &meta, &[], &[])
+                    .expect("template renders");
+            assert!(
+                html.contains(
+                    r##"<a id="quarto-skip-link" class="visually-hidden-focusable" href="#quarto-document-content">Ir al contenido</a>"##
+                ),
+                "{call} must expand to the skip link; got: {html}"
+            );
+        }
     }
 }

@@ -24,10 +24,11 @@ _quarto:
             # The icon precedes the label as a bare text node, exactly as
             # Q1 builds it (an `<i>` sibling, not a wrapping span).
             "</i>Draft</div>",
-            # The banner must be the FIRST thing in the body -- above the
-            # navbar, mirroring Q1's insertBefore(header.firstChild). A
-            # selector-only test cannot see position, so assert it here.
-            '<body[^>]*>\s*<div id="quarto-draft-alert"',
+            # The banner must be the first thing in the body after the skip
+            # link (bd-rbd3jq4n) -- above the navbar, mirroring Q1's
+            # insertBefore(header.firstChild). A selector-only test cannot
+            # see position, so assert it here.
+            '<body[^>]*>\s*<a id="quarto-skip-link"[^>]*>[^<]*</a>\s*<div id="quarto-draft-alert"',
           ]
 ---
 
