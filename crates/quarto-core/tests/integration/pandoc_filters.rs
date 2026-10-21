@@ -103,16 +103,18 @@ fn test_readme_records_the_pins() {
     let mut readme_pandoc = None;
 
     for line in content.lines() {
-        if line.contains("quarto-cli") && line.contains("v1.11.3") {
-            readme_tag = Some("v1.11.3");
+        if line.contains("quarto-cli tag:") && line.contains(&format!("`{QUARTO_CLI_PIN}`")) {
+            readme_tag = Some(QUARTO_CLI_PIN);
         }
-        if line.contains("pandoc") && line.contains("3.11") {
-            readme_pandoc = Some("3.11");
+        if line.contains("pandoc version:") && line.contains(&format!("`{PANDOC_PIN}`")) {
+            readme_pandoc = Some(PANDOC_PIN);
         }
     }
 
-    let readme_tag = readme_tag.expect("README does not record quarto-cli tag v1.11.3");
-    let readme_pandoc = readme_pandoc.expect("README does not record pandoc version 3.11");
+    let readme_tag = readme_tag
+        .unwrap_or_else(|| panic!("README does not record quarto-cli tag {QUARTO_CLI_PIN}"));
+    let readme_pandoc = readme_pandoc
+        .unwrap_or_else(|| panic!("README does not record pandoc version {PANDOC_PIN}"));
 
     // T1.3 revert hunk: change QUARTO_CLI_PIN to something else or remove tag line from README
     // That would make this assertion RED

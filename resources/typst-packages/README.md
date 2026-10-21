@@ -30,7 +30,7 @@ maintained locally (pandoc-hybrid-typst Phase 1).
 ## Source
 
 These files are copied from:
-- quarto-cli tag: `v1.11.3`
+- quarto-cli tag: `v1.11.6` (the packages and fonts are unchanged since `v1.11.3`)
 - `src/resources/formats/typst/packages/` and
   `src/resources/formats/typst/fonts/`
 

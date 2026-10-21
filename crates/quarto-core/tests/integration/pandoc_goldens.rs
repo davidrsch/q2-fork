@@ -39,9 +39,22 @@ use quarto_system_runtime::{NativeRuntime, SystemRuntime};
 /// `bd-h1ub8f8z`). The two sides' extractions therefore differ in their
 /// media inventory. `test_mermaid_fixture_preserves_diagram_source_text`
 /// covers this fixture's shape separately (T11.6).
+///
+/// **pandoc ≥ 3.12 docx paragraph styles**: pandoc 3.12's docx writer sets
+/// `First Paragraph` on the first paragraph of every block sequence
+/// (jgm/pandoc#11867), where Q1's bundled pandoc 3.10 wrote `Body Text`;
+/// one fixture's image relationship id also shifts. q2 pins pandoc 3.12.1
+/// ahead of Q1 (bd-7vum2l3y), so these docx goldens diverge until Q1
+/// adopts pandoc ≥ 3.12. Each is pinned instead to q2's own native output
+/// by [`test_accepted_divergences_match_native_parity_reference`].
 const ACCEPTED_DIVERGENT_SNAPSHOTS: &[&str] = &[
     "smoke_all_mermaid_backticks__docx",
     "smoke_all_mermaid_backticks__pptx",
+    "callouts__docx",
+    "crossrefs_all_docx__docx",
+    "crossrefs_callouts__docx",
+    "crossrefs_theorem_types__docx",
+    "tabset_subfloat__docx",
 ];
 
 fn fixtures_root() -> PathBuf {
@@ -199,6 +212,51 @@ fn test_mermaid_fixture_preserves_diagram_source_text() {
     assert!(
         text.contains("This would have been a problem."),
         "expected the mermaid cell's echoed source text to survive as body content, got:\n{text}"
+    );
+}
+
+/// The native-baseline half of every accepted divergence that has a
+/// `parity/<snapshot>.txt` reference (DIVERGENCES.md): Q2's own docx
+/// extraction must equal that committed reference exactly. The Q1
+/// comparison is skipped for these fixtures, so this is what keeps them
+/// regression-tested; the same files are the pandoc.wasm parity net's
+/// reference (`hub-client/src/test-utils/goldenFixtures.ts`), pinning
+/// wasm == native. Regenerate deliberately with
+/// `Q2_REGENERATE_PARITY=1 cargo nextest run -p quarto-core
+/// test_accepted_divergences_match_native_parity_reference` and review the diff.
+#[test]
+fn test_accepted_divergences_match_native_parity_reference() {
+    let regenerate = std::env::var_os("Q2_REGENERATE_PARITY").is_some();
+    let mut checked = 0;
+    for fixture in FIXTURES {
+        let name = golden_snapshot_name(fixture.qmd, "docx");
+        if !ACCEPTED_DIVERGENT_SNAPSHOTS.contains(&name.as_str()) {
+            continue;
+        }
+        let reference = fixtures_root().join("parity").join(format!("{name}.txt"));
+        let bytes = render_fixture(fixture.qmd, fixture.resources, "docx");
+        let actual = extract(&bytes, "docx").to_string();
+        if regenerate {
+            std::fs::write(&reference, format!("{}\n", actual.trim_end())).unwrap();
+        }
+        let expected = std::fs::read_to_string(&reference).unwrap_or_else(|e| {
+            panic!(
+                "accepted-divergent snapshot {name} needs a native parity reference at {}: {e}",
+                reference.display()
+            )
+        });
+        assert_eq!(
+            actual.trim_end(),
+            expected.replace("\r\n", "\n").trim_end(),
+            "native docx extraction of {} no longer matches {}",
+            fixture.qmd,
+            reference.display()
+        );
+        checked += 1;
+    }
+    assert!(
+        checked >= 6,
+        "expected the mermaid and pandoc-3.12 divergences to be checked"
     );
 }
 

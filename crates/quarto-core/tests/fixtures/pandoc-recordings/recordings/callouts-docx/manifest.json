@@ -6,13 +6,13 @@
   },
   {
     "path": "capture/callouts.docx",
-    "size": 18975,
-    "sha256": "37d6f316e6405966327c914f23ad7a4066072c172246026a972b914d82af8e4b"
+    "size": 18970,
+    "sha256": "586e6a500e5bf239ce054f3ff6f1f80de6143f672c5fa32c20b22b564739cfc0"
   },
   {
     "path": "env.json",
-    "size": 8992,
-    "sha256": "42e3d90761dacd5706bf0b1738119914f3f85c290db5c86bcb2ac152f78b9fdb"
+    "size": 9388,
+    "sha256": "6543a15fe1a696e8299271ddd4ac7f45f6c44e2c1dd69c7aa01c0e51bfe50f40"
   },
   {
     "path": "fs/__q2_doc__/callouts.qmd",
@@ -26,17 +26,17 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 46541,
-    "sha256": "345ac515c9b4a016d436eedeb0fe955d03bb98d70a79f93fc365264fe1e52b21"
+    "size": 47723,
+    "sha256": "a9ad252a71f9a53a43c9f1883fca0f48c4ef201a537c52e4d0da9bb4725f91b7"
   },
   {
     "path": "meta.json",
     "size": 182,
-    "sha256": "69f9aabb5fba0b099949889744520693af1dccdaa1ab01dd041642223c0c4091"
+    "sha256": "b48eb1f80bc8d63a12c1cd29161484bd6f3a85a7ee3121c6e6721f081a034b46"
   },
   {
     "path": "reference/callouts.docx",
-    "size": 18939,
-    "sha256": "fe633c82fbb584e124c96a565fee770dc01140a675670e0c8b6d8324a5d5614b"
+    "size": 18936,
+    "sha256": "8e4335fae07b39d3304f5f0e45c2208af60c9df158a9a19f4a5c4a2d95ed8ba8"
   }
 ]

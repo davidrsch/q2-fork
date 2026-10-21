@@ -6,13 +6,13 @@
   },
   {
     "path": "capture/citations.pptx",
-    "size": 29551,
-    "sha256": "a19f81798f182bb67b43ba77bc77ec2bcfce065d19569aeca2ad7507aeed7002"
+    "size": 29544,
+    "sha256": "628a1fe1a5315f728b11ce685fd4bd614a41e34edd3ee0a0fa18f9e87baa737c"
   },
   {
     "path": "env.json",
-    "size": 8612,
-    "sha256": "4df2b969ce498810e44edb26ba9ff885acf266b1e0f773272ad8a25de27f96c0"
+    "size": 9008,
+    "sha256": "9963d2f8514881095081ee63d07d56a9e10ee383f6c341253bb13a195ca99045"
   },
   {
     "path": "fs/__q2_doc__/citations.qmd",
@@ -31,17 +31,17 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 22857,
-    "sha256": "50bf7f4c58eff46e7d4b62e693c50e718987442074e2b3e5b5bdde28173ae72d"
+    "size": 23854,
+    "sha256": "6409b0d091a93e40a2031e173dec3c24d98890ed53d526bd2f3febc3eb23d4c6"
   },
   {
     "path": "meta.json",
     "size": 185,
-    "sha256": "96a752dfe47c5895ae6c6c381e847f0665cf61b88acaaf38ac3c2d639773d77e"
+    "sha256": "823167af1c3451e791ed3dbe88452e5a5aa5ac246c248b46563ba2781751131c"
   },
   {
     "path": "reference/citations.pptx",
-    "size": 29551,
-    "sha256": "a19f81798f182bb67b43ba77bc77ec2bcfce065d19569aeca2ad7507aeed7002"
+    "size": 29544,
+    "sha256": "628a1fe1a5315f728b11ce685fd4bd614a41e34edd3ee0a0fa18f9e87baa737c"
   }
 ]

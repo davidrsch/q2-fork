@@ -82,7 +82,7 @@
     "prosemirror-model": "^1.24.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "reveal.js": "6.0.0"
+    "reveal.js": "6.0.2"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",

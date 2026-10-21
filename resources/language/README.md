@@ -15,9 +15,9 @@ on the document's `lang` option and `language:` metadata overrides.
 
 ## Provenance
 
-Copied from `quarto-cli` (`src/resources/language/`) at commit
-`45caede32a0f987c4a377a952120cac6d624cb31` (v1.10.3-116-g45caede32) on
-2026-07-17, per the external-sources policy (compile-time resources must live
+Copied from `quarto-cli` (`src/resources/language/`) at tag `v1.11.6` (commit
+`8680bd68d9083c8f2a575d68168d0e739a004061`) on 2026-10-21 (first copied at
+`45caede32` on 2026-07-17), per the external-sources policy (compile-time resources must live
 in-repo, never referenced from `external-sources/`).
 
 To update: re-copy the files from a current `quarto-cli` checkout, update the

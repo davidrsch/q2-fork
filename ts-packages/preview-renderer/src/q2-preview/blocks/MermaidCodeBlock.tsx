@@ -34,7 +34,7 @@ import { CodeBlock } from './CodeBlock';
  * in `crates/quarto-core/src/transforms/mermaid.rs` — the version
  * parity is locked by a test on each side.
  */
-export const MERMAID_VERSION = '11.12.0';
+export const MERMAID_VERSION = '12.2.0';
 
 const MERMAID_CDN_URL = `https://cdn.jsdelivr.net/npm/mermaid@${MERMAID_VERSION}/dist/mermaid.esm.min.mjs`;
 

@@ -659,8 +659,7 @@ end
 local _available_fonts = nil
 local _fonts_initialized = false
 
--- Q2 divergence from the vendored Q1 module: Typst has no CSS generic
--- families, so emitting `sans-serif` / `monospace` makes every compile warn
+-- Typst has no CSS generic families, so emitting `sans-serif` / `monospace` makes every compile warn
 -- `unknown font family`. Each generic keyword is instead replaced, at its
 -- position in the user's list, by the first *available* font from an ordered
 -- candidate list. The keyword itself is never emitted. No font is bundled.

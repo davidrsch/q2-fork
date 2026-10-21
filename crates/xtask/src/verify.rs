@@ -1060,9 +1060,15 @@ mod tests {
     /// T7.5: the pandoc preflight helper, injected version strings.
     #[test]
     fn test_verify_pandoc_preflight() {
+        // Derived from the floor so a pandoc bump doesn't need this edited.
+        let (major, minor) = crate::dev_setup::PANDOC_HYBRID_MIN_VERSION;
+        let at_floor = format!("pandoc {major}.{minor}\n...");
+        let at_floor_patch = format!("pandoc {major}.{minor}.1\n...");
+        let below_floor = format!("pandoc {major}.{}\n...", minor - 1);
         assert!(pandoc_preflight(Some("pandoc 3.6.0\n...")).is_err());
-        assert!(pandoc_preflight(Some("pandoc 3.10\n...")).is_err());
-        assert!(pandoc_preflight(Some("pandoc 3.11\n...")).is_ok());
+        assert!(pandoc_preflight(Some(&below_floor)).is_err());
+        assert!(pandoc_preflight(Some(&at_floor)).is_ok());
+        assert!(pandoc_preflight(Some(&at_floor_patch)).is_ok());
         assert!(pandoc_preflight(None).is_err());
     }
 

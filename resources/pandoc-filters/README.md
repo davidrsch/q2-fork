@@ -6,7 +6,7 @@ This directory contains Lua filters from Quarto 1 that are used with Pandoc to p
 
 - `filters/` - Quarto's pandoc filter suite
   - `main.lua` - Main filter entry point (171 `import()` directives, one of
-    which — `quarto2-shim.lua` — is a Task 8 patch, not from `v1.11.3`)
+    which — `quarto2-shim.lua` — is a Task 8 patch, not from `v1.11.6`)
   - `ast/` - AST manipulation utilities
   - `common/` - Common functionality
   - `crossref/` - Cross-reference processing
@@ -79,8 +79,8 @@ the `pandoc` invocation shape), with tests in
 ## Source
 
 These files are copied from:
-- quarto-cli tag: `v1.11.3`
-- pandoc version: `3.11`
+- quarto-cli tag: `v1.11.6`
+- pandoc version: `3.12.1`
 
 To update: Check the original repository at that tag for any changes.
 
@@ -88,11 +88,11 @@ To update: Check the original repository at that tag for any changes.
 
 To re-vendor these files when quarto-cli updates:
 
-1. Ensure v1.11.3 (or newer tag as needed) is available in the quarto-cli checkout
+1. Ensure v1.11.6 (or newer tag as needed) is available in the quarto-cli checkout
 2. Extract the subtrees:
    ```bash
    cd /path/to/quarto-cli
-   git archive v1.11.3 src/resources/filters src/resources/pandoc/datadir | \
+   git archive v1.11.6 src/resources/filters src/resources/pandoc/datadir | \
      tar -xf - -C /path/to/q2/resources/pandoc-filters
    ```
 3. Move extracted files to correct locations:
@@ -113,7 +113,7 @@ These files are maintained as a local copy rather than referencing `external-sou
 
 ## Ours vs. pinned
 
-The following files and modifications are *not* from `v1.11.3` and should be preserved on re-vendor:
+The following files and modifications are *not* from `v1.11.6` and should be preserved on re-vendor. Check the list is complete with a tree diff before and after any re-vendor (`git archive <tag> src/resources/filters | tar -x -C <tmp>; diff -rq <tmp>/src/resources/filters resources/pandoc-filters/filters`): the 2026-10-21 resync (bd-jsfg1494) found five patched files missing from this list.
 
 **Format for entries:** List items must be shaped exactly as `` - `<path/from/repo/root>` — description `` (backtick immediately after `- `) so the `cargo xtask lint` rule `vendored-pandoc-filters` can verify the path exists. The rule checks that every path listed here actually exists on disk.
 
@@ -212,18 +212,41 @@ The following files and modifications are *not* from `v1.11.3` and should be pre
   crashed indexing a string. Added `pandoc.utils.type(meta.brand) ==
   'string'` to the guard. Tests: the `typst/orange-book` smoke-all
   fixture (`crates/quarto/tests/smoke-all/typst/orange-book/`).
-- `resources/pandoc-filters/filters/modules/typst_css.lua` — patched (ours,
-  bd-hkf3r8i1; no upstream PR — marked in-place by a `Q2 divergence`
-  comment). Typst has no CSS generic font families, so Q1's pass-through of
-  `serif`/`sans-serif`/`monospace`/... made every compile warn `unknown
-  font family`. `translate_font_family_list` now resolves each generic
-  keyword (plus `system-ui` and `ui-*`; `generic(...)` is dropped) to the
-  first *available* font from an ordered candidate list
-  (`_generic_candidates`, sources cited beside the data), via the pure
-  `resolve_font_families`. The keyword is never emitted. Tests:
-  `crates/quarto-core/tests/integration/typst_generic_font_families.rs` and
-  the `typst/brand-yaml` smoke-all fixtures `font-filtering-generics`,
-  `generic-font-families`, `system-ui-table`.
+- `resources/pandoc-filters/filters/modules/mediabag.lua` — patched (ours,
+  b372c3d39, typst smoke-all P5; no upstream PR). Adds `typst_root_relative`,
+  which rebases `write_mediabag_entry`'s filesystem-absolute path to the
+  `typst-root-dir` filter param, because Typst's `image()` treats a leading
+  `/` as rooted at `--root` (the absolute path was doubled). No-op for every
+  non-typst format. Used by the next two entries.
+- `resources/pandoc-filters/filters/quarto-finalize/mediabag.lua` — patched
+  (ours, b372c3d39). Routes the mediabag path it assigns to `el.src` through
+  `typst_root_relative`. Since quarto-cli 1.11.6 dropped `quarto-post/typst.lua`'s
+  hand-built `#box(image(...))` path, this is the site every Typst image goes
+  through.
+- `resources/pandoc-filters/filters/quarto-post/typst.lua` — patched (ours,
+  f36eff1c5; no upstream PR). Pass 0 records each `Cite` node's own
+  citeproc-rendered content (`citeprocInstances`, by document order) and the
+  `Cite` handler emits it, so a margin citation keeps its locator, prefix and
+  suffix; q2 runs citeproc only on Pass 0's side copy. (Its b372c3d39
+  `typst_root_relative` call site went away with upstream's image-path
+  removal in 1.11.6.)
+- `resources/pandoc-filters/filters/normalize/astpipeline.lua` — patched
+  (ours, bd-sccaj7u4, 845681b9e/761f0f114/1d0847912; no upstream PR). Q1's
+  `juice()` (the `juice` npm package via `quarto run juice.ts`, which q2 does
+  not ship) is replaced by `inline_css()`, which pipes the raw HTML table
+  through q2's hidden `call inline-css` subcommand; there is no size limit, so
+  Q1's data-URI placeholder dance is gone. Leaves the HTML as is outside the
+  q2 CLI or when the call fails.
+- `resources/pandoc-filters/filters/quarto-init/resourcerefs.lua` — patched
+  (ours, bd-7ansf9cq, f3b6925fd). Returns early under the `single-file-book`
+  param: the Rust book merge has already re-anchored chapter-relative image
+  targets (`project/book/images.rs`), and doing it again prefixed the chapter
+  directory twice.
+
+Upstreamed and no longer ours: `modules/typst_css.lua`'s generic-font-family
+resolution (bd-hkf3r8i1) shipped in quarto-cli 1.11.6 (742f015bc) and is now
+vendored verbatim, as is `typst-template.typ`'s `title: title` outline fix
+(61c81493f), which q2 had carried unrecorded.
 
 ## License
 

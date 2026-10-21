@@ -6,13 +6,13 @@
   },
   {
     "path": "capture/tables.typ",
-    "size": 13042,
-    "sha256": "c926636650004da8c4e7032fce73cf4e09cf25e3a58ced5d2225fb1e686fb99d"
+    "size": 13447,
+    "sha256": "c8bbee4d0cdfeb008b7f7f58a365b38af2eae8c5c277cec7d2e8277850a1ba44"
   },
   {
     "path": "env.json",
-    "size": 17568,
-    "sha256": "cfff9e1e40534dff80af8b44655c9a346b60ae80553d82da35c0a96ee8dbc4a6"
+    "size": 17984,
+    "sha256": "07caf02bc8905d5175a8b95ab93aa5a970449160a687df77138668c971b386e5"
   },
   {
     "path": "fs/__q2_doc__/tables.qmd",
@@ -26,8 +26,8 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 27195,
-    "sha256": "7ac8f10768604774f8f195ffa59d970207b844270087b0ce9b043e092665a943"
+    "size": 28255,
+    "sha256": "1e3442abd732c9c628d276dc57b87f9a79a40937ed4af29365a26bbd7b23e10f"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/biblio.typ",
@@ -36,8 +36,8 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/definitions.typ",
-    "size": 7955,
-    "sha256": "f40242011aa8c0822c7a8b94f6c133441100cb139a6cd0efb0029c8994021936"
+    "size": 8022,
+    "sha256": "d317143dbcc9e1ffa2fa4ec89c7103d8ded17f245904d9a8024c9fb8e90a2e29"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/notes.typ",
@@ -61,22 +61,22 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/typst-show.typ",
-    "size": 2211,
-    "sha256": "a57cd3c066ecdecae5f568719a9f727949a201d1ad132cba6a3116c62853a142"
+    "size": 2493,
+    "sha256": "2f804e5e65aae0b8d761d0d1fcdb38dbfcbad5d387085c61e7b7d36fdfc0f13d"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/typst-template.typ",
-    "size": 3578,
-    "sha256": "1b1de16b5b676e2a8d15169cb3bf365d8e9ae16d5d2fd93034b5cc62e21c8f81"
+    "size": 3918,
+    "sha256": "6aaab91e15a7c9d47ce8f3dfb5ffe564dfd2f9e40a9abd23369c5cde214e214f"
   },
   {
     "path": "meta.json",
     "size": 173,
-    "sha256": "6d3f37b20b8ea283ce8f78477d416ce929fc450f64eab058934fd96d8cd8b906"
+    "sha256": "ad608c235d32aa6be6744ea2b1598d949b793d63700f3757158d2605d96592fe"
   },
   {
     "path": "reference/tables.typ",
-    "size": 13042,
-    "sha256": "c926636650004da8c4e7032fce73cf4e09cf25e3a58ced5d2225fb1e686fb99d"
+    "size": 13447,
+    "sha256": "c8bbee4d0cdfeb008b7f7f58a365b38af2eae8c5c277cec7d2e8277850a1ba44"
   }
 ]
