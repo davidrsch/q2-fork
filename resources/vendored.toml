@@ -1,0 +1,997 @@
+# Registry of vendored third-party assets (bd-xm7l).
+#
+# Every third-party file the repo ships or embeds without a package manager
+# managing it is listed here: what it is, where it lives, which version it is
+# at, and what decides that version. HOW to refresh an asset stays in the
+# README next to its bytes (`procedure`); this file is the index.
+#
+# Checked offline by `cargo xtask lint` (rule `vendored-registry`, see
+# crates/xtask/src/lint/vendored_registry.rs) and surveyed online by
+# `cargo xtask vendored outdated` and the `/upgrade-vendored-deps` skill.
+#
+# Adding a vendored asset? Add an `[[asset]]` here. The lint fails on any
+# committed file under a `[coverage]` root that no asset claims.
+#
+# ---------------------------------------------------------------------------
+# Asset fields
+#
+#   id, title       required. `id` is kebab-case and unique.
+#   paths           required. Repo-relative files/directories the asset owns.
+#   policy          required. One of:
+#                     track    — compare against `upstream`.
+#                     follow   — `follows` (another asset id) decides the
+#                                version; surveyed together with it.
+#                     frozen   — deliberately never updated (fixtures).
+#                     native   — repo-owned; listed so coverage/discovery
+#                                stop flagging it.
+#                     external — managed elsewhere (Cargo [patch], PINS.md).
+#   group           reporting key: a survey files one strand per group.
+#   version         pinned version, or the upstream git ref for `git`
+#                   upstreams with `paths`. "*" = deliberately unpinned.
+#                   Absent = unrecorded (an inventory gap the survey reports).
+#   version_sources places in the tree that must agree with `version`:
+#                     { kind = "file-contains", file = "…" }
+#                     { kind = "file-regex", file = "…", regex = '…(capture)…' }
+#                     { kind = "json-key", file = "…", key = "a.b" }
+#                     { kind = "path-segment" }    # a component of paths[0]
+#                     { kind = "subtree-split" }   # git-subtree-split trailer;
+#                                                  # checked by `outdated` only
+#   upstream        { kind = "npm", package = "…" }
+#                   { kind = "typst-universe", package = "…" }
+#                   { kind = "crates-io", crate = "…" }
+#                   { kind = "git", repo = "…", track = "tags" | { branch = "…" },
+#                     tag_prefix = "v", paths = ["upstream/path", …] }
+#                   With `paths`, "outdated" means those upstream paths changed
+#                   between `version` and the latest ref — not merely that a
+#                   newer ref exists.
+#   copy_of         a directory paths[0] copies: every file under paths[0]
+#                   must be byte-identical to the same file there (the
+#                   source may hold more, e.g. a package's template/).
+#   guards          tests that guard the asset ("<crate> <test>").
+#   procedure       where the refresh steps are documented (file[#anchor]).
+#   license         SPDX-ish.
+#   last_reviewed   YYYY-MM-DD of the last survey that checked it.
+#   notes           free-form context for the agent doing an upgrade: local
+#                   patches, coupling, gotchas, what "newer" does NOT mean.
+# ---------------------------------------------------------------------------
+
+[coverage]
+roots = ["resources", "hub-client/public", "crates/*/vendor"]
+
+[[group]]
+id = "quarto-cli"
+title = "Assets copied from quarto-cli (Quarto 1)"
+notes = '''
+Not one pin: each asset records the quarto-cli ref it was copied (or
+verified byte-identical) at. A quarto-cli release is a reason to *look*, and
+`outdated` reports which copied paths actually changed since each asset's
+ref. Several copies carry local q2 patches; read each asset's notes before
+re-copying. `external-sources/quarto-cli` is a convenient local checkout for
+diffing but is never referenced by the build (External Sources Policy).
+'''
+
+[[group]]
+id = "bootstrap"
+title = "Bootstrap SCSS / JS / Icons"
+notes = "Bootstrap SCSS and JS must move together (bootstrap_js_version_matches_scss_readme)."
+
+[[group]]
+id = "reveal-js"
+title = "reveal.js runtime, theme template and plugins"
+notes = '''
+The vendored dist must match the `reveal.js` npm pin in the root,
+hub-client and preview-renderer package.json files
+(vendored_reveal_assets_match_npm_package). Bump npm first, then re-copy.
+'''
+
+[[group]]
+id = "typst"
+title = "Typst packages, subtrees and the Typst WASM stack"
+
+[[group]]
+id = "pandoc"
+title = "Pandoc-derived assets"
+
+[[group]]
+id = "cdn"
+title = "Libraries loaded from a CDN at page load (not vendored bytes)"
+notes = '''
+These are URLs in Rust string literals, not committed files. Pinned ones
+have an exact version in the URL; "*" ones float on the CDN's latest, which
+means rendered output can change under users without a q2 release.
+'''
+
+[[group]]
+id = "rust-vendored"
+title = "Vendored or forked Rust crates"
+
+# ===========================================================================
+# quarto-cli copies
+# ===========================================================================
+
+[[asset]]
+id = "pandoc-filters"
+title = "Quarto 1 Lua filter stack, pandoc datadir and Typst template partials"
+paths = ["resources/pandoc-filters"]
+policy = "track"
+group = "quarto-cli"
+version = "v1.11.3"
+version_sources = [{ kind = "file-contains", file = "resources/pandoc-filters/README.md" }]
+upstream = { kind = "git", repo = "https://github.com/quarto-dev/quarto-cli", track = "tags", tag_prefix = "v", paths = [
+  "src/resources/filters",
+  "src/resources/pandoc/datadir",
+  "src/resources/formats/typst/pandoc/quarto",
+] }
+guards = [
+  "xtask lint::vendored_pandoc_filters",
+  "xtask lint::pandoc_pin",
+  "quarto-core pandoc_transport / pandoc_typst_writer integration tests",
+]
+procedure = "resources/pandoc-filters/README.md#updating"
+license = "GPL-2.0"
+last_reviewed = "2026-10-21"
+notes = '''
+The README's "Ours vs. pinned" section lists q2-only files and patches
+(quarto2-shim.lua, crossref patches, …) that a delete-and-recopy would lose;
+the vendored-pandoc-filters lint checks they exist. The filters are pinned
+together with a pandoc version (PANDOC_PIN in
+crates/quarto-core/src/pandoc_filters/mod.rs, checked by the pandoc-pin
+lint); a quarto-cli bump that requires a newer pandoc also moves
+`pandoc-wasm`. callout.lua and theorem.lua emit `@preview/...` Typst imports:
+if a re-copy changes those versions, `typst-packages` must move too (the
+typst hermeticity test in quarto-core fails until it does).
+'''
+
+[[asset]]
+id = "typst-packages"
+title = "Typst packages and Font Awesome fonts bundled by Quarto 1"
+paths = [
+  "resources/typst-packages/README.md",
+  "resources/typst-packages/fonts",
+  "resources/typst-packages/packages/preview/fontawesome",
+  "resources/typst-packages/packages/preview/marginalia",
+  "resources/typst-packages/packages/preview/octique",
+  "resources/typst-packages/packages/preview/showybox",
+  "resources/typst-packages/packages/preview/theorion",
+]
+policy = "track"
+group = "quarto-cli"
+version = "v1.11.3"
+version_sources = [{ kind = "file-contains", file = "resources/typst-packages/README.md" }]
+upstream = { kind = "git", repo = "https://github.com/quarto-dev/quarto-cli", track = "tags", tag_prefix = "v", paths = [
+  "src/resources/formats/typst/packages",
+  "src/resources/formats/typst/fonts",
+] }
+guards = [
+  "quarto-core stage::stages::typst_compile::tests (hermeticity + vendored font discovery)",
+]
+procedure = "resources/typst-packages/README.md#updating"
+license = "per package (see README); Font Awesome fonts OFL-1.1"
+last_reviewed = "2026-10-21"
+notes = '''
+These follow quarto-cli, NOT Typst Universe: a newer showybox on
+packages.typst.org is not by itself a reason to update. Only the import
+working set is vendored (typst.toml, the .typ closure, LICENSE/README);
+`template/` and `thumbnail.png` exist only for `typst init` and stay out.
+Directory names carry the version (`preview/<name>/<version>/`), so a bump is
+a rename plus the `@preview/<name>:<version>` imports in pandoc-filters'
+Lua and typst-template, which must change in the same commit.
+'''
+
+[[asset]]
+id = "language"
+title = "Quarto 1 localization catalog"
+paths = ["resources/language"]
+policy = "track"
+group = "quarto-cli"
+version = "45caede32a0f987c4a377a952120cac6d624cb31"
+version_sources = [{ kind = "file-contains", file = "resources/language/README.md" }]
+upstream = { kind = "git", repo = "https://github.com/quarto-dev/quarto-cli", track = "tags", tag_prefix = "v", paths = ["src/resources/language"] }
+guards = ["quarto-core test(language_catalog)"]
+procedure = "resources/language/README.md"
+license = "GPL-2.0"
+last_reviewed = "2026-10-21"
+
+[[asset]]
+id = "highlight-styles"
+title = "Pandoc highlight-style themes from Quarto 1"
+paths = ["resources/pandoc/highlight-styles"]
+policy = "track"
+group = "quarto-cli"
+version = "2e6695811"
+version_sources = [{ kind = "file-contains", file = "resources/pandoc/highlight-styles/README.md" }]
+upstream = { kind = "git", repo = "https://github.com/quarto-dev/quarto-cli", track = "tags", tag_prefix = "v", paths = ["src/resources/pandoc/highlight-styles"] }
+guards = ["quarto-sass all_vendored_palettes_translate + catalog-shape tests"]
+procedure = "resources/pandoc/highlight-styles/README.md"
+license = "per theme (KDE syntax-highlighting family)"
+last_reviewed = "2026-10-21"
+
+[[asset]]
+id = "formats"
+title = "Per-format include resources (callout CSS, epub styles, docx callout icons)"
+paths = ["resources/formats"]
+policy = "track"
+group = "quarto-cli"
+version = "v1.11.3"
+version_sources = [{ kind = "file-contains", file = "resources/formats/README.md" }]
+upstream = { kind = "git", repo = "https://github.com/quarto-dev/quarto-cli", track = "tags", tag_prefix = "v", paths = [
+  "src/resources/formats/html/styles-callout.html",
+  "src/resources/formats/html/pandoc/styles.html",
+  "src/resources/formats/docx",
+] }
+procedure = "resources/formats/README.md"
+license = "GPL-2.0"
+last_reviewed = "2026-10-21"
+notes = '''
+`epub/styles.html` is adapted from quarto-cli's
+`formats/html/pandoc/styles.html` and is not byte-identical; the docx PNGs
+and `html/styles-callout.html` are byte-identical copies.
+'''
+
+[[asset]]
+id = "bootstrap-quarto-layer"
+title = "Quarto 1's Bootstrap layer: Bootswatch themes, _bootstrap-*.scss, title-block/listing/search SCSS"
+paths = [
+  "resources/scss/README.md",
+  "resources/scss/bootstrap/themes",
+  "resources/scss/bootstrap/_bootstrap-customize.scss",
+  "resources/scss/bootstrap/_bootstrap-functions.scss",
+  "resources/scss/bootstrap/_bootstrap-mixins.scss",
+  "resources/scss/bootstrap/_bootstrap-rules.scss",
+  "resources/scss/bootstrap/_bootstrap-variables.scss",
+  "resources/scss/html/templates/title-block.scss",
+  "resources/scss/html/templates/quarto-listing.scss",
+  "resources/scss/html/templates/quarto-search.scss",
+]
+policy = "track"
+group = "quarto-cli"
+upstream = { kind = "git", repo = "https://github.com/quarto-dev/quarto-cli", track = "tags", tag_prefix = "v", paths = [
+  "src/resources/formats/html/bootstrap/themes",
+  "src/resources/formats/html/bootstrap/_bootstrap-customize.scss",
+  "src/resources/formats/html/bootstrap/_bootstrap-functions.scss",
+  "src/resources/formats/html/bootstrap/_bootstrap-mixins.scss",
+  "src/resources/formats/html/bootstrap/_bootstrap-rules.scss",
+  "src/resources/formats/html/bootstrap/_bootstrap-variables.scss",
+  "src/resources/formats/html/templates/title-block.scss",
+  "src/resources/projects/website/listing/quarto-listing.scss",
+  "src/resources/projects/website/search/quarto-search.scss",
+] }
+guards = ["quarto-sass parity tests (dart-sass fixtures)"]
+procedure = "resources/scss/README.md"
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = '''
+VERSION UNRECORDED: the quarto-cli ref these were copied at was never
+written down. As of 2026-10-21 the themes and quarto-listing.scss are
+byte-identical to quarto-cli 19a7da95d, while _bootstrap-rules.scss,
+title-block.scss and quarto-search.scss carry q2 changes (quarto-search.scss
+is a hand-merge, not a copy). When next refreshed, record the ref in
+resources/scss/README.md and add a file-contains version source. Re-copying
+these means regenerating the dart-sass parity fixtures.
+'''
+
+[[asset]]
+id = "quarto-listing-js"
+title = "Listing runtime: List.js (Quarto 1's patched build) and quarto-listing.js"
+paths = ["resources/listing"]
+policy = "track"
+group = "quarto-cli"
+version = "19a7da95dccf7581cf3b54a552ba04f55f86d8f2"
+version_sources = [{ kind = "file-contains", file = "resources/listing/README.md" }]
+upstream = { kind = "git", repo = "https://github.com/quarto-dev/quarto-cli", track = "tags", tag_prefix = "v", paths = [
+  "src/resources/projects/website/listing/list.min.js",
+  "src/resources/projects/website/listing/quarto-listing.js",
+] }
+guards = ["quarto-core vendored_js_artifacts_emit_script_tags (emission only)"]
+procedure = "resources/listing/README.md"
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = '''
+list.min.js is Quarto 1's *patched* List.js (special-character handling,
+quarto-cli d57aae7aa), so its upstream is quarto-cli, not the npm `list.js`
+package: a newer npm release is irrelevant and would drop the patch.
+`version` is the quarto-cli commit both files were verified byte-identical
+at, not the commit they were first copied from.
+'''
+
+[[asset]]
+id = "algolia-autocomplete"
+title = "Algolia Autocomplete UMD bundles and logo (website search)"
+paths = [
+  "resources/search/README.md",
+  "resources/search/autocomplete.umd.js",
+  "resources/search/autocomplete-preset-algolia.umd.js",
+  "resources/search/search-by-algolia.svg",
+]
+policy = "follow"
+follows = "quarto-search-js"
+group = "quarto-cli"
+version = "1.19.1"
+version_sources = [{ kind = "file-contains", file = "resources/search/README.md" }]
+upstream = { kind = "npm", package = "@algolia/autocomplete-js" }
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = '''
+Byte-identical to Quarto 1's copies. Moves when quarto-search.js (the Q1
+port that drives it) needs a newer API, not when npm moves: the search UI
+markup and SCSS are coupled to this exact version.
+'''
+
+[[asset]]
+id = "quarto-search-js"
+title = "quarto-search.js (port of Quarto 1's website search driver)"
+paths = ["resources/search/quarto-search.js"]
+policy = "track"
+group = "quarto-cli"
+upstream = { kind = "git", repo = "https://github.com/quarto-dev/quarto-cli", track = "tags", tag_prefix = "v", paths = ["src/resources/projects/website/search/quarto-search.js"] }
+procedure = "resources/search/README.md"
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = '''
+VERSION UNRECORDED and locally modified (a port, not a copy). Survey by
+diffing upstream changes into the port by hand.
+'''
+
+[[asset]]
+id = "quarto-builtin-extensions"
+title = "Quarto 1 built-in shortcode extensions (kbd, lipsum, pagebreak, placeholder, version, video)"
+paths = ["resources/extensions/quarto"]
+policy = "track"
+group = "quarto-cli"
+upstream = { kind = "git", repo = "https://github.com/quarto-dev/quarto-cli", track = "tags", tag_prefix = "v", paths = [
+  "src/resources/extensions/quarto",
+  "src/resources/filters/rmarkdown/pagebreak.lua",
+] }
+guards = ["quarto-core shortcode integration tests"]
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = '''
+VERSION UNRECORDED. Mixed provenance as of 2026-10-21 (vs quarto-cli
+19a7da95d): lipsum, kbd.js and the video filter/resources are byte-identical;
+kbd.lua, kbd.css, placeholder.lua, version.lua, video.lua and every
+_extension.yml carry q2 changes; pagebreak is adapted from Q1's
+filters/rmarkdown/pagebreak.lua (Q1 has no pagebreak extension). Never
+re-copy wholesale — merge upstream diffs into the q2 versions.
+'''
+
+[[asset]]
+id = "videojs"
+title = "Video.js runtime inside the built-in video extension"
+paths = ["resources/extensions/quarto/video/resources/videojs"]
+policy = "follow"
+follows = "quarto-builtin-extensions"
+group = "quarto-cli"
+version = "7.20.2"
+version_sources = [{ kind = "file-contains", file = "resources/extensions/quarto/video/resources/videojs/video.min.js" }]
+upstream = { kind = "npm", package = "video.js" }
+license = "Apache-2.0"
+notes = "Byte-identical to Quarto 1's copy; moves when Q1 moves it."
+
+[[asset]]
+id = "knitr-r-scripts"
+title = "Quarto 1's knitr driver R scripts"
+paths = ["crates/quarto-core/src/engine/knitr/resources/rmd"]
+policy = "track"
+group = "quarto-cli"
+upstream = { kind = "git", repo = "https://github.com/quarto-dev/quarto-cli", track = "tags", tag_prefix = "v", paths = ["src/resources/rmd"] }
+guards = ["quarto-core engine::knitr"]
+license = "GPL-2.0"
+last_reviewed = "2026-10-21"
+notes = '''
+VERSION UNRECORDED. As of 2026-10-21, execute.R, ojs.R, patch.R and rmd.R
+are byte-identical to quarto-cli 19a7da95d; hooks.R and ojs_static.R differ
+(check whether that is a q2 patch or upstream drift before re-copying).
+'''
+
+[[asset]]
+id = "reveal-menu-css"
+title = "reveal.js-menu stylesheet served by hub-client"
+paths = ["hub-client/public/reveal-menu"]
+policy = "track"
+group = "reveal-js"
+upstream = { kind = "npm", package = "reveal.js-menu" }
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = '''
+VERSION UNRECORDED. Byte-identical to quarto-cli's
+formats/revealjs/plugins/menu/menu.css (19a7da95d). The npm dependency is
+`reveal.js-menu ^2.1.0` in the root and hub-client package.json; keep the CSS
+in step with the lockfile-resolved version of that package.
+'''
+
+# ===========================================================================
+# Bootstrap
+# ===========================================================================
+
+[[asset]]
+id = "bootstrap-scss"
+title = "Bootstrap SCSS sources"
+paths = ["resources/scss/bootstrap/dist"]
+policy = "track"
+group = "bootstrap"
+version = "5.3.1"
+version_sources = [{ kind = "file-contains", file = "resources/scss/bootstrap/dist/scss/mixins/_banner.scss" }]
+upstream = { kind = "npm", package = "bootstrap" }
+guards = ["quarto-sass parity tests"]
+procedure = "resources/scss/README.md"
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = '''
+Copied via quarto-cli (formats/html/bootstrap/dist), which is what Quarto 1
+ships; moving ahead of Quarto 1 would break theme parity, so in practice
+this follows Quarto 1's Bootstrap bump. Bootstrap JS must move in the same
+commit.
+'''
+
+[[asset]]
+id = "bootstrap-js"
+title = "Bootstrap JS bundle"
+paths = ["resources/js/bootstrap"]
+policy = "follow"
+follows = "bootstrap-scss"
+group = "bootstrap"
+version = "5.3.1"
+version_sources = [
+  { kind = "file-contains", file = "resources/js/bootstrap/bootstrap.bundle.min.js" },
+  { kind = "file-contains", file = "resources/js/README.md" },
+]
+upstream = { kind = "npm", package = "bootstrap" }
+guards = ["quarto-core bootstrap_js_version_matches_scss_readme"]
+procedure = "resources/js/README.md"
+license = "MIT"
+
+[[asset]]
+id = "bootstrap-icons"
+title = "Bootstrap Icons CSS + woff"
+paths = ["resources/bootstrap-icons"]
+policy = "track"
+group = "bootstrap"
+version = "1.13.1"
+version_sources = [
+  { kind = "file-contains", file = "resources/bootstrap-icons/bootstrap-icons.css" },
+  { kind = "file-contains", file = "resources/bootstrap-icons/README.md" },
+]
+upstream = { kind = "npm", package = "bootstrap-icons" }
+procedure = "resources/bootstrap-icons/README.md"
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = "Copy the CSS and woff as a pair: the CSS references the woff by a hashed query string."
+
+# ===========================================================================
+# Standalone JS libraries
+# ===========================================================================
+
+[[asset]]
+id = "headroom"
+title = "headroom.js"
+paths = ["resources/js/headroom"]
+policy = "track"
+version = "0.12.0"
+version_sources = [{ kind = "file-contains", file = "resources/js/headroom/headroom.min.js" }]
+upstream = { kind = "npm", package = "headroom.js" }
+procedure = "resources/js/README.md"
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = "Pinned for parity with Quarto 1, which has shipped 0.12.0 since 2021; upstream is inactive."
+
+[[asset]]
+id = "clipboard-js"
+title = "clipboard.js"
+paths = ["resources/js/clipboard/clipboard.min.js"]
+policy = "track"
+version = "2.0.11"
+version_sources = [{ kind = "file-contains", file = "resources/js/clipboard/clipboard.min.js" }]
+upstream = { kind = "npm", package = "clipboard" }
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = "Byte-identical to Quarto 1's copy."
+
+[[asset]]
+id = "react"
+title = "React / ReactDOM ES modules for quarto.component"
+paths = ["resources/js/react"]
+policy = "follow"
+follows = "react-npm"
+version = "19.2.7"
+version_sources = [{ kind = "json-key", file = "resources/js/react/build-info.json", key = "react" }]
+guards = ["quarto-core vendored_react_matches_build_info"]
+procedure = "resources/js/react/README.md"
+license = "MIT"
+notes = "Built, not copied: `cargo xtask vendor-react` rebuilds from the workspace node_modules."
+
+[[asset]]
+id = "react-npm"
+title = "react / react-dom npm dependency (decides the vendored React build)"
+paths = ["package-lock.json"]
+policy = "track"
+version = "19.2.7"
+version_sources = [
+  { kind = "json-key", file = "package-lock.json", key = "packages.node_modules/react.version" },
+  { kind = "json-key", file = "package-lock.json", key = "packages.node_modules/react-dom.version" },
+]
+upstream = { kind = "npm", package = "react" }
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = "The package.json ranges (^19.x in hub-client, preview-renderer, components) resolve to this lockfile version. Bump via npm first, then run `cargo xtask vendor-react`."
+
+[[asset]]
+id = "mermaid"
+title = "mermaid runtime bundle"
+paths = ["resources/mermaid"]
+policy = "track"
+version = "11.12.0"
+version_sources = [
+  { kind = "file-contains", file = "resources/mermaid/README.md" },
+  { kind = "file-regex", file = "crates/quarto-core/src/transforms/mermaid.rs", regex = 'MERMAID_VERSION: &str = "([^"]+)"' },
+  { kind = "file-regex", file = "ts-packages/preview-renderer/src/q2-preview/blocks/MermaidCodeBlock.tsx", regex = "MERMAID_VERSION = '([^']+)'" },
+]
+upstream = { kind = "npm", package = "mermaid" }
+guards = [
+  "quarto-core vendored_bundle_matches_pinned_version",
+  "quarto-core vendored_bundle_is_self_contained",
+]
+procedure = "resources/mermaid/README.md#updating"
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = "Not an npm dependency of the workspace: fetched with `npm pack`. Update the README's SHA-256 too."
+
+# ===========================================================================
+# reveal.js
+# ===========================================================================
+
+[[asset]]
+id = "revealjs-dist"
+title = "reveal.js runtime (dist)"
+paths = [
+  "resources/revealjs/LICENSE",
+  "resources/revealjs/README.md",
+  "resources/revealjs/reset.css",
+  "resources/revealjs/reveal.css",
+  "resources/revealjs/reveal.js",
+  "resources/revealjs/theme",
+]
+policy = "track"
+group = "reveal-js"
+version = "6.0.0"
+version_sources = [
+  { kind = "file-contains", file = "resources/revealjs/README.md" },
+  { kind = "file-regex", file = "package.json", regex = '"reveal.js": "\^?([0-9.]+)"' },
+  { kind = "file-regex", file = "hub-client/package.json", regex = '"reveal.js": "\^?([0-9.]+)"' },
+]
+upstream = { kind = "npm", package = "reveal.js" }
+guards = ["quarto-core vendored_reveal_assets_match_npm_package"]
+procedure = "resources/revealjs/README.md"
+license = "MIT"
+last_reviewed = "2026-10-21"
+
+[[asset]]
+id = "revealjs-scss-template"
+title = "reveal.js theme template and themes (SCSS)"
+paths = ["resources/scss/revealjs/reveal-template", "resources/scss/revealjs/themes"]
+policy = "follow"
+follows = "revealjs-dist"
+group = "reveal-js"
+procedure = "resources/scss/revealjs/README.md"
+license = "MIT"
+notes = '''
+`reveal-template/` is reveal.js 6.0.x `css/theme/template/`, split into
+q2's `_settings-vars`/`_expose`/`_theme`/`_mixins` files (see the README's
+three-step procedure). `themes/` are reveal's theme sources adapted for
+Quarto (they differ from Quarto 1's reveal-5-era copies).
+'''
+
+# ===========================================================================
+# Typst
+# ===========================================================================
+
+[[asset]]
+id = "subtree-orange-book"
+title = "orange-book Typst book extension (git subtree)"
+paths = ["resources/extension-subtrees/orange-book"]
+policy = "track"
+group = "typst"
+version = "2b59b76727f22bdcc3522ee56e2437f6abd81c36"
+version_sources = [{ kind = "subtree-split" }]
+upstream = { kind = "git", repo = "https://github.com/quarto-ext/orange-book.git", track = { branch = "main" } }
+procedure = "resources/extension-subtrees/README.md"
+license = "MIT-0"
+last_reviewed = "2026-10-21"
+notes = '''
+Refresh with `cargo xtask pull-extension-subtree orange-book`. Its
+typst-show.typ imports `@preview/orange-book:<v>` and
+`@preview/marginalia:<v>`; after a pull, if either version changed, re-vendor
+`typst-pkg-orange-book` (and check marginalia against `typst-packages`) or
+renders go back to downloading from packages.typst.org (bd-qr8ryv79).
+'''
+
+[[asset]]
+id = "typst-pkg-orange-book"
+title = "@preview/orange-book Typst package (hermetic copy)"
+paths = ["resources/typst-packages/packages/preview/orange-book/0.7.1"]
+policy = "follow"
+follows = "subtree-orange-book"
+group = "typst"
+version = "0.7.1"
+version_sources = [
+  { kind = "path-segment" },
+  { kind = "file-contains", file = "resources/extension-subtrees/orange-book/_extensions/orange-book/typst-show.typ" },
+]
+upstream = { kind = "typst-universe", package = "orange-book" }
+copy_of = "resources/extension-subtrees/orange-book/_extensions/orange-book/typst/packages/preview/orange-book/0.7.1"
+guards = ["quarto-core typst hermeticity test"]
+procedure = "resources/typst-packages/README.md#source"
+license = "MIT-0"
+notes = '''
+Its version is whatever the orange-book subtree's typst-show.typ imports,
+not Typst Universe's latest. `copy_of` checks every vendored file against
+the subtree's registry payload, which additionally has `template/` (left
+out here, as for every vendored package: it only serves `typst init`).
+'''
+
+[[asset]]
+id = "subtree-julia-engine"
+title = "Julia engine extension (git subtree of the q2/node-port fork branch)"
+paths = ["resources/extension-subtrees/julia-engine"]
+policy = "track"
+version = "f6d75d172cd615b33eb516403bad3403cc3cac3d"
+version_sources = [{ kind = "subtree-split" }]
+upstream = { kind = "git", repo = "https://github.com/gordonwoodhull/quarto-julia-engine.git", track = { branch = "q2/node-port" } }
+procedure = "resources/extension-subtrees/README.md"
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = '''
+Tracks a fork branch until quarto-cli#14936 ships in a stable Quarto 1
+release; then the row should move to PumasAI/quarto-julia-engine. Refresh
+with `cargo xtask pull-extension-subtree julia-engine`.
+'''
+
+[[asset]]
+id = "extension-subtrees-index"
+title = "Extension-subtree directory README"
+paths = ["resources/extension-subtrees/README.md"]
+policy = "native"
+
+[[asset]]
+id = "typst-wasm"
+title = "Typst WASM compiler + fonts bundle for the hub-client (fetched, manifest only)"
+paths = ["resources/typst-wasm.json"]
+policy = "track"
+group = "typst"
+version = "0.7.0"
+version_sources = [{ kind = "json-key", file = "resources/typst-wasm.json", key = "typst_ts_version" }]
+upstream = { kind = "npm", package = "@myriaddreamin/typst-ts-web-compiler" }
+guards = ["typst-host constants.test.ts / parity.test.ts"]
+procedure = "dev-docs/pandoc-wasm-bump.md"
+license = "Apache-2.0"
+last_reviewed = "2026-10-21"
+notes = '''
+The manifest pins three coupled things: typst-ts (this version), the Typst
+language version it embeds (`typst_version`, 0.14.2) and the `typst-assets`
+crate the fonts bundle is built from. The native renderer's `typst` crate in
+Cargo.lock should stay on the same Typst version, or preview and render
+diverge. Bytes are fetched by scripts/fetch-pandoc-wasm.mjs with SHA checks.
+'''
+
+# ===========================================================================
+# Pandoc / pdf.js manifests
+# ===========================================================================
+
+[[asset]]
+id = "pandoc-wasm"
+title = "pandoc.wasm for the hub-client (fetched, manifest only)"
+paths = ["resources/pandoc-wasm.json"]
+policy = "track"
+group = "pandoc"
+version = "3.11"
+version_sources = [
+  { kind = "file-regex", file = "resources/pandoc-wasm.json", regex = 'pandoc-([0-9.]+)\.wasm\.zip' },
+  { kind = "file-regex", file = "crates/quarto-core/src/pandoc_filters/mod.rs", regex = 'PANDOC_PIN: &str = "([^"]+)"' },
+]
+upstream = { kind = "git", repo = "https://github.com/jgm/pandoc", track = "tags" }
+guards = ["quarto-core pandoc_wasm_constants", "xtask lint::pandoc_pin"]
+procedure = "dev-docs/pandoc-wasm-bump.md"
+license = "GPL-2.0"
+last_reviewed = "2026-10-21"
+notes = '''
+Pandoc releases publish the wasm zip as a release asset. A bump moves the
+pandoc pin everywhere the pandoc-pin lint checks (CI, dev-setup, README) and
+may require re-validating the vendored Quarto 1 filters.
+'''
+
+[[asset]]
+id = "pandoc-html-template"
+title = "Pandoc default HTML5 template (adapted) and Quarto CSS partials"
+paths = ["crates/pampa/resources/templates/html"]
+policy = "track"
+group = "pandoc"
+upstream = { kind = "git", repo = "https://github.com/jgm/pandoc", track = "tags", paths = ["data/templates/default.html5", "data/templates/styles.html"] }
+guards = ["pampa template snapshot tests"]
+license = "GPL-2.0 (template), MIT (Quarto partials)"
+last_reviewed = "2026-10-21"
+notes = '''
+VERSION UNRECORDED. Never a clean copy: Quarto-specific markers are woven
+in. Survey by diffing upstream's template changes since the last review and
+porting selected ones.
+'''
+
+[[asset]]
+id = "pdfjs-viewer"
+title = "pdf.js viewer for PDF preview (fetched, manifest only)"
+paths = ["resources/pdfjs-viewer.json"]
+policy = "track"
+version = "6.3.289"
+version_sources = [{ kind = "json-key", file = "resources/pdfjs-viewer.json", key = "version" }]
+upstream = { kind = "git", repo = "https://github.com/mozilla/pdf.js", track = "tags", tag_prefix = "v" }
+procedure = "dev-docs/pandoc-wasm-bump.md"
+license = "Apache-2.0"
+last_reviewed = "2026-10-21"
+notes = "The worker is patched to a stable fingerprint by the fetch script; re-check that patch applies after a bump."
+
+# ===========================================================================
+# Other vendored content
+# ===========================================================================
+
+[[asset]]
+id = "hephaestus-fonts"
+title = "Roboto subsets for hephaestus plot text shaping"
+paths = ["resources/hephaestus"]
+policy = "track"
+version = "0.4.1"
+version_sources = [
+  { kind = "file-contains", file = "resources/hephaestus/README.md" },
+  { kind = "file-regex", file = "crates/quarto-core/Cargo.toml", regex = 'hephaestus = \{ version = "([^"]+)"' },
+]
+upstream = { kind = "crates-io", crate = "hephaestus" }
+guards = ["quarto-core -E 'test(hephaestus)' (determinism, fonts)"]
+procedure = "resources/hephaestus/README.md"
+license = "OFL-1.1"
+last_reviewed = "2026-10-21"
+notes = "Moves with the hephaestus crate bump (a Cargo upgrade); copy fonts/ from the matching hephaestus tag."
+
+[[asset]]
+id = "julia-highlights"
+title = "tree-sitter-julia highlight query"
+paths = ["resources/highlights/julia"]
+policy = "track"
+version = "e0f9dcd180fdcfcfa8d79a3531e11d99e79321d3"
+version_sources = [{ kind = "file-contains", file = "resources/highlights/julia/highlights.scm" }]
+upstream = { kind = "git", repo = "https://github.com/tree-sitter/tree-sitter-julia", track = { branch = "master" }, paths = ["queries/highlights.scm"] }
+guards = ["quarto-highlight golden tests"]
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = "Update the provenance header (Commit, Vendored date) when re-copying. The grammar crate version in Cargo.lock should match the query's commit era."
+
+[[asset]]
+id = "chicago-author-date-csl"
+title = "Default CSL style (chicago-author-date)"
+paths = ["crates/pampa/resources/csl"]
+policy = "track"
+version = "2025-08-07T00:00:00+00:00"
+version_sources = [{ kind = "file-regex", file = "crates/pampa/resources/csl/chicago-author-date.csl", regex = '<updated>([^<]+)</updated>' }]
+upstream = { kind = "git", repo = "https://github.com/citation-style-language/styles", track = { branch = "master" }, paths = ["chicago-author-date.csl"] }
+guards = ["quarto-citeproc tests", "pampa citeproc tests"]
+license = "CC-BY-SA-3.0"
+last_reviewed = "2026-10-21"
+notes = '''
+`version` is the style's own <updated> stamp, not a git ref; compare it to
+the <updated> stamp of the upstream file at the latest commit.
+'''
+
+[[asset]]
+id = "csl-test-fixtures"
+title = "CSL styles used as quarto-csl test fixtures"
+paths = ["crates/quarto-csl/test-data"]
+policy = "frozen"
+license = "CC-BY-SA-3.0"
+notes = "Frozen on purpose so tests stay deterministic; refresh only when validating against a newer CSL spec."
+
+[[asset]]
+id = "mitex"
+title = "mitex TeX front end (four vendored crates, patched)"
+paths = ["crates/quarto-math/vendor"]
+policy = "track"
+group = "rust-vendored"
+version = "985d8e7"
+version_sources = [{ kind = "file-contains", file = "crates/quarto-math/vendor/VENDORED.md" }]
+upstream = { kind = "git", repo = "https://github.com/mitex-rs/mitex", track = { branch = "main" }, paths = [
+  "crates/mitex-glob",
+  "crates/mitex-spec",
+  "crates/mitex-lexer",
+  "crates/mitex-parser",
+] }
+guards = ["the vendored crates' own tests"]
+procedure = "crates/quarto-math/vendor/VENDORED.md"
+license = "Apache-2.0"
+last_reviewed = "2026-10-21"
+notes = "Carries 7 local patches listed in VENDORED.md; port upstream changes, never re-copy wholesale."
+
+[[asset]]
+id = "mitex-default-spec"
+title = "mitex default command spec (input to gen-math-spec)"
+paths = ["crates/quarto-math/spec/upstream"]
+policy = "follow"
+follows = "mitex"
+group = "rust-vendored"
+version = "985d8e7"
+version_sources = [{ kind = "file-contains", file = "crates/quarto-math/spec/upstream/README.md" }]
+guards = ["cargo xtask gen-math-spec --check"]
+procedure = "crates/quarto-math/spec/upstream/README.md"
+license = "Apache-2.0"
+
+[[asset]]
+id = "ooxml-schemas"
+title = "OOXML XSDs for OMML validation tests"
+paths = ["crates/quarto-math/tests/schemas"]
+policy = "frozen"
+procedure = "crates/quarto-math/tests/schemas/README.md"
+license = "MIT (python-docx), W3C (xml.xsd)"
+notes = "python-docx ref/xsd v1.2.0 with one local patch; test-only."
+
+[[asset]]
+id = "lua-src-wasm"
+title = "Fork of lua-src-rs (Lua 5.4.8) for wasm32"
+paths = ["crates/lua-src-wasm"]
+policy = "external"
+group = "rust-vendored"
+license = "MIT"
+notes = "Applied via [patch.crates-io] lua-src in the workspace Cargo.toml; surveyed by upgrade-cargo-deps, not here."
+
+[[asset]]
+id = "wasm-bindgen-futures-patch"
+title = "Patched copy of wasm-bindgen-futures"
+paths = ["crates/wasm-bindgen-futures-patch"]
+policy = "external"
+group = "rust-vendored"
+procedure = ".claude/skills/upgrade-cargo-deps/PINS.md"
+license = "MIT OR Apache-2.0"
+notes = "Pin chain and removal condition live in upgrade-cargo-deps/PINS.md."
+
+[[asset]]
+id = "tree-sitter-language-wasm-shim"
+title = "tree-sitter-language shim for wasm32"
+paths = ["crates/tree-sitter-language-wasm-shim"]
+policy = "external"
+group = "rust-vendored"
+license = "MIT"
+notes = "Applied via [patch.crates-io]; surveyed by upgrade-cargo-deps."
+
+# ===========================================================================
+# CDN-loaded libraries (URLs in Rust sources)
+# ===========================================================================
+
+[[asset]]
+id = "cdn-katex"
+title = "KaTeX (html-math-method: katex)"
+paths = ["crates/quarto-core/src/stage/stages/math_js.rs"]
+policy = "track"
+group = "cdn"
+version = "0.18.9"
+version_sources = [
+  { kind = "file-regex", file = "crates/quarto-core/src/stage/stages/math_js.rs", regex = 'npm/katex@([0-9.]+)/dist/";' },
+  { kind = "file-regex", file = "package.json", regex = '"katex": "\^?([0-9.]+)"' },
+]
+upstream = { kind = "npm", package = "katex" }
+guards = ["quarto-core katex_cdn_version_matches_npm_pin"]
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = "Pinned to the npm `katex` the preview bundles, so render and preview agree; bump the npm pins in the same commit."
+
+[[asset]]
+id = "cdn-mathjax"
+title = "MathJax (default html-math-method)"
+paths = ["crates/quarto-core/src/stage/stages/math_js.rs"]
+policy = "track"
+group = "cdn"
+version = "3"
+version_sources = [{ kind = "file-regex", file = "crates/quarto-core/src/stage/stages/math_js.rs", regex = 'npm/mathjax@([0-9.]+)/es5' }]
+upstream = { kind = "npm", package = "mathjax" }
+license = "Apache-2.0"
+last_reviewed = "2026-10-21"
+notes = '''
+Floats on the MathJax 3 major, matching Pandoc's and Quarto 1's default
+URL. MathJax 4 changes the loader paths (no es5/), so a major bump is a
+code change, not a URL edit.
+'''
+
+[[asset]]
+id = "cdn-algoliasearch"
+title = "algoliasearch lite client (website search, Algolia backend)"
+paths = ["crates/quarto-core/src/transforms/search_ui.rs"]
+policy = "track"
+group = "cdn"
+version = "4.5.1"
+version_sources = [{ kind = "file-regex", file = "crates/quarto-core/src/transforms/search_ui.rs", regex = 'npm/algoliasearch@([0-9.]+)/' }]
+upstream = { kind = "npm", package = "algoliasearch" }
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = "Same version Quarto 1 loads; coupled to the vendored autocomplete 1.19.1 API."
+
+[[asset]]
+id = "cdn-algolia-insights"
+title = "search-insights + autocomplete-plugin-algolia-insights (website search analytics)"
+paths = ["crates/quarto-core/src/transforms/search_ui.rs"]
+policy = "track"
+group = "cdn"
+version = "*"
+upstream = { kind = "npm", package = "search-insights" }
+license = "MIT"
+last_reviewed = "2026-10-21"
+notes = "Unpinned (CDN latest), as in Quarto 1. Pinning is a behaviour change; file it separately if wanted."
+
+[[asset]]
+id = "cdn-marimo-islands"
+title = "@marimo-team/islands (marimo output capture)"
+paths = ["crates/quarto-core/src/stage/stages/capture_splice.rs"]
+policy = "track"
+group = "cdn"
+version = "*"
+upstream = { kind = "npm", package = "@marimo-team/islands" }
+license = "Apache-2.0"
+last_reviewed = "2026-10-21"
+notes = "Unpinned (CDN latest). The islands runtime must match the marimo version that produced the HTML; consider pinning per document."
+
+# ===========================================================================
+# Repo-owned content under coverage roots (not vendored)
+# ===========================================================================
+
+[[asset]]
+id = "native-resources"
+title = "Repo-owned resources: this registry, reconciliation examples, attribution viewer, extension-build config"
+paths = [
+  "resources/vendored.toml",
+  "resources/ast-reconciliation-examples",
+  "resources/attribution",
+  "resources/extension-build",
+]
+policy = "native"
+notes = "extension-build/ROLLUP-LICENSE.md holds third-party notices for the ts-bundle, which npm's lockfile manages."
+
+[[asset]]
+id = "native-js"
+title = "Repo-owned JS (Quarto 1 ports that have diverged)"
+paths = [
+  "resources/js/README.md",
+  "resources/js/clipboard/code-copy-init.js",
+  "resources/js/quarto-components",
+  "resources/js/quarto-nav",
+  "resources/js/tabsets",
+]
+policy = "native"
+notes = "quarto-nav.js and tabsets.js began as Quarto 1 ports and have diverged; they are maintained here."
+
+[[asset]]
+id = "native-scss"
+title = "Repo-owned SCSS (HTML templates, reveal.js glue)"
+paths = [
+  "resources/scss/html/templates/copy-code.scss",
+  "resources/scss/html/templates/embed-example.scss",
+  "resources/scss/html/templates/equation-number.scss",
+  "resources/scss/html/templates/highlight-default.scss",
+  "resources/scss/html/templates/highlight.scss",
+  "resources/scss/revealjs/README.md",
+  "resources/scss/revealjs/quarto-revealjs.scss",
+]
+policy = "native"
+
+[[asset]]
+id = "native-revealjs"
+title = "Repo-owned reveal.js CSS (Quarto layer, scoped reset)"
+paths = ["resources/revealjs/quarto-reveal.css", "resources/revealjs/reset-scoped.css"]
+policy = "native"
+
+[[asset]]
+id = "native-hub-client-public"
+title = "Repo-owned hub-client static files"
+paths = ["hub-client/public/q2-raw.html", "hub-client/public/quarto-icon.svg"]
+policy = "native"
+
+[[asset]]
+id = "native-tree-sitter-grammars"
+title = "tree-sitter-qmd / tree-sitter-doctemplate (repo-native grammars)"
+paths = ["crates/tree-sitter-qmd", "crates/tree-sitter-doctemplate"]
+policy = "native"
+notes = '''
+tree-sitter-qmd originated as a fork of tree-sitter-markdown but has been
+developed independently since import; there is no upstream sync. Listed so
+discovery stops re-classifying it as vendored (bd-7co9).
+'''
