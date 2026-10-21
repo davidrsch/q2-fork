@@ -7,7 +7,7 @@ maintained locally (pandoc-hybrid-typst Phase 1).
 
 ## Contents
 
-- `packages/preview/` - the 5 vendored Typst packages, each at its own
+- `packages/preview/` - the 6 vendored Typst packages, each at its own
   pinned version, in the exact `preview/<name>/<version>/` layout a real
   Typst package cache uses:
   - `fontawesome/0.5.0/` - Font Awesome icon set for Typst
@@ -15,6 +15,12 @@ maintained locally (pandoc-hybrid-typst Phase 1).
     **unconditionally**, so it must always be staged regardless of whether
     a document uses margin notes)
   - `octique/0.1.1/` - GitHub Octicons icon set
+  - `orange-book/0.7.1/` - book template imported by the orange-book
+    extension's `typst-show.typ` (`@preview/orange-book:0.7.1`). Vendored
+    so orange-book renders are hermetic: `TypstCompileStage` stages into a
+    fresh per-render cache, and without this copy `typst-gather` downloaded
+    the package from packages.typst.org on every render (bd-qr8ryv79).
+    **Not** from quarto-cli — see "Source" below
   - `showybox/2.0.4/` - styled call-out/box component
   - `theorion/0.4.1/` - theorem/proof environments
 - `fonts/` - the 3 embedded Font Awesome font files plus their license:
@@ -27,6 +33,19 @@ These files are copied from:
 - quarto-cli tag: `v1.11.3`
 - `src/resources/formats/typst/packages/` and
   `src/resources/formats/typst/fonts/`
+
+Exception: `orange-book/0.7.1/` is not part of quarto-cli's vendored set.
+Its files are copied from the orange-book extension subtree
+(`resources/extension-subtrees/orange-book/_extensions/orange-book/typst/
+packages/preview/orange-book/0.7.1/`, itself the unmodified Typst package
+registry payload, MIT-0). Like the other packages here, only the
+import-time working set is vendored (`typst.toml` + the `.typ` closure +
+license/readme); the registry tarball's `template/` dir and `thumbnail.png`
+exist solely for `typst init`, which q2 never runs. If the orange-book
+extension is updated to a new package version, re-copy from the updated
+subtree and keep both the versioned directory name and the hermeticity test
+(`test_vendored_packages_cover_orange_book_template_imports` in
+`crates/quarto-core/src/stage/stages/typst_compile.rs`) in sync.
 
 ## Updating
 
@@ -57,7 +76,7 @@ Same reasoning as `resources/scss/README.md` and
 Vendoring here is **bytes only** — how these packages and fonts reach the
 `typst` compiler's package cache and font path at render time is Phase 2's
 concern (`claude-notes/plans/2026-09-18-pandoc-hybrid-typst.md`), not this
-directory's. In particular: do **not** stage the 5 packages via
+directory's. In particular: do **not** stage the vendored packages via
 `typst-gather`'s `Config.local` — its `gather_local()` writes to a
 `local/{name}/{version}` destination that a `@preview/...` import in
 generated `.typ` source will never resolve against. Pre-seed (or copy
@@ -71,6 +90,7 @@ Each package carries its own license, vendored alongside it:
 - `fontawesome/0.5.0/LICENSE`
 - `marginalia/0.3.1/UNLICENSE`
 - `octique/0.1.1/LICENSE`
+- `orange-book/0.7.1/LICENSE` (MIT-0)
 - `showybox/2.0.4/LICENSE`
 - `theorion/0.4.1/LICENSE`
 
