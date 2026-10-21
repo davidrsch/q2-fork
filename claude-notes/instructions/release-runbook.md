@@ -166,8 +166,9 @@ gh run watch <run-id> --repo quarto-dev/q2     # or watch in the Actions UI
 
 Job graph: `preflight` → **`release-pipeline.yml`** (a reusable
 `workflow_call` workflow, shared with the Nightly — see § Nightlies):
-`check-inputs` → `web-payloads` (WASM → preview SPA + trace viewer + the
-`q2 docs llms` docs embed, built once) → `build` matrix (5 platforms,
+`check-inputs` → `web-payloads` (WASM → preview SPA + `--ui editor`
+embed + trace viewer + the `q2 docs llms` docs embed, built once) →
+`build` matrix (6 platforms,
 each builds the per-target MCP bundle then the binary, then a **verify
 gate**) → `release` (combines checksums, signs every `.tar.gz`,
 publishes). In the Actions UI the pipeline's jobs appear nested under
@@ -184,7 +185,12 @@ The per-target verify gate is the anti-stale-embed guard: it fails the
 leg unless `q2 mcp --launcher-info` reports a real (non-placeholder)
 bundle, all three hub defaults as `bundled`, a keyring addon for each
 platform in that leg's `KEYRING_PLATFORMS`, and `q2 docs llms
---embed-info` reports `source: real` at exactly this tag's commit. A
+--embed-info` reports `source: real` at exactly this tag's commit. The
+asset-manifest step additionally fails the leg unless `q2 preview
+--print-asset-manifest-hashes` reports a real (non-`none`) hash for
+both the viewer and the `--ui editor` embeds (GH #869), and the
+`asset-manifest-check` job then requires those hashes to be identical
+across platforms. A
 `(dirty)` marker on that commit is a **warning**, not a failure — the
 docs still came from this commit, but something modified tracked files
 during the `web-payloads` job and is worth a look.

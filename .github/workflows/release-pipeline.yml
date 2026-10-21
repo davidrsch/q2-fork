@@ -49,9 +49,10 @@
 #
 # q2 deltas from braid:
 #
-# - A functional q2 binary embeds THREE payloads via include_dir!:
-#   the hub MCP bundle (quarto-mcp-launcher), the preview SPA
-#   (quarto-preview), and the trace viewer (quarto-trace-server). A
+# - A functional q2 binary embeds FOUR payloads via include_dir!:
+#   the hub MCP bundle (quarto-mcp-launcher), the preview SPA and the
+#   `--ui editor` hub-client bundle (both quarto-preview), and the
+#   trace viewer (quarto-trace-server). A
 #   build without them succeeds but ships placeholders (the 2026-05-20
 #   stale-embed incident class) — the per-target "verify binary" step
 #   fails the release if any placeholder is detected. The musl legs get
@@ -187,7 +188,8 @@ jobs:
 
   # Target-independent embedded payloads, built once: the WASM module
   # (wasm32, same bytes for every release target), the preview SPA that
-  # consumes it, the trace viewer, and the `q2 docs llms` docs embed.
+  # consumes it, the hub-client editor embed (`q2 preview --ui editor`),
+  # the trace viewer, and the `q2 docs llms` docs embed.
   # Toolchain steps mirror hub-client-e2e.yml (the canonical WASM CI
   # setup).
   #
@@ -292,6 +294,17 @@ jobs:
         run: npm run build
         working-directory: q2-preview-spa
 
+      # The `q2 preview --ui editor` embed (live-share Phase 4,
+      # bd-jt1etjbn; GH #869 / bd-yx63o8wo): target-independent like the
+      # other SPA dists. Same npm invocation `cargo xtask
+      # build-hub-client-embed` wraps, without compiling xtask on this
+      # runner. The script re-runs `build:wasm`, which is a cargo no-op
+      # on the warm target dir from the WASM step above (plus a
+      # bindgen/wasm-opt re-pass), so this stays cheap.
+      - name: Build hub-client preview embed (--ui editor)
+        run: npm run build:preview-embed
+        working-directory: hub-client
+
       # The MCP bundle's qmd parser (CAP-11): a wasm32 artifact like the
       # others above — target-independent, so build it once here and let
       # every bundle-building leg reuse it (their freshness stamps match
@@ -333,6 +346,10 @@ jobs:
           path: |
             trace-viewer/dist
             q2-preview-spa/dist
+            # `q2 preview --ui editor` embed. Quarto-preview's build.rs
+            # silently embeds a placeholder when this is missing
+            # (GH #869) — `if-no-files-found: error` below is the guard.
+            hub-client/dist-preview-embed
             agents-docs-dist
             # The wasm-pack artifacts (glue JS + .wasm) themselves: the
             # per-target build legs and the hub-mcp-bundle job run
@@ -794,7 +811,8 @@ jobs:
       # artifact makes that true by construction, and this step is the
       # tripwire: record each platform's embedded hashes so the
       # asset-manifest-check job can fail the release on drift. A missing
-      # viewer hash means the placeholder SPA snuck in, so fail here.
+      # viewer hash means the placeholder SPA snuck in; a missing editor
+      # hash means the `--ui editor` embed did (GH #869). Fail on either.
       - name: Record embedded asset manifest hashes
         shell: bash
         run: |
@@ -804,6 +822,10 @@ jobs:
           "$BIN" preview --print-asset-manifest-hashes | tee "$OUT"
           if ! grep -Eq '^viewer: [0-9a-f]{64}$' "$OUT"; then
             echo "::error::release binary embeds no viewer asset manifest (placeholder SPA?)"
+            exit 1
+          fi
+          if ! grep -Eq '^editor: [0-9a-f]{64}$' "$OUT"; then
+            echo "::error::release binary embeds no editor asset manifest (placeholder --ui editor?)"
             exit 1
           fi
 
