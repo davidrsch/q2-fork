@@ -728,13 +728,20 @@ id = "pdfjs-viewer"
 title = "pdf.js viewer for PDF preview (fetched, manifest only)"
 paths = ["resources/pdfjs-viewer.json"]
 policy = "track"
-version = "6.3.289"
+version = "6.4.299"
 version_sources = [{ kind = "json-key", file = "resources/pdfjs-viewer.json", key = "version" }]
 upstream = { kind = "git", repo = "https://github.com/mozilla/pdf.js", track = "tags", tag_prefix = "v" }
-procedure = "dev-docs/pandoc-wasm-bump.md"
+procedure = "scripts/fetch-pandoc-wasm.mjs"
 license = "Apache-2.0"
 last_reviewed = "2026-10-21"
-notes = "The worker is patched to a stable fingerprint by the fetch script; re-check that patch applies after a bump."
+notes = '''
+Bump: set `version`, `asset_name` and `upstream_zip_sha256` in
+resources/pdfjs-viewer.json (download the release zip into .cache/pdfjs/ and
+hash it), then run `node scripts/fetch-pandoc-wasm.mjs --pdfjs-only`.
+`patchWorker` rewrites one exact line of build/pdf.worker.mjs (the
+fingerprints getter) and throws if it is not found exactly once; check it
+still applies. dev-docs/pandoc-wasm-bump.md covers pandoc only.
+'''
 
 # ===========================================================================
 # Other vendored content
