@@ -536,10 +536,18 @@ policy = "native"
     #[test]
     fn json_keys_accept_segment_arrays_for_dotted_names() {
         let (dir, files) = fixture();
-        write(dir.path(), "resources/meta.json", r#"{ "a": { "b.js": "1.2.3" } }"#);
+        write(
+            dir.path(),
+            "resources/meta.json",
+            r#"{ "a": { "b.js": "1.2.3" } }"#,
+        );
         let dotted = GOOD.replace("key = \"a.b\"", "key = \"a.b.js\"");
         let m = messages(&check_with(dir.path(), &dotted, &files, &[]).unwrap());
-        assert!(m.iter().any(|m| m.contains("has no string at key `a.b.js`")), "{m:#?}");
+        assert!(
+            m.iter()
+                .any(|m| m.contains("has no string at key `a.b.js`")),
+            "{m:#?}"
+        );
 
         let segments = GOOD.replace("key = \"a.b\"", "key = [\"a\", \"b.js\"]");
         let v = check_with(dir.path(), &segments, &files, &[]).unwrap();

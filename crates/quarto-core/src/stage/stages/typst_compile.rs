@@ -911,7 +911,10 @@ mod tests {
         re: &regex::Regex,
         out: &mut std::collections::BTreeMap<String, String>,
     ) {
-        for entry in walkdir::WalkDir::new(root).into_iter().filter_map(Result::ok) {
+        for entry in walkdir::WalkDir::new(root)
+            .into_iter()
+            .filter_map(Result::ok)
+        {
             let path = entry.path();
             let unix = path.to_string_lossy().replace('\\', "/");
             if !entry.file_type().is_file() || unix.contains("/typst/packages/") {
