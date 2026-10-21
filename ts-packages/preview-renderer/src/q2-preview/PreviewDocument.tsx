@@ -399,6 +399,11 @@ export const PreviewDocument = ({
                 <main
                     className={`content${mainColumn ? ` ${mainColumn}` : ''}${bannerTitleBlock ? ' quarto-banner-title-block' : ''}`}
                     id="quarto-document-content"
+                    // Render's skip-to-content target (template.rs
+                    // `SKIP_LINK_PARTIAL`). The link itself is
+                    // render-only (bd-21n09dwj); the attribute keeps
+                    // `<main>` — the DOM-parity root — identical.
+                    tabIndex={-1}
                 >
                     {!bannerTitleBlock ? (
                         <TitleBlock

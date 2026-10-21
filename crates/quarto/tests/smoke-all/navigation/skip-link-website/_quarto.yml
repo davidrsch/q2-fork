@@ -1,0 +1,14 @@
+project:
+  type: website
+website:
+  title: Skip link site
+  navbar:
+    left:
+      - text: Home
+        href: index.qmd
+      - text: Other
+        href: other.qmd
+  sidebar:
+    contents:
+      - index.qmd
+      - other.qmd

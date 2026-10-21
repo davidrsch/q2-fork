@@ -437,5 +437,12 @@
 # built-in Sass layers of every theme assembly, like `quarto-listing.scss`
 # before it. CSS-only change; doc.html hash unchanged (a single document
 # renders no search box).
-doc.html a0540297514ad41734a23e91c9511134b1fa469281ec470339571ffd5d404494
-doc_files/styles.css c4089c5cc60ad43109392183622a54554330d1aac603fe638ecced8eadceb456
+#
+# Re-captured 2026-10-21 (bd-rbd3jq4n): both hashes updated for the
+# skip-to-content link. doc.html gains `<a id="quarto-skip-link" …>` as the
+# first child of <body> and `tabindex="-1"` on <main>. doc_files/styles.css
+# gains `#quarto-skip-link:focus { … }` and the `#quarto-document-content:focus,
+# #quarto-content:focus { outline: none }` rule; verified those two rules are
+# the only CSS delta (rendered with and without the SCSS change, diffed on `}`).
+doc.html 8bc5f1b52f07aa842a9420d2d08a24243e851ca7f18e3d55a089e5d1ffe84f59
+doc_files/styles.css 07c6ce19cafb14de60b29b5d47c7b3dab02cd788bf1bdce52cdcb3b568deeedc

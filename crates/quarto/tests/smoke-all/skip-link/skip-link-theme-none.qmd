@@ -1,0 +1,23 @@
+---
+title: No skip link without Bootstrap
+toc: true
+format:
+  html:
+    theme: none
+_quarto:
+  tests:
+    html:
+      noErrors: true
+      ensureHtmlElements:
+        - []
+        -
+          # the skip link belongs to the full (Bootstrap) template only
+          - 'a#quarto-skip-link'
+---
+
+`theme: none` renders through the minimal template, which has no skip link
+(and no Bootstrap CSS to style it) (bd-rbd3jq4n).
+
+## Section One
+
+Text.
