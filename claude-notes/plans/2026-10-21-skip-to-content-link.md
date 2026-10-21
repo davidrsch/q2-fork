@@ -177,7 +177,7 @@ q2 at `main` @ 905c4961f:
   because the local Homebrew pandoc 3.12.1 is built without HTTP
   support (environmental). hub-client WASM smoke-all not run locally
   (needs the WASM build).
-- [ ] Phase 8 — hub-client changelog entry (needs the commit hash).
+- [x] Phase 8 — hub-client changelog entry.
 
 ## Risks / tradeoffs (draft)
 
