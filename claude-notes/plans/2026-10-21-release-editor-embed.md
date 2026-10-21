@@ -26,7 +26,11 @@ updated when the fourth embed appeared.
 - [x] Update `claude-notes/instructions/release-runbook.md`
 - [x] Verify: YAML parses (actionlint clean), gate grep logic,
       `q2 render --strict claude-notes` (1532/1532)
-- [ ] Dry-run the pipeline from this branch (needs push permission)
+- [x] Dry-run the pipeline from this branch — run 39588593329 fully
+      green: all 6 legs report a real `editor:` manifest hash
+      (`9b8b391f…`), cross-platform check passed, release-set signed.
+      Two unrelated CI flakes on the PR re-ran green (bd-qr8ryv79,
+      bd-ynqwyyi7)
 
 ## Details
 
