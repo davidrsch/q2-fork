@@ -23,6 +23,10 @@ WASM rebuild is needed for a changelog-only edit.
 
 -->
 
+### 2026-10-21
+
+- [`6e3157e01`](https://github.com/quarto-dev/q2/commits/6e3157e01): Widen the WebKit timeout for the PDF preview status indicator in the pandoc-pdf-viewer harness spec, fixing a CI flake (bd-ynqwyyi7).
+
 ### 2026-10-20
 
 - [`2b566a68e`](https://github.com/quarto-dev/q2/commits/2b566a68e): Screen readers now see a single PDF preview frame while a typst document recompiles, instead of the visible one plus the one still loading underneath.

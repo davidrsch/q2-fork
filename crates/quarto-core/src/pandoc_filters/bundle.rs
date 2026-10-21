@@ -97,11 +97,11 @@ pub fn extract_typst_template(dest: &Path) -> Result<(), ResourceError> {
 /// layout a real typst package cache and `--font-path` argument expect
 /// (pandoc-hybrid-typst Phase 2's compile step). `dest` must already exist.
 ///
-/// Unconditional, full staging (all 5 vendored packages every render) —
+/// Unconditional, full staging (all 6 vendored packages every render) —
 /// simpler than `typst-gather`'s selective per-document analysis, and
 /// correct for any document that only references Quarto's bundled
 /// packages. Selective staging for arbitrary user-referenced `@preview`
-/// packages beyond the vendored 5 is `typst-gather` integration, tracked
+/// packages beyond the vendored 6 is `typst-gather` integration, tracked
 /// separately (see the plan's Phase 2 package-staging bullet).
 pub fn extract_typst_packages(dest: &Path) -> Result<(), ResourceError> {
     TYPST_PACKAGES_DIR

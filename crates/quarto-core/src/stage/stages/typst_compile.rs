@@ -143,7 +143,7 @@ impl PipelineStage for TypstCompileStage {
         let package_cache_dir = packages_dir.join("packages");
 
         // typst-gather integration (pandoc-hybrid-typst Phase 2): stage any
-        // `@preview` package the document references beyond the 5 vendored
+        // `@preview` package the document references beyond the 6 vendored
         // above. `gather_packages` skips a package already present at
         // `package_cache_dir` without touching the network
         // (`cache_preview_with_deps`'s `cached_path.exists()` check), so a
@@ -822,6 +822,62 @@ mod tests {
         assert!(
             fonts.iter().any(|f| f.contains("font awesome")),
             "expected a Font Awesome family in {fonts:?}"
+        );
+    }
+
+    /// Hermeticity regression test (bd-qr8ryv79): the orange-book book
+    /// template's complete `@preview` import set (see `typst-show.typ` in
+    /// the vendored extension subtree: `@preview/orange-book:0.7.1` plus
+    /// `@preview/marginalia:0.3.1`) must be covered by the vendored package
+    /// set, so `gather_packages` stages nothing from the network. Before
+    /// orange-book was vendored, `gather_packages` downloaded it from
+    /// packages.typst.org on every render, and the render failed whenever
+    /// DNS did (the package cache is a fresh temp dir per render, so no
+    /// warm user cache can hide a regression here).
+    #[test]
+    fn test_vendored_packages_cover_orange_book_template_imports() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let packages_dir = temp.path().join("typst-packages");
+        std::fs::create_dir_all(&packages_dir).unwrap();
+        crate::pandoc_filters::bundle::extract_typst_packages(&packages_dir).unwrap();
+        let package_cache_dir = packages_dir.join("packages");
+
+        let typ_input = temp.path().join("chapter.typ");
+        std::fs::write(
+            &typ_input,
+            "#import \"@preview/orange-book:0.7.1\": *\n\
+             #import \"@preview/marginalia:0.3.1\" as marginalia\n",
+        )
+        .unwrap();
+
+        let configured_local: HashSet<String> = HashSet::new();
+        let result = typst_gather::gather_packages(
+            &package_cache_dir,
+            Vec::new(),
+            std::slice::from_ref(&typ_input),
+            &configured_local,
+        )
+        .expect("gather_packages should succeed offline");
+        assert!(
+            result.unconfigured_local.is_empty(),
+            "unexpected @local imports: {:?}",
+            result.unconfigured_local
+        );
+        assert_eq!(
+            result.stats.failed, 0,
+            "gather_packages failed to stage a package the orange-book template needs"
+        );
+        assert_eq!(
+            result.stats.downloaded, 0,
+            "orange-book template imports must be covered by the vendored set; \
+             gather_packages downloaded {} package(s) from packages.typst.org",
+            result.stats.downloaded
+        );
+        assert_eq!(
+            result.stats.skipped, 2,
+            "expected both template imports to resolve from the vendored cache, \
+             got {} cache hits",
+            result.stats.skipped
         );
     }
 }
