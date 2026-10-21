@@ -2,7 +2,7 @@
 title: 'fig-alt never reaches the image alt text (bd-ykjwiqcc, GH #877)'
 date: 2026-10-21
 description: 'q2 leaves `fig-alt` as a custom attribute, so HTML writes `data-fig-alt` with an empty or caption-valued `alt`, and docx writes an empty or caption-valued `descr`. Fold `fig-alt` (and the `alt` key-value) into the Image alt inlines in one format-neutral Normalization-phase transform, ahead of every render-side consumer.'
-status: draft  # awaiting review; not yet executed
+status: implemented  # PR open; CI confirmation pending
 braid:
   strand: bd-ykjwiqcc
 ---
@@ -27,9 +27,9 @@ braid:
   - [x] Before/after with the installed nightly (`before/`) vs this branch (`after/`) on the A–J + alt2 fixture: **typst byte-identical**; docx differs only in `descr` values (all now correct)
 - [x] Commit B — D5 (Pandoc's rule: `aria-hidden` figcaption, alt kept), in pampa's HTML writer and its twin `Figure.tsx`; tests 10 written first (pampa `test_figcaption_*`, `fig_alt.rs` D5 section, preview `figure-figcaption.integration.test.tsx`)
 - [x] Docs note (`docs/guides/authoring/figures.qmd` § Alt Text) + hub-client changelog entries
-- [ ] `cargo xtask verify` green on the final tree; post-fix reproduction table recorded below
+- [x] `cargo xtask verify` green on the final tree (0e104dbfa: 17070 Rust tests, all TS/hub/SPA steps; CI's pandoc 3.11); post-fix reproduction table recorded below
 - [x] Discovered strands filed: bd-6jk3yxmu (`--output-dir` resources), bd-s45aqu3p (`figure-img`)
-- [ ] Strand comment; push + PR (ask first)
+- [x] Strand comment; push + PR (approved by Carlos 2026-10-21)
 
 ## Post-fix reproduction (2026-10-21)
 
