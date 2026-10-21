@@ -1,0 +1,19 @@
+---
+title: Lien d'évitement
+lang: fr
+format: html
+_quarto:
+  tests:
+    html:
+      noErrors: true
+      # The skip-link label comes from the `skip-to-content` language term
+      # (bd-rbd3jq4n); Quarto 1 uses `format.language["skip-to-content"]`.
+      ensureFileRegexMatches:
+        - [">Aller au contenu principal</a>"]
+        - [">Skip to main content</a>"]
+      ensureHtmlElements:
+        - ['body > a#quarto-skip-link:first-child']
+        - []
+---
+
+Un paragraphe.

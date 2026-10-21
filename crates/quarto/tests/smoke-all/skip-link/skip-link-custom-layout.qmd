@@ -1,0 +1,21 @@
+---
+title: Skip-to-content link (custom page layout)
+format:
+  html:
+    page-layout: custom
+_quarto:
+  tests:
+    html:
+      noErrors: true
+      ensureHtmlElements:
+        -
+          - 'body > a#quarto-skip-link:first-child[href="#quarto-document-content"]'
+          # Deliberate divergence from Quarto 1 (bd-rbd3jq4n): q2 keeps
+          # `<main>` under `page-layout: custom`, so `<main>` is the target.
+          # Quarto 1 has no `<main>` here and targets
+          # `div.page-layout-custom` instead.
+          - 'main#quarto-document-content[tabindex="-1"]'
+        - []
+---
+
+Some custom content.

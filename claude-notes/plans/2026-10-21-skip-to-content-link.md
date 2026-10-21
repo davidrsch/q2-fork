@@ -1,14 +1,13 @@
 ---
 title: 'HTML: skip-to-content link for Bootstrap-themed output (bd-rbd3jq4n)'
 date: 2026-10-21
-description: 'Port Quarto 1''s skip-to-content link (#14685) to q2''s full HTML template, SCSS and language plumbing; investigation skeleton pending design alignment.'
-status: draft  # Investigation — pending design alignment with user; do not implement before the go-ahead
+description: 'Port Quarto 1''s skip-to-content link (#14685) to q2''s full HTML template, SCSS and language plumbing, render-only for now.'
+status: in-progress
 braid:
   strand: bd-rbd3jq4n
 ---
 
-**Branch:** `braid/bd-rbd3jq4n-html-skip-content-link` (topic branch in the main checkout, no worktree; based on `main` @ `905c4961f`)
-**Do not start implementation until the user gives the go-ahead.**
+**Branch:** `braid/bd-rbd3jq4n-html-skip-content-link` (topic branch in the main checkout, no worktree; rebased onto `feature/bd-xm7l-vendored-updates` (PR #882) @ `eeaefbc62` per decision 1)
 
 ## Triage verdict
 
@@ -109,49 +108,76 @@ q2 at `main` @ 905c4961f:
 - Smoke-all home: `crates/quarto/tests/smoke-all/` (e.g. `localization/`,
   `navigation/`, `themes/`) is the natural place for ported fixtures.
 
-## Proposed phases (draft)
+## Decisions (2026-10-21, with the user)
 
-- Phase 0 — Sequencing: rebase onto `main` after #882 merges (or branch off
-  it now).
-- Phase 1 — Tests first: port `issue-14684.qmd` and
-  `issue-14684-theme-none.qmd` to `crates/quarto/tests/smoke-all/`; a
-  website/book fixture (navbar + sidebar) asserting `body >
-  a#quarto-skip-link:first-child`; a localization fixture (`lang: es` or
-  `fr`) asserting the translated text; a `template.rs` unit test.
-- Phase 2 — Markup: transform (or extension of an existing one) writes
-  `rendered.skip-to-content-text` from `LanguageTerms`, escaped; template
-  emits the link as the first thing in `<body>` and `tabindex="-1"` on
-  `<main>`.
-- Phase 3 — SCSS: port the `:focus` rule, the outline suppression, and
-  `$zindex-skip-link`; update the styles.css baseline hash; note the port
-  in the bootstrap layer's drift record.
-- Phase 4 — Schema: add `skip-to-content` to the `language:` term schema
-  (if q2's schema enumerates term keys — check `is_known_term_key`).
-- Phase 5 — Preview parity (pending Q3 below).
-- Phase 6 — Docs / changelog entry.
+1. **Sequencing:** rebase onto `feature/bd-xm7l-vendored-updates` (PR #882)
+   and start now; this branch lands after #882.
+2. **Custom templates:** the link is in the built-in full template only.
+   Custom templates opt in with the built-in `skip-link` partial
+   (`$skip-link()$` / `$skip-link.html()$`), documented in
+   `docs/guides/authoring/templates.qmd`.
+3. **Preview:** render-only for now. Follow-up strand **bd-21n09dwj**
+   (discovered-from this one) covers the preview.
+4. **`page-layout: custom`:** accept the divergence. q2 keeps `<main>`, so
+   `<main>` is the target there.
+5. **Scope:** full Bootstrap HTML template only (the long navbar/sidebar
+   website case is the motivation). Revealjs, `minimal`, `theme:
+   none/pandoc` stay without it.
 
-## Open design questions for the user
+## Implementation (as built)
 
-1. **Sequencing with #882.** Wait for PR #882 to merge and rebase this
-   branch onto `main`, or rebase onto `feature/bd-xm7l-vendored-updates`
-   now and land after it?
-2. **Custom `template:` documents.** Q1 injects the link into every
-   bootstrap page, including user templates, because it's a DOM
-   postprocessor. In q2, should the link be (a) template-only (built-in
-   template gets it; custom templates can use a `$skip-link()$` partial /
-   `$rendered.skip-to-content-text$` if they want), or (b) injected
-   post-template into any bootstrap-themed HTML to match Q1 exactly?
-3. **Preview.** Should hub-client preview render the skip link too (in
-   `PreviewDocument.tsx`), or is it render-only — with the parity tooling
-   told to ignore `#quarto-skip-link`? (Preview runs in an iframe inside
-   the editor; a "skip to content" target there is arguably meaningless.)
-4. **`page-layout: custom`.** q2 keeps `<main>` under custom layout, so the
-   link targets `main` there. Accept that divergence from Q1 (whose target
-   is `div.page-layout-custom`), or is the custom-layout DOM itself a
-   separate parity bug worth a strand?
-5. **Revealjs and other bootstrap-less HTML targets.** Confirm the link is
-   only for the full (bootstrap) HTML template — i.e. revealjs, `minimal`,
-   `theme: none/pandoc` all stay without it.
+- Markup: `SKIP_LINK_PARTIAL` in `crates/quarto-core/src/template.rs`,
+  registered in `builtin_html_partials()` and called as the first line of
+  `<body>` in `FULL_HTML_TEMPLATE`. `<main id="quarto-document-content">`
+  gains `tabindex="-1"`.
+- Label: `render_with_compiled_template` computes `$skip-to-content-text$`
+  from `LanguageTerms::from_meta` (fallback "Skip to main content"),
+  HTML-escapes it, and excludes the same-named metadata key so authors
+  can't inject markup. Computing it there (like `$main-column$`) rather
+  than in a new transform means custom templates get the variable too,
+  with no new pipeline stage.
+- Ordering: the link precedes the color-mode script, matching Q1. The FOUC
+  comment there was updated: one inline element ahead of a synchronous
+  inline script opens no paint window.
+- SCSS: upstream's `#quarto-skip-link:focus` rule, the outline suppression
+  on `#quarto-document-content` / `#quarto-content`, and
+  `$zindex-skip-link: 1070 !default`, ported verbatim into q2's
+  `_bootstrap-rules.scss` / `_bootstrap-variables.scss`.
+- Schema: no edit needed. `is_known_term_key` derives legal `language:`
+  keys from the vendored catalog, which already has `skip-to-content`.
+  The TS mirror `kLanguageDefaultsKeys` (`ts-packages/quarto-api`) gained
+  `skip-to-content` plus the five `navigation-*-label` keys (#14813),
+  whose absence already had its Q1 parity test red against the local
+  `external-sources/quarto-cli` checkout.
+- Preview: the `<main>` in `PreviewDocument.tsx` gains `tabIndex={-1}`. Not the
+  link, just the attribute, because `<main>` is the DOM-parity root and
+  its attributes are compared.
+
+## Phases
+
+- [x] Phase 1 — Tests first: 7 `template.rs` unit tests (first child of
+  body, before color-mode script, focusable target, localized + escaped,
+  not author-settable, absent from minimal template, custom-template
+  partial); smoke-all fixtures `skip-link/{skip-link,skip-link-theme-none,skip-link-custom-layout}.qmd`,
+  `localization/lang-fr-skip-link.qmd`, `navigation/skip-link-website/`.
+- [x] Phase 2 — Markup + label (template.rs).
+- [x] Phase 3 — SCSS port.
+- [x] Phase 4 — Schema / key lists (TS mirror only; see above).
+- [x] Phase 5 — Preview parity attribute (`tabIndex` on `<main>`);
+  the preview link itself → bd-21n09dwj.
+- [x] Phase 6 — Docs (`templates.qmd` section).
+- [x] Phase 7 — Goldens and verify. Accepted insta snapshots (lmd
+  blog/desugar/project, attribution baseline, banner main tag) and the
+  phase-5 hash baseline; the only deltas are the link and `tabindex`
+  (CSS delta verified to be exactly the two new rules). Fixtures that
+  pinned "first thing in `<body>`" (draft banner, title banners) and the
+  color-mode FOUC test now allow the skip link ahead. `cargo xtask
+  verify --skip-hub-build`: 17054/17055 pass; the remaining failure is
+  three typst smoke-all fixtures that fetch remote images, failing
+  because the local Homebrew pandoc 3.12.1 is built without HTTP
+  support (environmental). hub-client WASM smoke-all not run locally
+  (needs the WASM build).
+- [ ] Phase 8 — hub-client changelog entry (needs the commit hash).
 
 ## Risks / tradeoffs (draft)
 
