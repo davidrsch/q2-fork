@@ -26,7 +26,7 @@ fn main() {
     // (tarball builds) there is nothing to watch and the hash is `unknown`.
     for name in ["HEAD", "index"] {
         if let Some(path) = git_path(name) {
-            quarto_build_support::watch_path(&path);
+            quarto_build_support::watch_file(&path);
         }
     }
 }

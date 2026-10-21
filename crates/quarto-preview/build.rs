@@ -54,9 +54,9 @@ fn main() {
     };
 
     // Re-run if the real dist/ tree changes, appears, or vanishes.
-    // `watch_path` never watches a missing path: cargo would treat it as
+    // `watch_dir` never watches a missing path: cargo would treat it as
     // always stale and rebuild this crate on every build (bd-7xlph6ki).
-    quarto_build_support::watch_path(&real_dist);
+    quarto_build_support::watch_dir(&real_dist);
 
     // Editor embed (Phase 4). The viewer dist is only a dedupe target
     // when it is what the viewer embed actually serves — stripping
@@ -71,7 +71,7 @@ fn main() {
         make_editor_placeholder()
     };
     // Usually missing: only `cargo xtask build-hub-client-embed` builds it.
-    quarto_build_support::watch_path(&editor_dist);
+    quarto_build_support::watch_dir(&editor_dist);
 
     // WASM dedupe (plan 2026-10-13): strip the Vite-hashed render WASM
     // from the viewer archive — quarto-wasm-embed carries it instead,

@@ -58,10 +58,11 @@ fn main() {
         embed_dir.display()
     );
 
-    // Re-run if the real bundle changes, appears, or vanishes. Per-file
-    // watches catch in-place rewrites; a missing bundle is never watched
-    // directly, which cargo would treat as always stale (bd-7xlph6ki).
-    quarto_build_support::watch_path(&real_bundle);
+    // Re-run if the real bundle changes, appears, or vanishes. Cargo scans
+    // a watched directory recursively, so in-place rewrites are caught; a
+    // missing bundle is never watched directly, which cargo would treat as
+    // always stale (bd-7xlph6ki).
+    quarto_build_support::watch_dir(&real_bundle);
 }
 
 /// The filtered embed copy of `bundle` in `OUT_DIR`: every bundle file

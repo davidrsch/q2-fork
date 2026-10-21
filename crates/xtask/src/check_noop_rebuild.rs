@@ -71,7 +71,9 @@ pub fn run(profile: Option<&str>, rustflags: Option<&str>) -> Result<()> {
              CARGO_LOG=cargo::core::compiler::fingerprint=info cargo build --bin q2 \
              2>&1 | grep 'dirty:'\n\
              A `MissingFile` entry is a build script watching a path that does not \
-             exist; use `quarto_build_support::watch_path` (bd-7xlph6ki).",
+             exist; a `changed` entry naming a broad directory (cargo scans it \
+             recursively) is one watching a tree the build writes into. Use \
+             `quarto_build_support::watch_dir`/`watch_file` (bd-7xlph6ki).",
             stale.len(),
             stale.join("\n  ")
         );

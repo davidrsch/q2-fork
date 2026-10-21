@@ -4247,6 +4247,9 @@ dependencies = [
 [[package]]
 name = "quarto-build-support"
 version = "0.34.0"
+dependencies = [
+ "filetime",
+]
 
 [[package]]
 name = "quarto-citeproc"

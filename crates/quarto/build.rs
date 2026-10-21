@@ -34,11 +34,10 @@ fn main() {
         embed_dir.display()
     );
 
-    // Re-run if the staged tree changes, appears, or vanishes.
-    // `watch_path` watches every file (re-staging rewrites files in place)
-    // and never a missing path, which cargo would treat as always stale
-    // (bd-7xlph6ki).
-    quarto_build_support::watch_path(&real_dist);
+    // Re-run if the staged tree changes, appears, or vanishes. A missing
+    // tree is created empty rather than watched missing (always stale) or
+    // via the workspace root (stale after every build) (bd-7xlph6ki).
+    quarto_build_support::watch_dir(&real_dist);
 }
 
 fn make_placeholder_dist() -> PathBuf {

@@ -32,11 +32,11 @@ fn main() {
     );
 
     // Re-run if the real dist/ tree changes, appears, or vanishes.
-    // `watch_path` watches every file (`vite build` rewrites
-    // `assets/index-<hash>.js` in place, which a directory-mtime watch
-    // misses) and never a missing path, which cargo would treat as always
-    // stale (bd-7xlph6ki).
-    quarto_build_support::watch_path(&real_dist);
+    // Cargo scans a watched directory recursively, so in-place rewrites
+    // (`vite build` rewrites `assets/index-<hash>.js`) are caught; a
+    // missing dist is never watched directly, which cargo would treat as
+    // always stale (bd-7xlph6ki).
+    quarto_build_support::watch_dir(&real_dist);
 }
 
 fn make_placeholder_dist() -> PathBuf {

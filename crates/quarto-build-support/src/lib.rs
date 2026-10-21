@@ -2,11 +2,20 @@
 //!
 //! Several build scripts embed a generated tree (an SPA `dist/`, a JS
 //! bundle, the staged docs) that may or may not exist, and ask cargo to
-//! rerun them when it changes. Cargo treats a `cargo:rerun-if-changed`
-//! path that does not exist as stale on *every* invocation, so watching
-//! a missing tree directly makes the crate, and everything above it,
-//! recompile on every `cargo build`/`cargo run` (GH #870). Use
-//! [`watch_path`] instead of emitting `rerun-if-changed` by hand.
+//! rerun them when it changes. Two cargo behaviors make the obvious
+//! `cargo:rerun-if-changed=<tree>` go wrong:
+//!
+//! - a watched path that does not exist is stale on *every* invocation,
+//!   so watching a missing tree makes the crate, and everything above
+//!   it, recompile on every `cargo build`/`cargo run` (GH #870);
+//! - a watched directory is scanned *recursively*: it is stale when any
+//!   file anywhere under it is newer than the build script's last run.
+//!   Watching a missing tree's nearest existing ancestor instead is just
+//!   as bad when that ancestor is the workspace root, whose `target/`
+//!   the build itself keeps writing to.
+//!
+//! Use [`watch_dir`] and [`watch_file`] instead of emitting
+//! `rerun-if-changed` by hand.
 //!
 //! Build scripts that rewrite an output read by `include_bytes!`
 //! should use [`write_if_changed`], so a rerun that produces identical
@@ -14,82 +23,71 @@
 
 use std::path::{Component, Path, PathBuf};
 
-/// Emit `cargo:rerun-if-changed` lines for `path`; see [`watch_list`]
-/// for exactly which paths are watched.
-pub fn watch_path(path: &Path) {
-    for watched in watch_list(path) {
-        println!("cargo:rerun-if-changed={}", watched.display());
+/// Watched in place of a path that cannot be watched: the calling
+/// build script itself (relative paths resolve against the package
+/// root), which always exists and only changes when the script does.
+/// Emitting at least one `rerun-if-changed` also keeps cargo from
+/// falling back to rerunning on any change in the package.
+const FALLBACK: &str = "build.rs";
+
+/// Emit a `cargo:rerun-if-changed` that fires when the directory `path`
+/// appears, vanishes, or anything under it changes.
+///
+/// A missing `path` whose parent exists is created as an empty
+/// directory and watched; the generated trees this is used for are all
+/// gitignored, and git does not track empty directories anyway. Its
+/// mtime is backdated so creating it does not itself make the next
+/// build stale; populating it later bumps the mtime and reruns the
+/// script. When `path` cannot be created (missing parent, read-only
+/// source tree) the script watches [`FALLBACK`], and a tree appearing
+/// there later needs a `touch build.rs` to be picked up.
+pub fn watch_dir(path: &Path) {
+    println!("cargo:rerun-if-changed={}", dir_watch(path).display());
+}
+
+/// Emit a `cargo:rerun-if-changed` for the file `path`, or for
+/// [`FALLBACK`] when it is missing. A missing file is not created; to
+/// notice one appearing, also [`watch_dir`] its parent.
+pub fn watch_file(path: &Path) {
+    println!("cargo:rerun-if-changed={}", file_watch(path).display());
+}
+
+/// The path [`watch_dir`] watches, creating `path` when needed.
+pub fn dir_watch(path: &Path) -> PathBuf {
+    let path = normalize(path);
+    if path.is_dir() || create_backdated_dir(&path).is_ok() {
+        path
+    } else {
+        PathBuf::from(FALLBACK)
     }
 }
 
-/// The paths [`watch_path`] watches for `path`, which is first
-/// normalized lexically (`a/b/../c` becomes `a/c`):
-///
-/// - an existing file: the file itself;
-/// - an existing directory: the directory and every file and directory
-///   under it, recursively. The directory's own mtime catches additions
-///   and removals; the per-entry watches catch in-place rewrites, which a
-///   directory-mtime watch misses;
-/// - a missing path: its nearest existing ancestor directory, whose mtime
-///   changes when the missing child (or anything on the way to it) is
-///   created. Never the missing path itself, which cargo would treat as
-///   always stale.
-pub fn watch_list(path: &Path) -> Vec<PathBuf> {
+/// The path [`watch_file`] watches.
+pub fn file_watch(path: &Path) -> PathBuf {
     let path = normalize(path);
     if path.is_file() {
-        return vec![path];
-    }
-    if path.is_dir() {
-        let mut out = vec![path.clone()];
-        collect_recursive(&path, &mut out);
-        return out;
-    }
-    path.ancestors()
-        .skip(1)
-        .find(|ancestor| ancestor.is_dir())
-        .map(|ancestor| vec![ancestor.to_path_buf()])
-        .unwrap_or_default()
-}
-
-/// Like [`watch_path`], but an existing directory is watched by its own
-/// entry only, not recursively: its mtime catches files appearing or
-/// vanishing, but not in-place rewrites. For build scripts that pick one
-/// file out of a directory and watch that file themselves.
-pub fn watch_entry(path: &Path) {
-    for watched in watch_entry_list(path) {
-        println!("cargo:rerun-if-changed={}", watched.display());
+        path
+    } else {
+        PathBuf::from(FALLBACK)
     }
 }
 
-/// The paths [`watch_entry`] watches for `path`: the (normalized) path
-/// itself when it exists, else its nearest existing ancestor directory.
-pub fn watch_entry_list(path: &Path) -> Vec<PathBuf> {
-    let path = normalize(path);
-    if path.exists() {
-        return vec![path];
-    }
-    watch_list(&path)
-}
-
-fn collect_recursive(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let mut entries: Vec<_> = entries.flatten().collect();
-    entries.sort_by_key(|entry| entry.file_name());
-    for entry in entries {
-        let path = entry.path();
-        out.push(path.clone());
-        if entry.file_type().is_ok_and(|t| t.is_dir()) {
-            collect_recursive(&path, out);
-        }
+/// `create_dir` (not `create_dir_all`: a missing parent means the tree's
+/// whole project is absent, and conjuring it would be surprising), then
+/// set the mtime to the epoch. `AlreadyExists` is success: a sibling
+/// build script watching the same tree may have just created it.
+fn create_backdated_dir(path: &Path) -> std::io::Result<()> {
+    match std::fs::create_dir(path) {
+        Ok(()) => filetime::set_file_mtime(path, filetime::FileTime::zero()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && path.is_dir() => Ok(()),
+        Err(e) => Err(e),
     }
 }
 
 /// Resolve `.` and `..` components lexically, without touching the
 /// filesystem. Build scripts build paths like
-/// `<manifest_dir>/../../hub-client/dist`; walking ancestors of such a
-/// path would otherwise strip a `..` and land on the wrong directory.
+/// `<manifest_dir>/../../hub-client/dist`; normalizing keeps the watched
+/// path (and cargo's "stale: changed" log lines) readable.
 fn normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for component in path.components() {
@@ -124,74 +122,59 @@ pub fn write_if_changed(path: &Path, contents: &[u8]) -> std::io::Result<bool> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn missing_path_watches_nearest_existing_ancestor() {
-        let tmp = tempfile::tempdir().unwrap();
-        let missing = tmp.path().join("hub-client").join("dist").join("assets");
-        assert_eq!(watch_list(&missing), vec![tmp.path().to_path_buf()]);
-
-        std::fs::create_dir(tmp.path().join("hub-client")).unwrap();
-        assert_eq!(watch_list(&missing), vec![tmp.path().join("hub-client")]);
+    fn mtime(path: &Path) -> filetime::FileTime {
+        filetime::FileTime::from_last_modification_time(&std::fs::metadata(path).unwrap())
     }
 
     #[test]
-    fn missing_path_is_never_watched() {
-        let tmp = tempfile::tempdir().unwrap();
-        let missing = tmp.path().join("agents-docs-dist");
-        assert!(!watch_list(&missing).contains(&missing));
-    }
-
-    #[test]
-    fn existing_file_watches_itself() {
-        let tmp = tempfile::tempdir().unwrap();
-        let file = tmp.path().join("index.mjs");
-        std::fs::write(&file, "x").unwrap();
-        assert_eq!(watch_list(&file), vec![file]);
-    }
-
-    #[test]
-    fn existing_dir_watches_every_entry_recursively() {
+    fn existing_dir_watches_itself() {
         let tmp = tempfile::tempdir().unwrap();
         let dist = tmp.path().join("dist");
-        std::fs::create_dir_all(dist.join("assets")).unwrap();
+        std::fs::create_dir(&dist).unwrap();
         std::fs::write(dist.join("index.html"), "x").unwrap();
-        std::fs::write(dist.join("assets").join("app.js"), "x").unwrap();
-        assert_eq!(
-            watch_list(&dist),
-            vec![
-                dist.clone(),
-                dist.join("assets"),
-                dist.join("assets").join("app.js"),
-                dist.join("index.html"),
-            ]
-        );
+        let before = mtime(&dist);
+        assert_eq!(dir_watch(&dist), dist);
+        assert_eq!(mtime(&dist), before);
     }
 
     #[test]
-    fn parent_dir_components_are_resolved_before_walking_up() {
+    fn missing_dir_is_created_backdated_and_watched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dist = tmp.path().join("agents-docs-dist");
+        assert_eq!(dir_watch(&dist), dist);
+        assert!(dist.is_dir());
+        assert_eq!(std::fs::read_dir(&dist).unwrap().count(), 0);
+        assert_eq!(mtime(&dist), filetime::FileTime::zero());
+    }
+
+    #[test]
+    fn missing_dir_never_falls_back_to_an_ancestor() {
+        // The ancestor would be scanned recursively by cargo, `target/`
+        // included, so it would be stale after every build (bd-7xlph6ki).
+        let tmp = tempfile::tempdir().unwrap();
+        let dist = tmp.path().join("hub-client").join("dist");
+        assert_eq!(dir_watch(&dist), PathBuf::from(FALLBACK));
+        assert!(!tmp.path().join("hub-client").exists());
+    }
+
+    #[test]
+    fn parent_dir_components_are_resolved() {
         let tmp = tempfile::tempdir().unwrap();
         let crate_dir = tmp.path().join("crates").join("quarto-preview");
         std::fs::create_dir_all(&crate_dir).unwrap();
-        // `<crate>/../../hub-client/dist` with `hub-client/` missing: the
-        // nearest existing ancestor is the workspace root, not `crates/`
-        // (which a naive walk that strips the trailing `..` would reach).
-        let missing = crate_dir
-            .join("..")
-            .join("..")
-            .join("hub-client")
-            .join("dist");
-        assert_eq!(watch_list(&missing), vec![tmp.path().to_path_buf()]);
+        let dist = crate_dir.join("..").join("..").join("dist");
+        assert_eq!(dir_watch(&dist), tmp.path().join("dist"));
+        assert!(tmp.path().join("dist").is_dir());
     }
 
     #[test]
-    fn watch_entry_does_not_recurse_into_existing_dirs() {
+    fn existing_file_watches_itself_and_missing_file_falls_back() {
         let tmp = tempfile::tempdir().unwrap();
-        let assets = tmp.path().join("dist").join("assets");
-        assert_eq!(watch_entry_list(&assets), vec![tmp.path().to_path_buf()]);
-
-        std::fs::create_dir_all(&assets).unwrap();
-        std::fs::write(assets.join("app.wasm"), "x").unwrap();
-        assert_eq!(watch_entry_list(&assets), vec![assets]);
+        let file = tmp.path().join("index.mjs");
+        assert_eq!(file_watch(&file), PathBuf::from(FALLBACK));
+        assert!(!file.exists());
+        std::fs::write(&file, "x").unwrap();
+        assert_eq!(file_watch(&file), file);
     }
 
     #[test]

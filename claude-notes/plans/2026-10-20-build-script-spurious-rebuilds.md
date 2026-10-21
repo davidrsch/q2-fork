@@ -236,3 +236,38 @@ the fix, the index mtime moved during build 1 and build 2 recompiled 10
 units. The fix is `git --no-optional-locks status --porcelain`. After it, the
 index is untouched and build 2 is a no-op (0.56s). The CI invocation passes
 (0.61s). This bug was already on main; the new check exposed it.
+
+## Found in CI: the ancestor fallback watched the workspace root
+
+The PR's first CI run failed its own `check-noop-rebuild` step on Linux:
+the second build recompiled `quarto`. CI never stages `agents-docs-dist/`,
+so `watch_path`\'s nearest-existing-ancestor fallback watched the
+**workspace root**. Phase 2 assumed cargo checks only a watched
+directory's own mtime. It does not: cargo scans a watched directory
+recursively and compares the newest mtime under it, `target/` included.
+Any file the build wrote after the script ran made it stale again.
+Locally, touching `claude-notes/zz-probe` or `target/debug/zz-probe` was
+enough to rerun the script. The same fallback made `quarto-preview` rerun
+on every `hub-client/` edit while `dist-preview-embed/` was missing.
+
+The fix replaces `watch_path`/`watch_entry` with two helpers:
+
+- `watch_dir(path)`: a missing directory whose parent exists is created
+  empty, with its mtime backdated to the epoch so creating it does not
+  itself make the next build stale, and then watched. Populating it bumps
+  its mtime, so a dist appearing is still picked up. Every such tree is
+  gitignored, and git does not track empty directories anyway. When the
+  directory cannot be created (missing parent, read-only tree), the script
+  watches its own `build.rs`.
+- `watch_file(path)`: a missing file falls back to `build.rs`; nothing is
+  created.
+
+Since cargo already recurses, the per-file enumeration is gone, and
+`quarto-wasm-embed` watches `q2-preview-spa/dist/` and
+`ts-packages/quarto-hub-mcp/dist-bundle/` rather than individual files.
+
+Observed with `--profile ci` and `agents-docs-dist/` absent: the check
+passes (second build 0.36s); an unrelated file under `claude-notes/` or
+`hub-client/src/` causes no rebuild; populating `agents-docs-dist/`,
+rewriting `llms.txt` in place, and deleting the directory each cause
+exactly one `quarto` rebuild, and the next build is a no-op.
