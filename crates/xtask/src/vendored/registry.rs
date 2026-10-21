@@ -112,13 +112,40 @@ pub enum VersionSource {
     FileContains { file: String },
     /// `regex`'s first capture group in `file` equals `version`.
     FileRegex { file: String, regex: String },
-    /// The dotted `key` in JSON `file` equals `version`.
-    JsonKey { file: String, key: String },
+    /// The value at `key` in JSON `file` equals `version`.
+    JsonKey { file: String, key: JsonKeyPath },
     /// Some component of `paths[0]` equals `version`.
     PathSegment,
     /// The latest `git-subtree-split` trailer for `paths[0]` equals
     /// `version`. Needs full history, so only `outdated` checks it.
     SubtreeSplit,
+}
+
+/// A path into a JSON document: `"a.b.c"`, or `["a", "b.c", "d"]` when a
+/// segment itself contains a dot (e.g. `node_modules/reveal.js-menu`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum JsonKeyPath {
+    Dotted(String),
+    Segments(Vec<String>),
+}
+
+impl JsonKeyPath {
+    pub fn segments(&self) -> Vec<&str> {
+        match self {
+            JsonKeyPath::Dotted(s) => s.split('.').collect(),
+            JsonKeyPath::Segments(v) => v.iter().map(String::as_str).collect(),
+        }
+    }
+}
+
+impl std::fmt::Display for JsonKeyPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JsonKeyPath::Dotted(s) => f.write_str(s),
+            JsonKeyPath::Segments(v) => write!(f, "{v:?}"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

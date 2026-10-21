@@ -33,6 +33,7 @@
 #                     { kind = "file-contains", file = "…" }
 #                     { kind = "file-regex", file = "…", regex = '…(capture)…' }
 #                     { kind = "json-key", file = "…", key = "a.b" }
+#                       (or key = ["a", "b.c"] when a segment has a dot)
 #                     { kind = "path-segment" }    # a component of paths[0]
 #                     { kind = "subtree-split" }   # git-subtree-split trailer;
 #                                                  # checked by `outdated` only
@@ -389,19 +390,18 @@ title = "reveal.js-menu stylesheet served by hub-client"
 paths = ["hub-client/public/reveal-menu"]
 policy = "track"
 group = "reveal-js"
+version = "2.1.0"
+version_sources = [{ kind = "json-key", file = "package-lock.json", key = ["packages", "node_modules/reveal.js-menu", "version"] }]
 upstream = { kind = "npm", package = "reveal.js-menu" }
 license = "MIT"
 last_reviewed = "2026-10-21"
 notes = '''
-VERSION UNRECORDED. Byte-identical to quarto-cli's
-formats/revealjs/plugins/menu/menu.css (19a7da95d). The npm dependency is
-`reveal.js-menu ^2.1.0` in the root and hub-client package.json; keep the CSS
-in step with the lockfile-resolved version of that package.
+Byte-identical (2026-10-21) to node_modules/reveal.js-menu/menu.css at the
+lockfile-resolved 2.1.0, and to quarto-cli's
+formats/revealjs/plugins/menu/menu.css. The package.json ranges are
+`^2.1.0`, so an npm bump can move the lockfile without touching this copy:
+re-copy from node_modules whenever the lockfile version changes.
 '''
-
-# ===========================================================================
-# Bootstrap
-# ===========================================================================
 
 [[asset]]
 id = "bootstrap-scss"
@@ -420,7 +420,11 @@ notes = '''
 Copied via quarto-cli (formats/html/bootstrap/dist), which is what Quarto 1
 ships; moving ahead of Quarto 1 would break theme parity, so in practice
 this follows Quarto 1's Bootstrap bump. Bootstrap JS must move in the same
-commit.
+commit. EXPECT `outdated` against npm on every survey: the actionable check
+is Quarto 1's banner at its latest tag
+(`git -C target/vendored-cache/https___github_com_quarto_dev_quarto_cli.git show
+<tag>:src/resources/formats/html/bootstrap/dist/scss/mixins/_banner.scss`).
+2026-10-21: Quarto 1 v1.11.6 still ships 5.3.1 — no action.
 '''
 
 [[asset]]
@@ -455,7 +459,12 @@ upstream = { kind = "npm", package = "bootstrap-icons" }
 procedure = "resources/bootstrap-icons/README.md"
 license = "MIT"
 last_reviewed = "2026-10-21"
-notes = "Copy the CSS and woff as a pair: the CSS references the woff by a hashed query string."
+notes = '''
+Copy the CSS and woff as a pair: the CSS references the woff by a hashed
+query string. Like Bootstrap SCSS, this follows what Quarto 1 ships
+(formats/html/bootstrap/dist/bootstrap-icons.css), so an npm `outdated` is
+informational. 2026-10-21: Quarto 1 v1.11.6 still ships 1.13.1 — no action.
+'''
 
 # ===========================================================================
 # Standalone JS libraries

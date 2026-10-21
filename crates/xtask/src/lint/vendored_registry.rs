@@ -343,7 +343,7 @@ fn check_version_source(root: &Path, asset: &Asset, source: &VersionSource) -> O
                 Ok(j) => j,
                 Err(e) => return Some(format!("`{file}` is not JSON: {e}")),
             };
-            let found = key.split('.').try_fold(&json, |v, k| v.get(k));
+            let found = key.segments().into_iter().try_fold(&json, |v, k| v.get(k));
             match found.and_then(|v| v.as_str()) {
                 Some(s) if s == version => None,
                 Some(s) => Some(format!(
@@ -531,6 +531,19 @@ policy = "native"
                 .any(|m| m.contains("says `1.2.3` but the registry says `1.2.4`"))
         );
         assert!(v.iter().all(|v| v.line == line_of_id(&text, "lib")));
+    }
+
+    #[test]
+    fn json_keys_accept_segment_arrays_for_dotted_names() {
+        let (dir, files) = fixture();
+        write(dir.path(), "resources/meta.json", r#"{ "a": { "b.js": "1.2.3" } }"#);
+        let dotted = GOOD.replace("key = \"a.b\"", "key = \"a.b.js\"");
+        let m = messages(&check_with(dir.path(), &dotted, &files, &[]).unwrap());
+        assert!(m.iter().any(|m| m.contains("has no string at key `a.b.js`")), "{m:#?}");
+
+        let segments = GOOD.replace("key = \"a.b\"", "key = [\"a\", \"b.js\"]");
+        let v = check_with(dir.path(), &segments, &files, &[]).unwrap();
+        assert!(v.is_empty(), "{:#?}", messages(&v));
     }
 
     #[test]

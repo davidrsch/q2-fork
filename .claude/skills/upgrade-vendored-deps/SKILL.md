@@ -83,15 +83,27 @@ report any third-party content that is not in the registry:
 grep -rnoE 'https://(cdn\.jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com)/[^"\\ )]+' \
   crates --include='*.rs' | grep -v '/tests/'
 
-# Compile-time embeds outside the coverage roots
+# Compile-time embeds outside the coverage roots (one line per target).
+# Expect ~60 repo-native hits; project templates are filtered out here.
 grep -rnE 'include_(dir|str|bytes)!' crates --include='*.rs' \
-  | grep -v '/tests/' | grep -vE '\.\./\.\./resources/|"\$CARGO_MANIFEST_DIR/\.\./\.\./resources'
+  | grep -v '/tests/' | grep -vE '\.\./\.\./resources/|"\$CARGO_MANIFEST_DIR/\.\./\.\./resources' \
+  | grep -oE '^[^:]+:[0-9]+:.*include_(dir|str|bytes)!\(\s*"[^"]+"' \
+  | grep -v 'resources/templates/' \
+  | sed -E 's/:[0-9]+:.*include_(dir|str|bytes)!\(\s*/ /' | sort -u
 
 # Provenance headers anywhere in crates/
 grep -rElI '^[#;/* ]*(Source|Vendored|Upstream|Copied from):' crates \
   --include='*.scm' --include='*.lua' --include='*.css' --include='*.scss' \
   --include='*.R' --include='*.html' --include='*.js'
 ```
+
+Known repo-native hits (2026-10-21 survey; skip them): listing/feed
+`templates/*.template`, the tree-sitter grammar query/node-types files,
+`quarto-core/resources/{styles.css,js/quarto-color-mode.js}`, the
+`qmd-syntax-helper` resources, xtask lint fixtures (`external-sources/…`),
+build-time embed dirs (`$QUARTO_*_EMBED_DIR`), `quarto-math/spec/commands.json`,
+`error_catalog.json` and `custom-node-schema.json`. Third-party embeds
+outside the roots (CSL style, Pandoc template, knitr R) are already registered.
 
 For each hit that is third-party and unregistered, **propose** a registry
 entry in the plan doc (with the fields you can fill in confidently). Do not

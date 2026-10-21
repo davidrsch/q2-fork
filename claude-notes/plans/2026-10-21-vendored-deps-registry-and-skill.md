@@ -2,7 +2,7 @@
 title: 'Vendored dependencies: a checked registry, an `outdated` command, and an upgrade skill (bd-xm7l)'
 date: 2026-10-21
 description: 'Assessment of how the repo records and refreshes vendored third-party assets after PR #876, and a proposed design: a machine-readable registry that a lint keeps honest, an xtask that asks upstream what is newer, and a skill that turns the answer into strands.'
-status: in-progress  # design approved 2026-10-21 (see "Decisions"); implementing Phases 1–4
+status: done  # Phases 1–4 implemented 2026-10-21; first survey filed 8 strands; "Later / optional" items remain open under bd-xm7l
 braid:
   strand: bd-xm7l
   priority: P2
@@ -203,7 +203,7 @@ This sits alongside `upgrade-cargo-deps` and follows the same shape so the two f
 ### Phase 4 — the skill
 
 - [x] `.claude/skills/upgrade-vendored-deps/SKILL.md`: pre-flight, discovery sweep for what the lint can't see, survey, reconcile `Vendored:` strands, file one strand per group, bump `last_reviewed`, plan doc, commit. Survey-only.
-- [ ] First run via the skill; refine it from that experience.
+- [x] First run via the skill: `2026-10-21-vendored-survey.md`, which filed 8 strands. Refinements it produced: a `json-key` segment-array form (for `node_modules/reveal.js-menu`), a quieter embed sweep, Quarto 1 parity notes on Bootstrap, and `reveal-menu-css` recorded at 2.1.0.
 
 ### Later / optional
 
