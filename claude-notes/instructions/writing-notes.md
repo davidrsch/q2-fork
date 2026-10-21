@@ -97,6 +97,10 @@ other strands go in its comment or in the body. Dates are ISO `YYYY-MM-DD`.
 Single-quote the title (write a `'` inside it as `''`): in single quotes a
 backslash escape such as `\@` reaches the markdown parser unchanged, while in
 double quotes YAML rejects it. The title is markdown, so code spans work.
+The `description:` is parsed as markdown too (it feeds the plans table), so
+every rule above applies inside front matter — a possessive like
+`connect-satellites'' build.sh` unescapes to apostrophe-plus-space and fails
+with Q-1-20. Rewording ("build.sh in connect-satellites") beats escaping.
 `scripts/claude-notes-plan-frontmatter.py` adds both keys to a plan that has
 only a `#` heading and a dated filename.
 
