@@ -109,7 +109,9 @@ test.describe('PDF viewer', () => {
     });
     await write(page, '/doc/p.qmd', document('two'));
     await pane('two');
-    await expect(page.getByTestId('pdf-preview-status')).toBeVisible({ timeout: 10_000 });
+    // WebKit CI runners can take tens of seconds to reach the working phase (debounce + worker
+    // acquisition under load); keep the budget at this file's usual scale (bd-ynqwyyi7).
+    await expect(page.getByTestId('pdf-preview-status')).toBeVisible({ timeout: 60_000 });
     await expect(page.getByTestId('pdf-preview-status')).toBeHidden({ timeout: 60_000 });
     // The compile is done; the viewer then reopens the new bytes in place.
     await expect.poll(() => viewState(page), { timeout: 30_000 }).toMatchObject({ page: 7, scale: 1.5, pages: PAGES });
