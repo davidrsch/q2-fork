@@ -25,6 +25,8 @@ WASM rebuild is needed for a changelog-only edit.
 
 ### 2026-10-21
 
+- [`f4c4ec189`](https://github.com/quarto-dev/q2/commits/f4c4ec189): A figure whose caption is also its image's alt text is announced once by screen readers: the caption is hidden from assistive technology and the image keeps its alt text.
+- [`08a1d37da`](https://github.com/quarto-dev/q2/commits/08a1d37da): An image's `fig-alt` now becomes its alt text in the preview and in every rendered format (HTML, slides, Word, Typst), instead of being dropped.
 - [`6e3157e01`](https://github.com/quarto-dev/q2/commits/6e3157e01): Widen the WebKit timeout for the PDF preview status indicator in the pandoc-pdf-viewer harness spec, fixing a CI flake (bd-ynqwyyi7).
 
 ### 2026-10-20

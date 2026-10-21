@@ -25,11 +25,31 @@ braid:
   - [x] `Image.tsx` comment
   - [x] comrak-to-pandoc proptest generator narrowed (see D6 decision); its new regression seed file committed per the repo convention
   - [x] Before/after with the installed nightly (`before/`) vs this branch (`after/`) on the A–J + alt2 fixture: **typst byte-identical**; docx differs only in `descr` values (all now correct)
-- [ ] Commit B — D5 caption/alt dedupe (tests 10 first)
-- [ ] Docs note + changelog entries
-- [ ] `cargo xtask verify` green; post-fix reproduction table recorded here
-- [ ] Discovered strands filed (`--output-dir` resources, `figure-img`)
+- [x] Commit B — D5 (Pandoc's rule: `aria-hidden` figcaption, alt kept), in pampa's HTML writer and its twin `Figure.tsx`; tests 10 written first (pampa `test_figcaption_*`, `fig_alt.rs` D5 section, preview `figure-figcaption.integration.test.tsx`)
+- [x] Docs note (`docs/guides/authoring/figures.qmd` § Alt Text) + hub-client changelog entries
+- [ ] `cargo xtask verify` green on the final tree; post-fix reproduction table recorded below
+- [x] Discovered strands filed: bd-6jk3yxmu (`--output-dir` resources), bd-s45aqu3p (`figure-img`)
 - [ ] Strand comment; push + PR (ask first)
+
+## Post-fix reproduction (2026-10-21)
+
+The A–J fixture plus `alt2.qmd`, rendered with this branch:
+
+| Case | HTML `<img>` | figcaption | docx `descr` | typst `alt:` |
+|---|---|---|---|---|
+| A bare + fig-alt | `alt="Alt A"` | — | Alt A | Alt A |
+| B caption + fig-alt | `alt="Alt B"` | exposed | Alt B | Alt B |
+| C caption only | `alt="Alt C"` | `aria-hidden="true"` | Alt C | none (as Q1) |
+| D inline | `alt="Alt D"` | — | Alt D | Alt D |
+| E with class | `alt="Alt E"` | — | Alt E | Alt E |
+| F `#fig-f` + fig-alt | `alt="Alt F"` | exposed ("Figure 1: …") | Alt F | Alt F |
+| G `#fig-g`, no caption | `alt="Alt G"` | — | Alt G | Alt G |
+| `{alt="KV A"}` bare | single `alt="KV A"` | — | KV A | KV A |
+| `{alt="KV H"}` + caption | `alt="KV H"` | exposed | KV H | KV H |
+| `fig-alt=""` + caption | `alt=""` | exposed | (empty) | none |
+| div float + fig-alt | `alt="Div alt"` | exposed | Div alt | Div alt |
+
+No `data-fig-alt` remains anywhere. Typst output is byte-identical to the 0.35.0 nightly, and docx differs from it only in `descr` values.
 
 ## Decisions (2026-10-21, review round 1)
 
