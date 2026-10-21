@@ -8,6 +8,11 @@ braid:
   labels: [deps, vendored]
 ---
 
+> **Superseded (2026-10-21).** Phases 2–3 of this plan were redesigned and
+> implemented by `2026-10-21-vendored-deps-registry-and-skill.md`: a checked
+> registry (`resources/vendored.toml`) replaced the prose inventory, and the
+> survey became the sibling skill `upgrade-vendored-deps`.
+
 **Related skill:** `.claude/skills/upgrade-cargo-deps/SKILL.md`
 **Inventory doc:** `claude-notes/research/vendored-dependencies-inventory.md`
 

@@ -29,6 +29,7 @@ paths:
 | `cargo xtask ts-test` | — | Regenerate, build, and test a tree-sitter grammar with a per-checkout compiled-grammar cache (use instead of bare `tree-sitter test`) |
 | `cargo xtask verify` | — | Full project verification (build + tests for Rust and hub-client) |
 | `cargo xtask vendor-react` | — | Rebuild the vendored React ES modules under `resources/js/react/` after a `react`/`react-dom` bump |
+| `cargo xtask vendored outdated` | — | Query the upstream of every `track` asset in `resources/vendored.toml` and report what moved (network; `--json`, `--id`, `--group`) |
 
 ## Dev tool version pinning
 

@@ -11,6 +11,7 @@ mod external_sources;
 mod metadata_as_str;
 mod pandoc_pin;
 mod vendored_pandoc_filters;
+pub(crate) mod vendored_registry;
 
 use std::path::{Path, PathBuf};
 
@@ -118,6 +119,11 @@ pub fn run_check(config: &LintConfig) -> Result<()> {
     }
     all_violations.extend(pandoc_pin::check(&workspace_root)?);
 
+    if config.verbose {
+        eprintln!("Checking resources/vendored.toml against the tree");
+    }
+    all_violations.extend(vendored_registry::check(&workspace_root)?);
+
     // Report results
     if all_violations.is_empty() {
         if !config.quiet {
@@ -167,7 +173,7 @@ pub fn run(config: &LintConfig) -> Result<()> {
 }
 
 /// Find the workspace root directory by looking for the root Cargo.toml.
-fn find_workspace_root() -> Result<PathBuf> {
+pub(crate) fn find_workspace_root() -> Result<PathBuf> {
     // Start from the current directory and walk up
     let current_dir = std::env::current_dir().context("Failed to get current working directory")?;
 
