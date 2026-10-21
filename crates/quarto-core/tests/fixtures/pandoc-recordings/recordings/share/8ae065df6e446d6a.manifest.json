@@ -186,8 +186,8 @@
   },
   {
     "path": "filters/crossref/crossref.lua",
-    "size": 6620,
-    "sha256": "7a538138c3d442ffba16d0d3f6fd7aaf7f21bdb99376410be7c697f0eabcd8a3"
+    "size": 6801,
+    "sha256": "d97d87ce0431b7b908af757eaf9f3094b13581e0b28260a9252743f958e4321f"
   },
   {
     "path": "filters/crossref/custom.lua",
@@ -446,8 +446,8 @@
   },
   {
     "path": "filters/main.lua",
-    "size": 24045,
-    "sha256": "67cc1f1bbf25713c171db7af7cb5248b1af20f8bb8fa3ee5ec69c74cfdf028fc"
+    "size": 24516,
+    "sha256": "154a526ce12bb3d64f9657fcb34996dd3b9aae599bfb18fcb3dc0fb17656f030"
   },
   {
     "path": "filters/mainstateinit.lua",
@@ -636,8 +636,8 @@
   },
   {
     "path": "filters/modules/typst_css.lua",
-    "size": 24801,
-    "sha256": "8a0f92aeb47c58effba312a23fd16826f64ea6e178625319d71528d35c412e7c"
+    "size": 29076,
+    "sha256": "889c55ba35d68053b80632e2c6ec1ee65222ec4ee17029f1465df0c1cd810dd5"
   },
   {
     "path": "filters/normalize/astpipeline.lua",

@@ -426,6 +426,7 @@
   [a], [b], [c],
   [one], [two], [three],
 )
+
 ], caption: figure.caption(
 position: top, 
 [
@@ -447,6 +448,3 @@ See #ref(<tbl-pipe>, supplement: [Table]).
   [alpha], [#emph[first] letter],
   [beta], [#strong[second] letter, #NormalTok("code");],
 )
-
-
-

@@ -4,9 +4,9 @@
  *
  * The fixture list is `fixtures.json`, the committed export of
  * `quarto_output_extract::FIXTURES` (a Rust test fails when they drift). The reference for
- * each fixture is the extraction snapshot the Rust golden test asserts against; the one
- * accepted-divergent fixture (mermaid) compares against the native q2 extraction instead
- * (`parity/`, see DIVERGENCES.md).
+ * each fixture is the extraction snapshot the Rust golden test asserts against; the
+ * accepted-divergent fixtures (mermaid, and the pandoc-3.12 docx paragraph-style ones)
+ * compare against the native q2 extraction instead (`parity/`, see DIVERGENCES.md).
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';

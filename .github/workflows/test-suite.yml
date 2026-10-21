@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PANDOC_VERSION: "3.11"
+  PANDOC_VERSION: "3.12.1"
   # Typst — the Pandoc-hybrid typst leg's `L`-tier tests (typst_compile.rs)
   # require a real `typst` binary on PATH (TYPST_VERSION_FLOOR is 0.8+).
   TYPST_VERSION: "0.15.1"

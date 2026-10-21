@@ -33,3 +33,19 @@ the same PR; the two never move separately.
    review the diffs (`crates/quarto-core/tests/fixtures/pandoc-recordings/README.md`).
 6. Re-run the host runtime gates (H0) with the new wasm; check the wasm still needs
    only the exnref exception-handling proposal.
+7. Regenerate the import recordings too (`cargo xtask capture-import-recordings`, same
+   pandoc on PATH), then `Q2_UPDATE_IMPORT_EXPECTED=1 cargo nextest run -p quarto-core
+   every_fixture_finishes` and review the `expected.qmd` diffs. Reader changes land here
+   (3.12: comment markers became `comment-id`, and the ODT reader keeps more formatting).
+8. Run `cargo xtask pandoc-check` against the new pandoc and raise
+   `PANDOC_ORACLE_MAX_VERSION` in `crates/pampa/tests/integration/test.rs`: CI installs
+   exactly `PANDOC_VERSION`, so pampa's 4 oracle tests hard-fail above the ceiling.
+9. The docx goldens are Quarto 1's output with *its* bundled pandoc. A writer change in a
+   newer pandoc shows up as a `pandoc_goldens` diff; record it in
+   `crates/quarto-core/tests/fixtures/pandoc-goldens/DIVERGENCES.md` with native `parity/`
+   references (see the pandoc ≥ 3.12 entry there) rather than editing the Q1 snapshots.
+10. Rebuild the hub-client wasm (`npm run build:wasm`) before `npm run test:wasm`: the
+    expected `wasm_sha256` is compiled in, so a stale build fails every pandoc test with a
+    checksum mismatch.
+
+The 3.11 → 3.12.1 bump (bd-7vum2l3y) is a worked example of all of the above.

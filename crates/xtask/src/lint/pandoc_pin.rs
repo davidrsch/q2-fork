@@ -96,7 +96,9 @@ pub fn check(workspace_root: &Path) -> Result<Vec<Violation>> {
             ),
             suggestion: None,
         }),
-        Some((major, minor, _)) if format!("{major}.{minor}") == pin => {}
+        // The tuple is a (major, minor) floor; the pin may carry a patch
+        // level (`3.12.1`), which the floor deliberately does not record.
+        Some((major, minor, _)) if pin_major_minor(&pin) == format!("{major}.{minor}") => {}
         Some((major, minor, line)) => violations.push(Violation {
             file: dev_setup_path,
             line,
@@ -200,6 +202,11 @@ fn find_readme_pandoc_version(source: &str) -> Option<(String, usize)> {
     None
 }
 
+/// `major.minor` of a version pin (`"3.12.1"` → `"3.12"`, `"3.11"` → `"3.11"`).
+fn pin_major_minor(pin: &str) -> String {
+    pin.split('.').take(2).collect::<Vec<_>>().join(".")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -292,6 +299,35 @@ mod tests {
                 .iter()
                 .any(|v| v.file.ends_with("README.md") && v.message.contains("\"3.9\"")),
             "expected a violation naming the stale README version: {violations:?}"
+        );
+    }
+
+    /// A patch-level pin (`3.12.1`) agrees with a `(3, 12)` floor: the floor
+    /// records only major.minor. Exact-pin locations must still match the
+    /// full patch version.
+    #[test]
+    fn test_patch_level_pin_matches_major_minor_floor() {
+        let dir = tempfile::tempdir().unwrap();
+        write_tree(dir.path(), "3.12.1", "3.12.1", "3.12", "3.12.1");
+        let violations = check(dir.path()).unwrap();
+        assert!(
+            violations.is_empty(),
+            "unexpected violations: {violations:?}"
+        );
+
+        write_tree(dir.path(), "3.12.1", "3.12", "3.11", "3.12.1");
+        let violations = check(dir.path()).unwrap();
+        assert!(
+            violations
+                .iter()
+                .any(|v| v.file.ends_with("test-suite.yml") && v.message.contains("\"3.12\"")),
+            "a workflow pinned to 3.12 must not satisfy a 3.12.1 pin: {violations:?}"
+        );
+        assert!(
+            violations
+                .iter()
+                .any(|v| v.file.ends_with("dev_setup.rs") && v.message.contains("(3, 11)")),
+            "a (3, 11) floor must not satisfy a 3.12.1 pin: {violations:?}"
         );
     }
 

@@ -3,22 +3,27 @@
     {
       "c": [
         {
-          "c": "Basic",
-          "t": "Str"
-        },
-        {
-          "t": "Space"
-        },
-        {
-          "c": "import",
-          "t": "Str"
-        },
-        {
-          "t": "Space"
-        },
-        {
-          "c": "document",
-          "t": "Str"
+          "c": [
+            {
+              "c": "Basic",
+              "t": "Str"
+            },
+            {
+              "t": "Space"
+            },
+            {
+              "c": "import",
+              "t": "Str"
+            },
+            {
+              "t": "Space"
+            },
+            {
+              "c": "document",
+              "t": "Str"
+            }
+          ],
+          "t": "Strong"
         }
       ],
       "t": "Para"
@@ -212,7 +217,7 @@
           {
             "c": [
               [
-                "anchor",
+                "anchor-1",
                 [],
                 []
               ],
@@ -293,8 +298,13 @@
                     {
                       "c": [
                         {
-                          "c": "Name",
-                          "t": "Str"
+                          "c": [
+                            {
+                              "c": "Name",
+                              "t": "Str"
+                            }
+                          ],
+                          "t": "Strong"
                         }
                       ],
                       "t": "Plain"

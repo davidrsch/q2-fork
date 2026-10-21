@@ -53,8 +53,15 @@ fn has_class(span: &Span, class: &str) -> bool {
     span.attr.1.iter().any(|c| c == class)
 }
 
+/// The Word comment id that pairs a `comment-start` with its `comment-end`.
+/// pandoc ≥ 3.12 writes it as `comment-id` (jgm/pandoc, 3.12 changelog);
+/// older readers wrote `id`, which is still accepted.
 fn marker_id(span: &Span) -> &str {
-    span.attr.2.get("id").map_or("", String::as_str)
+    let attrs = &span.attr.2;
+    attrs
+        .get("comment-id")
+        .or_else(|| attrs.get("id"))
+        .map_or("", String::as_str)
 }
 
 fn as_span(inline: &Inline) -> Option<&Span> {

@@ -465,6 +465,7 @@ See #ref(<fig-elephant>, supplement: [Figure]) for an illustration
   [E], [F], [G],
   [A], [G], [G],
 )
+
 ], caption: figure.caption(
 position: top, 
 [

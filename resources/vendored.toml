@@ -696,7 +696,7 @@ title = "pandoc.wasm for the hub-client (fetched, manifest only)"
 paths = ["resources/pandoc-wasm.json"]
 policy = "track"
 group = "pandoc"
-version = "3.11"
+version = "3.12.1"
 version_sources = [
   { kind = "file-regex", file = "resources/pandoc-wasm.json", regex = 'pandoc-([0-9.]+)\.wasm\.zip' },
   { kind = "file-regex", file = "crates/quarto-core/src/pandoc_filters/mod.rs", regex = 'PANDOC_PIN: &str = "([^"]+)"' },
@@ -718,14 +718,22 @@ title = "Pandoc default HTML5 template (adapted) and Quarto CSS partials"
 paths = ["crates/pampa/resources/templates/html"]
 policy = "track"
 group = "pandoc"
+version = "3.8"
 upstream = { kind = "git", repo = "https://github.com/jgm/pandoc", track = "tags", paths = ["data/templates/default.html5", "data/templates/styles.html"] }
 guards = ["pampa template snapshot tests"]
 license = "GPL-2.0 (template), MIT (Quarto partials)"
 last_reviewed = "2026-10-21"
 notes = '''
-VERSION UNRECORDED. Never a clean copy: Quarto-specific markers are woven
-in. Survey by diffing upstream's template changes since the last review and
-porting selected ones.
+Adapted from pandoc 3.8's data/templates/default.html5 and styles.html
+(established 2026-10-21 by diffing against every tag: 3.8 is closest, with
+2 deliberate lines per file — the `generator` meta and ASCII `q` quotes).
+Never a clean copy; port selected upstream changes. Used only by pampa's
+standalone HTML output (pampa CLI, wasm get_builtin_template_json), not by
+`q2 render`. Not yet ported: 3.9–3.11 tweaks (optional `lang`, generator
+version, `div.columns` media query) and 3.12's dark-mode styles
+(light-dark(), `fontcolordark`/`backgroundcolordark`/`linkcolordark`
+variables) — a pampa feature decision, deferred at the 3.12.1 bump
+(bd-7vum2l3y).
 '''
 
 [[asset]]
@@ -788,7 +796,7 @@ title = "Default CSL style (Pandoc's data/default.csl, chicago-author-date)"
 paths = ["crates/pampa/resources/csl"]
 policy = "track"
 group = "pandoc"
-version = "3.11"
+version = "3.12.1"
 version_sources = [{ kind = "file-contains", file = "crates/pampa/resources/csl/README.md" }]
 upstream = { kind = "git", repo = "https://github.com/jgm/pandoc", track = "tags", paths = ["data/default.csl"] }
 guards = ["quarto-citeproc tests", "pampa citeproc tests"]
@@ -796,7 +804,7 @@ procedure = "crates/pampa/resources/csl/README.md"
 license = "CC-BY-SA-3.0"
 last_reviewed = "2026-10-21"
 notes = '''
-Byte-identical to Pandoc's data/default.csl (3.11 through 3.12.1), so its
+Byte-identical to Pandoc's data/default.csl (3.11 through 3.12.1; recorded at 3.12.1, the pinned pandoc), so its
 upstream is Pandoc, NOT citation-style-language/styles: the styles repo's
 chicago-author-date.csl is an older revision (<updated> 2025-02-09 vs
 Pandoc's 2025-08-07) and differs substantially. The 2026-10-21 survey filed
