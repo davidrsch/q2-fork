@@ -462,3 +462,55 @@ fn preview_ast_carries_fig_alt_as_alt_inlines() {
         );
     }
 }
+
+// ── D5: a figcaption that only repeats the alt text ───────────────────────
+
+/// The `<figcaption …>` open tag following the `<img>` for `src`.
+fn figcaption_after(html: &str, src: &str) -> String {
+    let img = html
+        .find(&format!("src=\"{src}\""))
+        .unwrap_or_else(|| panic!("no <img src={src:?}> in:\n{html}"));
+    let start = img
+        + html[img..]
+            .find("<figcaption")
+            .unwrap_or_else(|| panic!("no figcaption after {src}"));
+    html[start..start + html[start..].find('>').unwrap() + 1].to_string()
+}
+
+/// Pandoc's rule (plan D5): the alt is kept and a figcaption that repeats
+/// it is hidden from assistive tech, so the text is announced once. A
+/// crossref figcaption carries its "Figure 1:" prefix, so it never repeats
+/// the alt and the figure number stays announced.
+fn assert_figcaption_visibility(html: &str, label: &str) {
+    for (src, hidden) in [("c.png", true), ("b.png", false), ("k.png", false)] {
+        let tag = figcaption_after(html, src);
+        assert_eq!(
+            tag.contains("aria-hidden=\"true\""),
+            hidden,
+            "{label} {src}: figcaption {tag}"
+        );
+    }
+    let tags = img_tags_by_case(html);
+    assert_eq!(
+        alt_values(&tags["c"]),
+        vec!["Alt C".to_string()],
+        "{label}: C keeps its alt"
+    );
+}
+
+const D5_FIXTURE: &str = "---\ntitle: T\n---\n\n\
+                          ![Alt C](c.png)\n\n\
+                          ![Caption B](b.png){fig-alt=\"Alt B\"}\n\n\
+                          ![Cap K](k.png){#fig-k}\n";
+
+#[test]
+fn html_hides_a_figcaption_that_repeats_the_alt() {
+    let html = render_native(D5_FIXTURE, "html", &[]);
+    assert_figcaption_visibility(&html, "html");
+}
+
+#[test]
+fn revealjs_hides_a_figcaption_that_repeats_the_alt() {
+    let html = render_native(D5_FIXTURE, "revealjs", &[]);
+    assert_figcaption_visibility(&html, "revealjs");
+}
