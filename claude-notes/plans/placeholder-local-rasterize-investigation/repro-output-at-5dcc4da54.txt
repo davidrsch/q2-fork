@@ -1,0 +1,15 @@
+     Running `target/debug/q2 render --strict claude-notes`
+Rendering project: /Users/cscheid/rooms/room-5/q2/claude-notes (type: website)
+mediabag.fetch failed for https://svg2png.deno.dev/data:image/svg+xml;base64,PHN2ZyB3aWR0aCA9ICIyMDAiIGhlaWdodCA9ICIyMDAiIHhtbG5zID0gImh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB2aWV3Qm94ID0gIjAgMCAyMDAgMjAwIj48cmVjdCB3aWR0aCA9ICIyMDAiIGhlaWdodCA9ICIyMDAiIGZpbGwgPSAiI2RkZCIgLz48dGV4dCB4ID0gIjUwJSIgeSA9ICI1MCUiIGZvbnQtZmFtaWx5ID0gInNhbnMtc2VyaWYiIGZvbnQtc2l6ZSA9ICIyMCIgZmlsbCA9ICIjMDAwIiB0ZXh0LWFuY2hvciA9ICJtaWRkbGUiPjIwMCB4IDIwMDwvdGV4dD48L3N2Zz4=: Network error: HTTP 404 Not Found for https://svg2png.deno.dev/data:image/svg+xml;base64,PHN2ZyB3aWR0aCA9ICIyMDAiIGhlaWdodCA9ICIyMDAiIHhtbG5zID0gImh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB2aWV3Qm94ID0gIjAgMCAyMDAgMjAwIj48cmVjdCB3aWR0aCA9ICIyMDAiIGhlaWdodCA9ICIyMDAiIGZpbGwgPSAiI2RkZCIgLz48dGV4dCB4ID0gIjUwJSIgeSA9ICI1MCUiIGZvbnQtZmFtaWx5ID0gInNhbnMtc2VyaWYiIGZvbnQtc2l6ZSA9ICIyMCIgZmlsbCA9ICIjMDAwIiB0ZXh0LWFuY2hvciA9ICJtaWRkbGUiPjIwMCB4IDIwMDwvdGV4dD48L3N2Zz4=
+Error: Shortcode error
+    ╭─[ ]8;;file:///Users/cscheid/rooms/room-5/q2/claude-notes/plans/2026-10-21-placeholder-local-rasterize.md#94:56\/Users/cscheid/rooms/room-5/q2/claude-notes/plans/2026-10-21-placeholder-local-rasterize.md:94:56]8;;\ ]
+    │
+ 94 │ `placeholder-local-rasterize-investigation/repro.qmd`: `{{< placeholder 200 format=png >}}`
+    │                                                        ──────────────────┬─────────────────  
+    │                                                                          ╰─────────────────── Shortcode 'placeholder' handler error: runtime error: [string "/var/folders/f6/n_sr6w3n5_73qcqr433715t00000g..."]:34: attempt to concatenate a nil value (local 'mt')
+stack traceback:
+	[string "/var/folders/f6/n_sr6w3n5_73qcqr433715t00000g..."]:34: in function <[string "/var/folders/f6/n_sr6w3n5_73qcqr433715t00000g..."]:3>
+────╯
+
+Rendered 1529 of 1529 files to /Users/cscheid/rooms/room-5/q2/claude-notes/_site — 1 error
+Error: claude-notes render failed (see claude-notes/instructions/writing-notes.md)

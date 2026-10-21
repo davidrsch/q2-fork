@@ -56,6 +56,11 @@ pub struct LuaOptions {
     pub dialects: Vec<Arc<dyn SourceDialect>>,
     /// Module roots beyond the script directories.
     pub module_roots: ModuleRoots,
+    /// The `typst` binary the host found, served to Lua as
+    /// `quarto.paths.typst()` (Q1 parity; the `placeholder` shortcode
+    /// rasterizes with it, bd-gebcr1sa). `None` when there is none, which
+    /// is always the case in WASM.
+    pub typst: Option<PathBuf>,
 }
 
 impl LuaOptions {
@@ -64,6 +69,7 @@ impl LuaOptions {
         Self {
             dialects,
             module_roots: ModuleRoots::default(),
+            typst: None,
         }
     }
 }
@@ -80,6 +86,7 @@ impl std::fmt::Debug for LuaOptions {
                     .collect::<Vec<_>>(),
             )
             .field("module_roots", &self.module_roots)
+            .field("typst", &self.typst)
             .finish()
     }
 }

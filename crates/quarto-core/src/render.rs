@@ -140,6 +140,13 @@ pub struct BinaryDependencies {
     pub git: Option<PathBuf>,
 }
 
+/// The `typst` binary: `QUARTO_TYPST`, then `PATH`. Shared by
+/// [`BinaryDependencies::discover`] and the Lua environments'
+/// `quarto.paths.typst()` ([`crate::lmd::lua_options`]).
+pub fn find_typst(runtime: &dyn SystemRuntime) -> Option<PathBuf> {
+    runtime.find_binary("typst", "QUARTO_TYPST")
+}
+
 impl BinaryDependencies {
     /// Create empty binary dependencies
     pub fn new() -> Self {
@@ -152,7 +159,7 @@ impl BinaryDependencies {
             dart_sass: runtime.find_binary("sass", "QUARTO_DART_SASS"),
             esbuild: runtime.find_binary("esbuild", "QUARTO_ESBUILD"),
             pandoc: runtime.find_binary("pandoc", "QUARTO_PANDOC"),
-            typst: runtime.find_binary("typst", "QUARTO_TYPST"),
+            typst: find_typst(runtime),
             git: runtime.find_binary("git", "QUARTO_GIT"),
         }
     }

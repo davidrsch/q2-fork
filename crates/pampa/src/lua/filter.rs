@@ -188,6 +188,7 @@ pub fn create_filter_environment_with(
     // found relative to the script dirs.
     super::quarto_api::register_scoped_require(&lua, runtime.clone())?;
     super::quarto_api::set_module_roots(&lua, options.module_roots.clone());
+    super::quarto_api::register_quarto_paths(&lua, options.typst.as_deref())?;
     super::quarto_api::register_quarto_include(&lua, runtime.clone())?;
     for dialect in &options.dialects {
         super::dialect::register_source_dialect(&lua, dialect.clone())?;

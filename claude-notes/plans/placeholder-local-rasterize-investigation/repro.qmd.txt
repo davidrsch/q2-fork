@@ -1,0 +1,6 @@
+---
+title: placeholder format=png repro
+format: html
+---
+
+{{< placeholder 200 format=png >}}

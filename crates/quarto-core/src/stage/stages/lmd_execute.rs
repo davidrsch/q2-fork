@@ -749,7 +749,7 @@ impl PipelineStage for LmdExecuteStage {
             &ctx.document.input,
             attribution,
             &doc.ast.meta,
-            &crate::lmd::lua_options(&ctx.project),
+            &crate::lmd::lua_options(&ctx.project, ctx.runtime.as_ref()),
         )
         .map_err(|err| PipelineError::stage_error(self.name(), err.to_string()))?;
 

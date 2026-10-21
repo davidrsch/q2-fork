@@ -29,8 +29,37 @@ pub fn register_quarto_api(lua: &Lua) -> Result<()> {
     register_quarto_utils(lua, &quarto)?;
     register_quarto_component(lua, &quarto)?;
     register_quarto_markdown(lua, &quarto)?;
+    register_quarto_paths(lua, None)?;
+    register_fatal(lua)?;
 
     Ok(())
+}
+
+/// `quarto.paths` — the external binaries the host found (Q1's `init.lua`).
+/// Only `typst()` so far, returning the binary's path or nil. Called with
+/// `None` by [`register_quarto_api`]; the filter and shortcode environments
+/// call it again with [`LuaOptions::typst`](crate::lua_options::LuaOptions).
+pub fn register_quarto_paths(lua: &Lua, typst: Option<&std::path::Path>) -> Result<()> {
+    let quarto: Table = lua.globals().get("quarto")?;
+    let paths = lua.create_table()?;
+    let typst = typst.map(|p| p.to_string_lossy().into_owned());
+    paths.set(
+        "typst",
+        lua.create_function(move |_, ()| Ok(typst.clone()))?,
+    )?;
+    quarto.set("paths", paths)?;
+    Ok(())
+}
+
+/// Global `fatal(message)` — Q1's (`filters/common/log.lua`) for errors a
+/// script cannot recover from. Here it just raises, at the caller's line;
+/// the host reports it like any script error (a shortcode's becomes an
+/// error diagnostic). Defined before scripts load, so a script's own
+/// `fatal` replaces it.
+fn register_fatal(lua: &Lua) -> Result<()> {
+    lua.load("function fatal(message, offset) error(message, (offset or 1) + 1) end")
+        .set_name("=quarto.fatal")
+        .exec()
 }
 
 /// `quarto.markdown(str)`: read `str` as Quarto markdown and return a
@@ -1252,6 +1281,43 @@ mod tests {
         register_pandoc_namespace(&lua, runtime, create_shared_mediabag()).unwrap();
         register_quarto_api(&lua).unwrap();
         lua
+    }
+
+    // =========================================================================
+    // fatal / quarto.paths tests (bd-gebcr1sa)
+    // =========================================================================
+
+    #[test]
+    fn fatal_raises_the_message_at_the_callers_line() {
+        let lua = create_test_lua();
+        let err = lua
+            .load("local x = 1\nfatal('placeholder: no typst')")
+            .set_name("=script")
+            .exec()
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("script:2: placeholder: no typst"), "{err}");
+    }
+
+    #[test]
+    fn a_scripts_own_fatal_replaces_the_global() {
+        let lua = create_test_lua();
+        let v: String = lua
+            .load("function fatal(m) return 'mine: ' .. m end\nreturn fatal('x')")
+            .eval()
+            .unwrap();
+        assert_eq!(v, "mine: x");
+    }
+
+    #[test]
+    fn quarto_paths_typst_is_nil_until_the_host_sets_it() {
+        let lua = create_test_lua();
+        let none: Option<String> = lua.load("return quarto.paths.typst()").eval().unwrap();
+        assert_eq!(none, None);
+
+        register_quarto_paths(&lua, Some(std::path::Path::new("/opt/typst"))).unwrap();
+        let some: Option<String> = lua.load("return quarto.paths.typst()").eval().unwrap();
+        assert_eq!(some.as_deref(), Some("/opt/typst"));
     }
 
     // =========================================================================
