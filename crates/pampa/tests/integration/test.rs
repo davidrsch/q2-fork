@@ -110,6 +110,10 @@ fn has_good_pandoc_version() -> bool {
 /// yet. To bump the ceiling: run `cargo xtask pandoc-check`, and if it
 /// reports green, edit `PANDOC_ORACLE_MAX_VERSION` to the value it prints.
 ///
+/// 3.12 was calibrated with `markdown/049.qmd` parked as `049.qmd-FAILING`:
+/// pandoc 3.12 trims the newlines inside display math, pampa does not yet
+/// (quarto-dev/q2#886).
+///
 /// Adding a 5th test that calls [`assert_good_pandoc_version`]? Also add its
 /// name to `ORACLE_TEST_NAMES` in `crates/xtask/src/pandoc_check.rs` — that
 /// list is hand-maintained, not derived from this file, so a new gated test
