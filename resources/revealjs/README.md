@@ -9,7 +9,7 @@ Sources Policy (see root `AGENTS.md`).
 
 ## Source & version
 
-- **reveal.js `6.0.0`** — MIT licensed (see `LICENSE`).
+- **reveal.js `6.0.2`** — MIT licensed (see `LICENSE`).
 - Homepage: https://revealjs.com
 - Copied from `node_modules/reveal.js/dist/` (the npm package the hub-client
   already depends on, keeping render and preview on the same reveal.js major
