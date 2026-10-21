@@ -3,3 +3,28 @@ title: Using doctemplates in Quarto
 ---
 
 TBD.
+
+## Skip-to-content link
+
+HTML output that uses Quarto's built-in Bootstrap template starts with a "Skip to main content" link. The link stays hidden until a keyboard user tabs to it. Activating it moves focus past the navbar, sidebar, and table of contents to the page's main content, which satisfies [WCAG 2.4.1 Bypass Blocks](https://www.w3.org/WAI/WCAG22/Understanding/bypass-blocks.html). Documents rendered with `theme: none`, `theme: pandoc`, or `minimal: true`, and reveal.js slides, don't get the link.
+
+The link text comes from the `skip-to-content` [language term](document-language.qmd), so it follows `lang` and can be overridden under `language`:
+
+``` yaml
+language:
+  skip-to-content: "Jump to the article"
+```
+
+A custom HTML `template:` doesn't get the link automatically. To add it, call the built-in `skip-link` partial as the first thing inside `<body>`. Then give your main content element the id `quarto-document-content`, which is the link's target, and `tabindex="-1"`, so that activating the link moves keyboard focus and not only the scroll position:
+
+``` html
+<body>
+$skip-link()$
+<header>…</header>
+<main id="quarto-document-content" tabindex="-1">
+$body$
+</main>
+</body>
+```
+
+`$skip-link.html()$` works too. The partial renders the localized link text, already HTML-escaped. The styles that reveal the link on focus are part of Quarto's Bootstrap theme CSS. With a custom template that doesn't load that CSS, style `#quarto-skip-link` yourself.

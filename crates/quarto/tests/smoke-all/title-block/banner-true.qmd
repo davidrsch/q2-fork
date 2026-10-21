@@ -26,12 +26,13 @@ _quarto:
         - ["main header#title-block-header"]
       ensureFileRegexMatches:
         - [
-            # The banner header is the FIRST thing in the body, above
+            # The banner header is the first thing in the body after the skip
+            # link (bd-rbd3jq4n), above
             # #quarto-content (P5). This used to be a `body >` DOM selector;
             # the live preview mounts into div#root, so nothing it renders can
             # be a direct child of body -- the placement is pinned on the
             # render output instead (bd-xiz1a2go).
-            '<body[^>]*>\s*<header id="title-block-header"',
+            '<body[^>]*>\s*<a id="quarto-skip-link"[^>]*>[^<]*</a>\s*<header id="title-block-header"',
           ]
         - []
 ---
