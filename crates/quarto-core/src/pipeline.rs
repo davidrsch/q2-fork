@@ -2444,6 +2444,15 @@ pub fn build_transform_pipeline(
     pipeline.push(Box::new(ProofSugarTransform::new()));
     pipeline.push(Box::new(FloatRefTargetSugarTransform::new()));
     pipeline.push(Box::new(EquationLabelTransform::new()));
+    // Canonical alt text (bd-ykjwiqcc, GH #877): fold `fig-alt` / `alt`
+    // into each image's alt inlines. Last in Normalization on purpose —
+    // every image source (engines, includes, shortcodes, user pre-filters,
+    // the book cover) has run and every float is a `FloatRefTarget` with
+    // its attributes in hand, while every consumer (crossref, llms, the
+    // preview, the Pandoc cut) is still ahead. See the module docs.
+    pipeline.push(Box::new(
+        crate::transforms::ImageAltNormalizeTransform::new(),
+    ));
 
     // === CROSSREF PHASE ===
     pipeline.push(Box::new(CrossrefIndexTransform::new()));
@@ -3037,6 +3046,7 @@ pub const BUCKETS: &[(&str, Bucket)] = &[
     ("proof-sugar", Bucket::B1),
     ("float-ref-target-sugar", Bucket::B1),
     ("equation-label", Bucket::B1),
+    ("image-alt-normalize", Bucket::B1),
     ("crossref-index", Bucket::B1),
     ("crossref-resolve", Bucket::B1),
     // Reclassified from B4 on 2026-09-17: format-parameterized like
@@ -6556,6 +6566,7 @@ mod tests {
                 "proof-sugar",
                 "float-ref-target-sugar",
                 "equation-label",
+                "image-alt-normalize",
                 "crossref-index",
                 "crossref-resolve",
                 "toc-generate",
@@ -6649,6 +6660,7 @@ mod tests {
                 "proof-sugar",
                 "float-ref-target-sugar",
                 "equation-label",
+                "image-alt-normalize",
                 "crossref-index",
                 "crossref-resolve",
                 "toc-generate",
@@ -6821,6 +6833,7 @@ mod tests {
                 "proof-sugar",
                 "float-ref-target-sugar",
                 "equation-label",
+                "image-alt-normalize",
                 "crossref-index",
                 "crossref-resolve",
                 "link-rewrite",
@@ -7025,6 +7038,7 @@ mod tests {
                 "proof-sugar",
                 "float-ref-target-sugar",
                 "equation-label",
+                "image-alt-normalize",
                 "crossref-index",
                 "crossref-resolve",
                 "toc-generate",

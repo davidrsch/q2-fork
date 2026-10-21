@@ -479,13 +479,22 @@ fn gen_single_inline(features: InlineFeatures) -> impl Strategy<Value = Inline> 
 // ============================================================================
 
 /// Generate a Paragraph block.
+///
+/// Never a paragraph holding only an image with alt text: that shape has no
+/// spelling in the CommonMark ∩ qmd subset. `![alt](src)` alone is an
+/// implicit figure in qmd, so the qmd writer spells the plain image as
+/// `![](src){fig-alt="alt"}` (bd-ykjwiqcc), which CommonMark reads as text.
 fn gen_paragraph(inline_features: InlineFeatures) -> impl Strategy<Value = Block> {
-    gen_inlines(inline_features).prop_map(|content| {
-        Block::Paragraph(Paragraph {
-            content,
-            source_info: empty_source_info(),
+    gen_inlines(inline_features)
+        .prop_filter("lone image with alt text", |content| {
+            !matches!(content.as_slice(), [Inline::Image(image)] if !image.content.is_empty())
         })
-    })
+        .prop_map(|content| {
+            Block::Paragraph(Paragraph {
+                content,
+                source_info: empty_source_info(),
+            })
+        })
 }
 
 /// Generate a Plain block (used in tight lists).

@@ -12,14 +12,19 @@ braid:
 
 ## Implementation status
 
-- [ ] Commit A — canonical alt (D1 + D2 + D3 + D4 + D6)
-  - [ ] Tests written and failing: transform unit tests (1, 2), HTML/revealjs integration (3), docx (4), typst regression (5), preview (6), pampa writer guard (7), book cover flip (8), ordering pins (9), qmd round-trip (11)
-  - [ ] D1 `image-alt-normalize` transform + registration + `BUCKETS`
-  - [ ] D2 float-level `fig-alt`
-  - [ ] D3 HTML writer `alt` guard
-  - [ ] D4 book cover canonical + assertion flip
-  - [ ] D6 qmd writer inverse
-  - [ ] `Image.tsx` comment
+- [x] Commit A — canonical alt (D1 + D2 + D3 + D4 + D6 + D7). `cargo xtask verify` green before commit (17060 Rust tests; all TS suites), run with CI's pinned pandoc 3.11 on `PATH` (local Homebrew moved to 3.12.1 mid-session, outside the pampa oracle tests\' calibrated range) and a rebuilt `q2-preview-spa/dist` (the local one predated the pdf.js viewer)
+  - [x] Tests written and failing before registration: `fig_alt.rs` (3 HTML, revealjs, 4 docx, 5 typst — passed pre-fix as intended, 6 preview, 9 ordering). Unit tests 1, 2 in `image_alt_normalize.rs`.
+  - [x] Remaining tests: pampa writer guard (7: `writers::html` tests), book cover flip (8), qmd round-trip (11: `qmd_writer_pandoc_shapes` alt section + the fixed-point test in `image_alt_normalize`)
+  - [x] D1 `image-alt-normalize` transform + registration (end of Normalization) + `BUCKETS` (B1)
+  - [x] D2 float-level `fig-alt` (in D1, via `image_walk::for_each_image_with_context_mut`)
+  - [x] D7 cut encoding (`pandoc_filters::image_alt_encode`) + #15077 docx backport + README; "alt never visible" guard verified non-vacuous
+  - [x] Full `quarto-core` (6330) and `pampa` (5160) suites green. Fallout: 4 exact-name-list pins gained `image-alt-normalize`; `pandoc_filters_patch` inventory made per-PR (+ docx-backport tripwire); `pandoc-request.golden.json` regenerated (only `share_tree_version`/`job_id` moved)
+  - [x] D3 HTML writer `alt` guard
+  - [x] D4 book cover canonical + assertion flip
+  - [x] D6 qmd writer inverse — both shapes: (a) a lone `Para [Image alt]` → `![](src){fig-alt=…}` (a pre-existing round-trip bug: it re-read as a figure), (b) a figure with caption ≠ alt → `![caption](src){fig-alt=…}`
+  - [x] `Image.tsx` comment
+  - [x] comrak-to-pandoc proptest generator narrowed (see D6 decision); its new regression seed file committed per the repo convention
+  - [x] Before/after with the installed nightly (`before/`) vs this branch (`after/`) on the A–J + alt2 fixture: **typst byte-identical**; docx differs only in `descr` values (all now correct)
 - [ ] Commit B — D5 caption/alt dedupe (tests 10 first)
 - [ ] Docs note + changelog entries
 - [ ] `cargo xtask verify` green; post-fix reproduction table recorded here
@@ -119,6 +124,30 @@ The first draft put D1 after `UserFiltersStage::post()`. Review proposed moving 
 
 **Assessment: the early transform is the better design.** Its costs are bounded and fixable (D6) or documented (post-filters). The late stage's cost is open-ended: every render-side consumer, present or future, has to handle both shapes.
 
+### D7. The Pandoc cut respells standalone images in Q1's dialect (found during implementation)
+
+**Finding (2026-10-21).** With D1 registered, the typst regression pin (test 5) failed for cases A, E, G, H, and the typst source showed why. The bare image A became `#figure([#box(image("a.png"))], caption: [Alt A], kind: "quarto-float-fig")`, a numbered figure captioned with its alt text. docx did the same. Its `descr` test passed anyway, because it checked only `descr`.
+
+The cause is a semantic collision at the cut:
+- **Pandoc 3 / q2 canonical:** `Para [Image "Alt A"]` is a plain image with alt text.
+- **Vendored Q1 Lua:** `quarto-pre/parsefiguredivs.lua`\'s `Para` handler (`discoverFigure` / `discoverLinkedFigure`) keeps the Pandoc 2 rule. A paragraph holding only an image, or a link around one, *with alt text* is an implicit figure captioned by that alt.
+- **Q1 never hits this.** Its own input for `![](x.png){fig-alt=…}` is `Image (fig-alt=…) []`, and it folds `fig-alt` only in the post-render group, after figure layout. Q1 added exactly that for docx two days ago: `render_docx_fixups`, upstream quarto-dev/quarto-cli#15077 (c1800b927, 2026-10-19). Its comment says *"Apply fig-alt after layout has extracted the visible figure caption."* Our vendored filters are pinned at v1.11.3 and predate it. That is also why docx `descr` differed from Q1 in the reproduction.
+
+**Design.** Keep D1's canonical AST. The collision is a dialect difference at a translation boundary, not a reason to make q2's AST Q1-shaped.
+1. `pandoc_filters::image_alt_encode::encode_standalone_image_alt` runs in `PandocWriteStage::prepare`, beside `meta_coerce`, on both the native and wasm cuts. It rewrites the one ambiguous shape into Q1's spelling. A *standalone* image is the only inline of a `Para`, directly or inside the paragraph's only `Link`. If it has alt inlines, they move to `fig-alt` (an existing `fig-alt` wins) and the inlines are emptied.
+   - This is safe because q2's reader never hands the cut an implicit figure in that shape: captioned single-image paragraphs are already `Figure`s.
+   - Every other image keeps its alt inlines, which Pandoc's writers read directly.
+   - `image_walk`\'s context-aware entry point (`for_each_image_with_context_mut` / `ImageContext`) reports `standalone`, so traversal coverage stays defined in one place.
+2. Backport upstream #15077's Lua half verbatim as `QUARTO-PATCH`: `render_docx_fixups` in `quarto-post/docx.lua`, and its `post-render-docx-fixups` entry in `main.lua`. Both are documented in `resources/pandoc-filters/README.md` § "Ours vs. pinned", to be dropped on a re-vendor past #15077.
+   - typst already folds late (`typst.lua`), and epub through `quarto-post/html.lua`.
+   - For odt/pptx, Q1 has no fold, so a standalone image's description stays empty there. That is parity, and it is the same as before this change.
+
+Alternatives rejected:
+- **Patching `parsefiguredivs.lua` to stop discovering figures from paragraphs**, on the grounds that q2's reader owns figure discovery. It has a wide blast radius: Q1 also makes `{#fig-g}` id-only images floats, and q2's HTML doesn't. That belongs with the future "uniform div/figure attributes" session.
+- **Spelling the shape as `Plain` instead of `Para`.** That changes paragraph semantics in the writers.
+
+**Guard.** The docx, typst, and HTML tests now also assert that each distinct alt text appears *only* in its alt slot (`descr="…"`, `alt: "…"`, `alt="…"`), never as visible text. With the encoder temporarily disabled this check fails for docx and typst, which confirms it is not vacuous.
+
 ### D2. A float-level `fig-alt` reaches its image
 
 Example: `::: {#fig-x fig-alt="…"}` wrapping a single image. Q1 propagates float `fig-alt` down to the float's Images for non-HTML formats (`quarto-pre/figures.lua`). For HTML, Q1 sets it on the float and it never reaches the `<img>`, which is a Q1 bug.
@@ -133,17 +162,30 @@ D1 removes `alt` key-values before the writer runs, so the duplicate cannot occu
 
 `BookCoverImageTransform` runs in Normalization before D1 and emits `fig-alt`. D1 folds it, so the cover `<img>` gets `alt="Book cover"`. Flip the pinned assertion at `crates/quarto-core/tests/integration/book_multifile_html.rs:566-573` to `alt="Book cover"` with no `data-fig-alt`, and rewrite the "writer-level deviation" comment. Better still, the transform builds the canonical shape directly (alt inlines, no `fig-alt`), per the "q2 code builds canonical shapes" rule above. Either way the assertion is the same.
 
-### D5. No duplicate caption/alt on figures (decision 1; separate commit)
+### D5. No duplicate caption/alt on figures (decision 1, revised; separate commit)
 
-Pandoc's HTML writer omits `alt` on a figure's image when the alt text equals the figcaption text. This is the canonical AST's presentation, not its content: the AST keeps alt == caption, as Pandoc's does. So D5 lives on the HTML render side.
+**Correction (2026-10-21, during implementation).** Decision 1 assumed Pandoc and Q1 agree. They don't. Measured with `quarto` 99.9.9 and `pandoc` 3.11:
 
-Wherever q2 emits the `<figure>`/`<figcaption>` pair (the crossref-render HTML path and the writer's `Block::Figure` arm), drop the `alt` attribute from the single contained `<img>` when its plain-text alt equals the plain-text caption. An empty `fig-alt=""` still gives `alt=""`, because it differs from a non-empty caption. Whether this goes in `crossref_render` or the writer depends on which one has both strings in hand; I'll settle that while implementing.
+| Shape | Quarto 1 | Pandoc 3.11 |
+|---|---|---|
+| `![Cap](x.png)` (alt = caption) | `<img>`, **no `alt` attribute** | `<img alt="Cap">` + `<figcaption aria-hidden="true">Cap</figcaption>` |
+| `![Cap](x.png){fig-alt="Cap"}` | `alt="Cap"` | n/a |
+| `![Cap](x.png){alt="Other"}` | alt dropped (Q1 bug) | `alt="Other"` |
 
-This affects HTML and revealjs; the preview's `Image.tsx` needs the same rule if the preview renders figcaptions itself. Pandoc formats already behave this way in Pandoc's writers and `typst.lua`.
+Q1's omitted `alt` is flagged by a11y checkers (axe `image-alt`), and some screen readers then announce the file name. Pandoc's approach announces the text once and keeps every `<img>` with an `alt`. **Decision (Carlos, 2026-10-21): follow Pandoc.**
+
+**Rule (Pandoc's, literally).** When a `<figure>`\'s content is a single image (directly, or inside a sole link) whose plain-text alt equals the plain-text of the figcaption *as written* (the text a reader would hear), the `<figcaption>` gets `aria-hidden="true"` and the `<img>` keeps its `alt`.
+- A crossref float's figcaption carries its prefix ("Figure 1: Cap"), so it does not equal the alt ("Cap") and stays exposed. Hiding it would take the figure number away from assistive tech, and text cross-references ("see Figure 1") rely on that number. The residual duplication there is the safe failure.
+- An empty `fig-alt=""` never matches a non-empty caption, so it stays `alt=""` with a visible figcaption.
+- It lives in the writer's `Block::Figure` arm, which writes both the image and the figcaption.
+
+This affects HTML and revealjs, and the preview if it renders figcaptions itself. Pandoc formats are unaffected.
 
 ### D6. qmd writer emits the inverse of D1
 
-So that `llms-capture`'s mirror (and any other post-transform qmd serialization) stays in the image form. In `writers/qmd.rs`, extend `match_implicit_figure_shape`: when the caption is a single `Plain` and the image's alt inlines differ from it, accept the shape as long as the alt inlines are plain text. Then emit `![<caption>](src){fig-alt="<alt>"}`. Re-reading that through D1 produces the same AST. This is a strict superset of today's match, so existing round-trips are unchanged. It touches bd-emr4's territory (caption ≠ alt) without claiming to close it.
+**Decision (Carlos, 2026-10-21): qmd fidelity over CommonMark compatibility.** D6(a) broke `comrak-to-pandoc`\'s `proptest_roundtrip::test_image_roundtrip`. That suite compares pampa's and comrak's readings of the qmd writer's output, and it knowingly tolerated the old lossy spelling: its normalizer maps pampa's `Figure(Plain [Image])` back to `Para [Image]`. A lone image with alt text has no spelling in the CommonMark ∩ qmd subset, so the generator (`gen_paragraph`) no longer produces that shape, with a comment explaining why. The `Figure → Para` normalization stays: it is library code with its own unit tests.
+
+So that `llms-capture`\'s mirror (and any other post-transform qmd serialization) stays in the image form. In `writers/qmd.rs`, extend `match_implicit_figure_shape`: when the caption is a single `Plain` and the image's alt inlines differ from it, accept the shape as long as the alt inlines are plain text. Then emit `![<caption>](src){fig-alt="<alt>"}`. Re-reading that through D1 produces the same AST. This is a strict superset of today's match, so existing round-trips are unchanged. It touches bd-emr4's territory (caption ≠ alt) without claiming to close it.
 
 ## Out of scope (noting, not fixing)
 

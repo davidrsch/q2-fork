@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use quarto_pandoc_types::attr::{AttrSourceInfo, TargetSourceInfo};
 use quarto_pandoc_types::block::{Block, Paragraph};
 use quarto_pandoc_types::config_value::ConfigValue;
-use quarto_pandoc_types::inline::{Image, Inline};
+use quarto_pandoc_types::inline::{Image, Inline, split_string_to_inlines};
 use quarto_pandoc_types::pandoc::Pandoc;
 use quarto_source_map::{By, SourceInfo};
 
@@ -170,17 +170,24 @@ impl AstTransform for BookCoverImageTransform {
                     .and_then(|v| v.as_plain_text())
             })
             .unwrap_or_default();
-        let mut attributes: LinkedHashMap<String, String> = LinkedHashMap::new();
-        if let Some(alt) = &request.alt {
-            attributes.insert("fig-alt".to_string(), alt.clone());
-        }
+        // The alt text goes straight into the alt inlines, the canonical
+        // form `image-alt-normalize` would otherwise make of Q1's
+        // `fig-alt` (bd-ykjwiqcc). Q1 writes `fig-alt` here and folds it
+        // in its HTML post-filter; this transform runs before the
+        // normalizer, but building the canonical shape directly keeps the
+        // cover independent of that ordering.
+        let content = request
+            .alt
+            .as_deref()
+            .map(split_string_to_inlines)
+            .unwrap_or_default();
         let image = Inline::Image(Image {
             attr: (
                 String::new(),
                 vec!["quarto-cover-image".to_string(), "nolightbox".to_string()],
-                attributes,
+                LinkedHashMap::new(),
             ),
-            content: vec![],
+            content,
             target: (target, title),
             source_info: SourceInfo::generated(By::programmatic_config()),
             attr_source: AttrSourceInfo::empty(),

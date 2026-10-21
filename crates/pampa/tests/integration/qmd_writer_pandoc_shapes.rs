@@ -680,3 +680,106 @@ fn the_bullet_marker_does_not_alternate_across_list_items() {
     let qmd = assert_roundtrip(doc(vec![numbered_rows]));
     assert!(!qmd.contains("- "), "{qmd}");
 }
+
+// ---------------------------------------------------------------------------
+// Alt text that is not the caption (bd-ykjwiqcc, GH #877)
+// ---------------------------------------------------------------------------
+//
+// quarto-core's `image-alt-normalize` folds `fig-alt` into an image's alt
+// inlines, so post-transform ASTs (e.g. the llms mirror) hold shapes the
+// qmd reader never produces: a lone image *with* alt inlines that is not a
+// figure, and a figure whose image alt differs from its caption. The
+// writer spells both with `fig-alt`; the reader then yields the authored
+// form, which `image-alt-normalize` folds back into the same AST.
+
+pub fn image(a: Value, alt: Vec<Value>, src: &str) -> Value {
+    json!({"t": "Image", "c": [a, alt, [src, ""]]})
+}
+
+pub fn figure(caption: Vec<Value>, content: Vec<Value>) -> Value {
+    json!({"t": "Figure", "c": [attr("", &[], &[]), [null, [plain(caption)]], content]})
+}
+
+/// `Para [Image "Alt A"]` is a plain image; written as `![Alt A](a.png)`
+/// it would re-read as a figure captioned "Alt A".
+#[test]
+fn lone_image_with_alt_is_written_with_fig_alt() {
+    let input = doc(vec![para(vec![image(
+        attr("", &["wide"], &[("width", "50%")]),
+        inl("Alt A"),
+        "a.png",
+    )])]);
+    let qmd = assert_roundtrip_with(input, |expected| {
+        expected["blocks"][0]["c"][0] = image(
+            attr("", &["wide"], &[("width", "50%"), ("fig-alt", "Alt A")]),
+            vec![],
+            "a.png",
+        );
+    });
+    assert_eq!(qmd, "![](a.png){.wide width=\"50%\" fig-alt=\"Alt A\"}\n");
+}
+
+#[test]
+fn lone_image_alt_with_quotes_is_escaped() {
+    let qmd = write_qmd(&doc(vec![para(vec![image(
+        attr("", &[], &[]),
+        vec![str_("say"), space(), str_("\"hi\"")],
+        "a.png",
+    )])]));
+    assert_eq!(qmd, "![](a.png){fig-alt=\"say \\\"hi\\\"\"}\n");
+}
+
+/// An `alt`/`fig-alt` key-value already beats the inlines, so the writer
+/// keeps the keys and drops the inlines rather than adding a second key.
+#[test]
+fn lone_image_with_an_alt_key_keeps_it() {
+    let qmd = write_qmd(&doc(vec![para(vec![image(
+        attr("", &[], &[("fig-alt", "Key")]),
+        inl("inlines"),
+        "a.png",
+    )])]));
+    assert_eq!(qmd, "![](a.png){fig-alt=\"Key\"}\n");
+}
+
+/// Not a lone image: the inlines stay, as today.
+#[test]
+fn inline_image_keeps_its_alt_inlines() {
+    let qmd = assert_roundtrip(doc(vec![para(vec![
+        str_("Text"),
+        space(),
+        image(attr("", &[], &[]), inl("Alt D"), "d.png"),
+    ])]));
+    assert_eq!(qmd, "Text ![Alt D](d.png)\n");
+}
+
+/// A figure whose alt is not its caption keeps the image form, with the
+/// alt as `fig-alt`, instead of falling back to the fenced-div form.
+#[test]
+fn figure_with_distinct_alt_is_written_with_fig_alt() {
+    let input = doc(vec![figure(
+        inl("Caption B"),
+        vec![plain(vec![image(
+            attr("", &[], &[]),
+            inl("Alt B"),
+            "b.png",
+        )])],
+    )]);
+    let qmd = assert_roundtrip_with(input, |expected| {
+        expected["blocks"][0]["c"][2][0]["c"][0] = image(
+            attr("", &[], &[("fig-alt", "Alt B")]),
+            inl("Caption B"),
+            "b.png",
+        );
+    });
+    assert_eq!(qmd, "![Caption B](b.png){fig-alt=\"Alt B\"}\n");
+}
+
+/// An empty alt (`fig-alt=""`, a decorative image) survives too.
+#[test]
+fn figure_with_empty_alt_is_written_with_empty_fig_alt() {
+    let qmd = write_qmd(&doc(vec![figure(
+        inl("Cap I"),
+        vec![plain(vec![image(attr("", &[], &[]), vec![], "i.png")])],
+    )]));
+    assert_eq!(qmd, "![Cap I](i.png){fig-alt=\"\"}\n");
+}

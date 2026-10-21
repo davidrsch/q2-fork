@@ -554,6 +554,12 @@ local quarto_post_filters = {
     filters = render_latex_fixups(),
     traverser = 'jog',
   },
+  -- QUARTO-PATCH(upstream PR quarto-dev/quarto-cli#15077, c1800b927):
+  -- backported; see render_docx_fixups in quarto-post/docx.lua.
+  { name = "post-render-docx-fixups",
+    filter = render_docx_fixups(),
+    traverser = 'jog',
+  },
   { name = "post-render-html-fixups",
     filter = render_html_fixups(),
     traverser = 'jog',

@@ -977,10 +977,24 @@ fn write_inline<W: Write>(
         Inline::Image(image) => {
             write!(ctx, "<img src=\"{}\"", escape_html(&image.target.0))?;
             write!(ctx, " alt=\"")?;
-            // For alt text, we need to extract plain text from inlines
-            write_inlines_as_text(&image.content, ctx)?;
+            // An `alt` key-value is Pandoc's alt text and beats the alt
+            // inlines; writing both would emit `alt` twice. quarto-core's
+            // `image-alt-normalize` folds it into the inlines before the
+            // writer runs, so this only matters for bare pampa use.
+            let alt_kv = image.attr.2.get("alt");
+            match alt_kv {
+                Some(alt) => write!(ctx, "{}", escape_html(alt))?,
+                // For alt text, we need to extract plain text from inlines
+                None => write_inlines_as_text(&image.content, ctx)?,
+            }
             write!(ctx, "\"")?;
-            write_attr(&image.attr, ctx)?;
+            if alt_kv.is_some() {
+                let mut attr = image.attr.clone();
+                attr.2.remove("alt");
+                write_attr(&attr, ctx)?;
+            } else {
+                write_attr(&image.attr, ctx)?;
+            }
             if !image.target.1.is_empty() {
                 write!(ctx, " title=\"{}\"", escape_html(&image.target.1))?;
             }
@@ -2031,6 +2045,46 @@ mod tests {
 
     fn dummy_source_info() -> SourceInfo {
         SourceInfo::for_test()
+    }
+
+    /// Read `qmd` and write it as HTML, the `pampa -t html` path (no
+    /// quarto-core transforms, so no `image-alt-normalize`).
+    fn qmd_to_html(qmd: &str) -> String {
+        let (pandoc, ctx, _) = crate::readers::qmd::read(
+            qmd.as_bytes(),
+            false,
+            "test.qmd",
+            &mut std::io::sink(),
+            true,
+            None,
+        )
+        .expect("qmd parses");
+        let mut output = Vec::new();
+        write(&pandoc, &ctx, &mut output).unwrap();
+        String::from_utf8(output).unwrap()
+    }
+
+    /// bd-ykjwiqcc: an `alt` key-value is Pandoc's alt text. It used to be
+    /// written after the alt inlines' `alt=""`, giving the `<img>` two
+    /// `alt` attributes (browsers keep the first, empty one).
+    #[test]
+    fn test_image_alt_key_value_is_the_single_alt_attribute() {
+        let html = qmd_to_html("Text ![](x.png){alt=\"KV\"} text.\n");
+        assert_eq!(html.matches(" alt=").count(), 1, "exactly one alt: {html}");
+        assert!(html.contains(" alt=\"KV\""), "the key-value wins: {html}");
+    }
+
+    #[test]
+    fn test_image_alt_key_value_beats_alt_inlines() {
+        let html = qmd_to_html("Text ![inlines](x.png){alt=\"KV\"} text.\n");
+        assert_eq!(html.matches(" alt=").count(), 1, "exactly one alt: {html}");
+        assert!(html.contains(" alt=\"KV\""), "the key-value wins: {html}");
+    }
+
+    #[test]
+    fn test_image_without_alt_key_value_uses_alt_inlines() {
+        let html = qmd_to_html("Text ![inlines](x.png) text.\n");
+        assert!(html.contains(" alt=\"inlines\""), "{html}");
     }
 
     #[test]
