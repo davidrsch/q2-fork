@@ -2392,6 +2392,26 @@
               "c": "MECA Bundle",
               "t": "MetaString"
             },
+            "navigation-breadcrumbs-label": {
+              "c": "Breadcrumbs",
+              "t": "MetaString"
+            },
+            "navigation-page-label": {
+              "c": "Page",
+              "t": "MetaString"
+            },
+            "navigation-section-label": {
+              "c": "Section",
+              "t": "MetaString"
+            },
+            "navigation-site-label": {
+              "c": "Site",
+              "t": "MetaString"
+            },
+            "navigation-toolbar-label": {
+              "c": "Toolbar",
+              "t": "MetaString"
+            },
             "notebook-preview-back": {
               "c": "Back to Article",
               "t": "MetaString"
@@ -2426,6 +2446,14 @@
             },
             "repo-action-links-source": {
               "c": "View source",
+              "t": "MetaString"
+            },
+            "scrollable-code-label": {
+              "c": "Scrollable code",
+              "t": "MetaString"
+            },
+            "scrollable-output-label": {
+              "c": "Scrollable output",
               "t": "MetaString"
             },
             "search-clear-button-title": {
@@ -2498,6 +2526,10 @@
             },
             "section-title-reuse": {
               "c": "Reuse",
+              "t": "MetaString"
+            },
+            "skip-to-content": {
+              "c": "Skip to main content",
               "t": "MetaString"
             },
             "source-notebooks-prefix": {

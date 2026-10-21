@@ -161,6 +161,7 @@ render_manifest:
           subfloat-numbering(n-super, subfloat-idx)
         })
         show figure.where(kind: kind): set figure.caption(position: position)
+        show figure.where(kind: kind): set figure(outlined: false)
 
         show figure: it => {
           let num = numbering(subcapnumbering, n-super, quartosubfloatcounter.get().first() + 1)
@@ -402,6 +403,10 @@ render_manifest:
   toc_title: none,
   toc_depth: none,
   toc_indent: 1.5em,
+  lof: false,
+  lof-title: none,
+  lot: false,
+  lot-title: none,
   doc,
 ) = {
   // Set document metadata for PDF accessibility
@@ -503,6 +508,18 @@ render_manifest:
       depth: toc_depth,
       indent: toc_indent
     );
+    ]
+  }
+
+  if lof {
+    block(above: 0em, below: 2em)[
+    #outline(title: lof-title, target: figure.where(kind: "quarto-float-fig"));
+    ]
+  }
+
+  if lot {
+    block(above: 0em, below: 2em)[
+    #outline(title: lot-title, target: figure.where(kind: "quarto-float-tbl"));
     ]
   }
 
@@ -956,6 +973,7 @@ Informatica theory from #cite(<shannon1948>, form: "prose")#note(alignment: "bas
   [1], [2], [3],
   [4], [5], [6],
 )
+
 ], caption: figure.caption(
 position: top, 
 [
@@ -983,6 +1001,7 @@ Periodicus orbital tabulation is discussed in the body text.
   [Earth], [365d],
   [Mars], [687d],
 )
+
 ]
 , caption: figure.caption(position: top, [
 Orbitperioda periods
@@ -1011,6 +1030,7 @@ Spectralis body text introduces stellar spectroscopy.
   [Helium], [He], [587.6nm],
   [Carbon], [C], [247.9nm],
 )
+
 ], caption: [
 Elementica stellar caption
 ], kind: "quarto-float-tbl", supplement: "Table")
@@ -1619,6 +1639,7 @@ Tabulata body text introduces supplementary data.
   [c], [299792458],
   [h], [6.626e-34],
 )
+
 ]
 , caption: figure.caption(position: top, [
 Constantia values
@@ -1923,6 +1944,7 @@ Metrica body text introduces additional supplementary data.
   [Length], [m],
   [Time], [s],
 )
+
 ]
 , caption: figure.caption(position: top, [
 Unitaria values

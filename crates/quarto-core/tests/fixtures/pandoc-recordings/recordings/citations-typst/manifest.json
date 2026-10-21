@@ -6,13 +6,13 @@
   },
   {
     "path": "capture/citations.typ",
-    "size": 12712,
-    "sha256": "ecb20f6b8697d7f00116df64774e8c12ddb2265b7b75e6fa049fab66322f66cc"
+    "size": 13119,
+    "sha256": "6820eabde05d0480e6d7299987d8cccec7db6fe7df55239e18c629202724b253"
   },
   {
     "path": "env.json",
-    "size": 17576,
-    "sha256": "96cc2c1fc0bf03f0f4572d5b42223ce2c343091615d7916865f897681e196be5"
+    "size": 17988,
+    "sha256": "639127809c7e5db7ee8c87db71f000a9314d3c03cae28d38cc2eaa2f28bb932a"
   },
   {
     "path": "fs/__q2_doc__/citations.qmd",
@@ -31,8 +31,8 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 22673,
-    "sha256": "9d63406f704867f980e713b1e511ff25124f3b77703caa351467ba6aa7501b4b"
+    "size": 23855,
+    "sha256": "34f0cb7a4893eb3687268c2d3ed43d6332a1698b15d95974480cc83aa458b3cd"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/biblio.typ",
@@ -41,8 +41,8 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/definitions.typ",
-    "size": 7955,
-    "sha256": "f40242011aa8c0822c7a8b94f6c133441100cb139a6cd0efb0029c8994021936"
+    "size": 8022,
+    "sha256": "d317143dbcc9e1ffa2fa4ec89c7103d8ded17f245904d9a8024c9fb8e90a2e29"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/notes.typ",
@@ -66,22 +66,22 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/typst-show.typ",
-    "size": 2211,
-    "sha256": "a57cd3c066ecdecae5f568719a9f727949a201d1ad132cba6a3116c62853a142"
+    "size": 2493,
+    "sha256": "2f804e5e65aae0b8d761d0d1fcdb38dbfcbad5d387085c61e7b7d36fdfc0f13d"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/typst-template.typ",
-    "size": 3578,
-    "sha256": "1b1de16b5b676e2a8d15169cb3bf365d8e9ae16d5d2fd93034b5cc62e21c8f81"
+    "size": 3918,
+    "sha256": "6aaab91e15a7c9d47ce8f3dfb5ffe564dfd2f9e40a9abd23369c5cde214e214f"
   },
   {
     "path": "meta.json",
     "size": 182,
-    "sha256": "40b9cc711ed3e9cfece9a90fceb258811b0444105a58084f7ca78ea601fad83c"
+    "sha256": "c0540e306f017fa7b1a4c81d6ea94d43d266ce5b0101a94f80d6e5d2a734aba3"
   },
   {
     "path": "reference/citations.typ",
-    "size": 12712,
-    "sha256": "ecb20f6b8697d7f00116df64774e8c12ddb2265b7b75e6fa049fab66322f66cc"
+    "size": 13119,
+    "sha256": "6820eabde05d0480e6d7299987d8cccec7db6fe7df55239e18c629202724b253"
   }
 ]

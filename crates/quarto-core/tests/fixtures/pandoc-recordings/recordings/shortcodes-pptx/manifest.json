@@ -11,8 +11,8 @@
   },
   {
     "path": "env.json",
-    "size": 8596,
-    "sha256": "9d81c8801858f3a108bdcc0b62804bc039e4b7f51bec959e3e1142c796966519"
+    "size": 9012,
+    "sha256": "aec902c29ff71304de669335c7f8a2ab5faadb9b6ff7db8a30f2d068a093eddc"
   },
   {
     "path": "fs/__q2_doc__/shortcodes.qmd",
@@ -26,13 +26,13 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 22809,
-    "sha256": "91687a79e2d149c1ce3db33a3728de8cd957f70dd447a7d06df3caf7380053ce"
+    "size": 23991,
+    "sha256": "757ae3a413085e9b0e470b18c7f39d1515a6f8293015ba4a61aaddef6aa5d7cf"
   },
   {
     "path": "meta.json",
     "size": 188,
-    "sha256": "416341a8376ea0428bbb548b138bb801f6021feb0d7ed611d9786becef5e94d9"
+    "sha256": "d882eb4d62d6b4e1e0485371de75a94234bcfa5dcca9d7ebe7767383edd4a7e0"
   },
   {
     "path": "reference/shortcodes.pptx",

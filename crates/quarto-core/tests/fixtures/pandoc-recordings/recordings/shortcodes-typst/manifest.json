@@ -6,13 +6,13 @@
   },
   {
     "path": "capture/shortcodes.typ",
-    "size": 12642,
-    "sha256": "2fca5f666092605ca44454ad70b387cff8d8a8e7f640070d773b3c6bc0219e66"
+    "size": 13049,
+    "sha256": "8620513683b1ba866ef46b043622eb8d98866abe9b1cffc609aafc31c8529138"
   },
   {
     "path": "env.json",
-    "size": 17576,
-    "sha256": "9a0294dbe2aab87b5206ccb4d35d2fe1dc3a9744bd1a052b5efc3af72673d3ef"
+    "size": 17992,
+    "sha256": "cf5daed2e5c9eed5e159261629fe2ca782c191dcfe5bb0be2eb42dfe21918e94"
   },
   {
     "path": "fs/__q2_doc__/shortcodes.qmd",
@@ -26,8 +26,8 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 23097,
-    "sha256": "840a14c18640fa50c283019deadd9837f8a5e7b74607e12b8d4107eb8f3e7125"
+    "size": 24279,
+    "sha256": "c477a6923ef244d5d2369bfeb88fd3638761c8ce93d54447627a9a6ba83965d4"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/biblio.typ",
@@ -36,8 +36,8 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/definitions.typ",
-    "size": 7955,
-    "sha256": "f40242011aa8c0822c7a8b94f6c133441100cb139a6cd0efb0029c8994021936"
+    "size": 8022,
+    "sha256": "d317143dbcc9e1ffa2fa4ec89c7103d8ded17f245904d9a8024c9fb8e90a2e29"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/notes.typ",
@@ -61,22 +61,22 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/typst-show.typ",
-    "size": 2211,
-    "sha256": "a57cd3c066ecdecae5f568719a9f727949a201d1ad132cba6a3116c62853a142"
+    "size": 2493,
+    "sha256": "2f804e5e65aae0b8d761d0d1fcdb38dbfcbad5d387085c61e7b7d36fdfc0f13d"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/typst-template.typ",
-    "size": 3578,
-    "sha256": "1b1de16b5b676e2a8d15169cb3bf365d8e9ae16d5d2fd93034b5cc62e21c8f81"
+    "size": 3918,
+    "sha256": "6aaab91e15a7c9d47ce8f3dfb5ffe564dfd2f9e40a9abd23369c5cde214e214f"
   },
   {
     "path": "meta.json",
     "size": 185,
-    "sha256": "542c2887928e129ed308f3a39d18c243c53b538c4c0f8409e27c55cdff51370f"
+    "sha256": "15df9cdb3004cd8212a663d2d880a0ae6a5f152c8b858ea5b8966bdfb1235e2d"
   },
   {
     "path": "reference/shortcodes.typ",
-    "size": 12642,
-    "sha256": "2fca5f666092605ca44454ad70b387cff8d8a8e7f640070d773b3c6bc0219e66"
+    "size": 13049,
+    "sha256": "8620513683b1ba866ef46b043622eb8d98866abe9b1cffc609aafc31c8529138"
   }
 ]

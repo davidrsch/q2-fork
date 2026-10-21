@@ -11,8 +11,8 @@
   },
   {
     "path": "env.json",
-    "size": 8596,
-    "sha256": "ba30b551a72c0df515d3188c06c64b0ac0ac8c9344b5fbc1fc9422baa089ab42"
+    "size": 9008,
+    "sha256": "9963d2f8514881095081ee63d07d56a9e10ee383f6c341253bb13a195ca99045"
   },
   {
     "path": "fs/__q2_doc__/citations.qmd",
@@ -31,13 +31,13 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 22672,
-    "sha256": "de1841300129604f40523ebc6c2083ede61c0cb73053e9dd032212d1fb4a872a"
+    "size": 23854,
+    "sha256": "6409b0d091a93e40a2031e173dec3c24d98890ed53d526bd2f3febc3eb23d4c6"
   },
   {
     "path": "meta.json",
     "size": 185,
-    "sha256": "47fec787eaca7a73b6760a4e31f55804ecd9d2aeadc2aeaaabbc1fe1fe08c672"
+    "sha256": "823167af1c3451e791ed3dbe88452e5a5aa5ac246c248b46563ba2781751131c"
   },
   {
     "path": "reference/citations.pptx",

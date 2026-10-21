@@ -636,8 +636,8 @@
   },
   {
     "path": "filters/modules/typst_css.lua",
-    "size": 29076,
-    "sha256": "889c55ba35d68053b80632e2c6ec1ee65222ec4ee17029f1465df0c1cd810dd5"
+    "size": 29030,
+    "sha256": "5db8d38fa0ded50072bb2577ca40889dd14cdf175a1197e8b44f2b5809631155"
   },
   {
     "path": "filters/normalize/astpipeline.lua",
@@ -751,8 +751,8 @@
   },
   {
     "path": "filters/quarto-internals/leveloneanalysis.lua",
-    "size": 288,
-    "sha256": "4a8f0e8005d6bbc4dc3024ae75f6d632d1d6585ea8e689ee28b7cebd86bdb7d9"
+    "size": 393,
+    "sha256": "3add093525ac85328098a34fe8654170130b5215ad3fd0a367177b84093c7d2a"
   },
   {
     "path": "filters/quarto-post/bibliography.lua",
@@ -786,8 +786,8 @@
   },
   {
     "path": "filters/quarto-post/dashboard.lua",
-    "size": 32704,
-    "sha256": "8824a24ba2df952b39642738c3bb6da2797239245e90088cce7d619e48ee3d50"
+    "size": 32705,
+    "sha256": "e28e5be3b8f688a78aa0681d8533676f1d4223834be0d3ce75b31f2c0181536f"
   },
   {
     "path": "filters/quarto-post/delink.lua",
@@ -901,8 +901,8 @@
   },
   {
     "path": "filters/quarto-post/typst.lua",
-    "size": 15477,
-    "sha256": "410dfb2afde33187117b8e23bf9e0485a80238627be5c71cef06c56ad8b3fc50"
+    "size": 13394,
+    "sha256": "79c697c93940b561eb82f2c3964dabcf87fbf79618bab45afeb71cc9a05a934a"
   },
   {
     "path": "filters/quarto-pre/bibliography-formats.lua",
@@ -1146,8 +1146,8 @@
   },
   {
     "path": "pandoc/datadir/init.lua",
-    "size": 35438,
-    "sha256": "e2a234ce9fdca0c0bff1712b1fe95b64e06db32fdefbcdd2ebd4587e9b222fea"
+    "size": 36499,
+    "sha256": "f02efaefe1fa494d5c60d4d4f918c12352fb3cc7263de05e64e182dfc0a03233"
   },
   {
     "path": "pandoc/datadir/logging.lua",

@@ -6,13 +6,13 @@
   },
   {
     "path": "capture/tables.epub",
-    "size": 25338,
-    "sha256": "a320019fb3d9bf74631a96712d54eeea4eca7a05288ec469eb12a7add7ee961d"
+    "size": 25342,
+    "sha256": "e2c3351bb73048a9d11a780b11f4b5e1a4ba4bee94d5b5f8f7a73e472947a875"
   },
   {
     "path": "env.json",
-    "size": 8548,
-    "sha256": "a8d0f5d478397790a6ca4c9a3e60427e28f4fdf28dfc18b378600a1d31a1e05d"
+    "size": 8960,
+    "sha256": "7be52d91f01f39cea04234ea5becb522ef35a3dbfc587a2600e4629d9d29c269"
   },
   {
     "path": "fs/__q2_doc__/tables.qmd",
@@ -36,17 +36,17 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 27072,
-    "sha256": "64770b1cbef54a863c3087ba5419e200cfcf0df63c9964d8215b82dea14f826c"
+    "size": 28254,
+    "sha256": "cf9f273c9eb2606f656f38b28255487bd071cc1d0bf8e70f801b90977c357c18"
   },
   {
     "path": "meta.json",
     "size": 176,
-    "sha256": "7d89c7b317b5a5fb369d35f9d378df1731dacefa83e00f445bf4a8ad278cdf82"
+    "sha256": "df971a500cbc76e9eef95e5dffc21c7bd87d663c44402d4ed31c56ad50468f5d"
   },
   {
     "path": "reference/tables.epub",
-    "size": 25340,
-    "sha256": "f35997b7f653f981034e93048a45f4af55c90016b36b3bc6688c6afa3e69b85a"
+    "size": 25339,
+    "sha256": "c07df18b9b6f908b3cd3e57cf1655e504ee419573d6826e44718e3afe11823b3"
   }
 ]

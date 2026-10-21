@@ -6,13 +6,13 @@
   },
   {
     "path": "capture/callouts.typ",
-    "size": 15899,
-    "sha256": "b58103af1e99f509664b11ad2ac0ad0e8feb44d1ec8a29f427c3e722961bef81"
+    "size": 16306,
+    "sha256": "ab47e23ec68ff42ed20cc3da25a6862a67d5cd3e24d7192563964325ed9d1f26"
   },
   {
     "path": "env.json",
-    "size": 17576,
-    "sha256": "588e135254d376c4df507e879bf2a2249f96742661b129e8fa1e365d8ac1a08d"
+    "size": 17988,
+    "sha256": "c466abd039963ec9d578c9ced63fdd59bcd552d84c417c492e8483d7c52f5231"
   },
   {
     "path": "fs/__q2_doc__/callouts.qmd",
@@ -26,8 +26,8 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 46542,
-    "sha256": "6649e89d59e1c872d1b68148cafca5abdf45d8e3d5f44f2c394098fe66ab2e16"
+    "size": 47724,
+    "sha256": "3648d3ecc083e80fd55eb129009e565a50d9704f17706d27b94d1defd89ecb20"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/biblio.typ",
@@ -36,8 +36,8 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/definitions.typ",
-    "size": 7955,
-    "sha256": "f40242011aa8c0822c7a8b94f6c133441100cb139a6cd0efb0029c8994021936"
+    "size": 8022,
+    "sha256": "d317143dbcc9e1ffa2fa4ec89c7103d8ded17f245904d9a8024c9fb8e90a2e29"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/notes.typ",
@@ -61,22 +61,22 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/typst-show.typ",
-    "size": 2211,
-    "sha256": "a57cd3c066ecdecae5f568719a9f727949a201d1ad132cba6a3116c62853a142"
+    "size": 2493,
+    "sha256": "2f804e5e65aae0b8d761d0d1fcdb38dbfcbad5d387085c61e7b7d36fdfc0f13d"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/typst-template.typ",
-    "size": 3578,
-    "sha256": "1b1de16b5b676e2a8d15169cb3bf365d8e9ae16d5d2fd93034b5cc62e21c8f81"
+    "size": 3918,
+    "sha256": "6aaab91e15a7c9d47ce8f3dfb5ffe564dfd2f9e40a9abd23369c5cde214e214f"
   },
   {
     "path": "meta.json",
     "size": 179,
-    "sha256": "8bcbe3bc87c0fc47b27f17885024a87720dced87df1a57b45349a87325d8887c"
+    "sha256": "ee5fb29b2badc056a285d613fd9e44a4da157800fef59eb6935b8cc219c0206b"
   },
   {
     "path": "reference/callouts.typ",
-    "size": 15899,
-    "sha256": "b58103af1e99f509664b11ad2ac0ad0e8feb44d1ec8a29f427c3e722961bef81"
+    "size": 16306,
+    "sha256": "ab47e23ec68ff42ed20cc3da25a6862a67d5cd3e24d7192563964325ed9d1f26"
   }
 ]

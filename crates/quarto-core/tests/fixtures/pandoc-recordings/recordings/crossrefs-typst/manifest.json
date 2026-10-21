@@ -6,13 +6,13 @@
   },
   {
     "path": "capture/all-docx.typ",
-    "size": 13962,
-    "sha256": "f707b0970227b7ffa7ec5bf22e3c580a3280f7e0a116bad554cd6c8bca5cbd7f"
+    "size": 14369,
+    "sha256": "086317bf2be3506297b470eadc931b5c730e8cd4c9045c7c46d08e531ec682bc"
   },
   {
     "path": "env.json",
-    "size": 17576,
-    "sha256": "421efd60a470b3b639323553c5e11cf9e03a99e89c3599eae6c22d1cc19f3b42"
+    "size": 17988,
+    "sha256": "a568ee0fc32967e4958e3b1450cbbc6a8fa19705696c5f168942ec4a2d6ac125"
   },
   {
     "path": "fs/__q2_doc__/all-docx.qmd",
@@ -31,8 +31,8 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 32016,
-    "sha256": "46c0588354e0072325115248d84d95c81913c622c71dc35d52eba696fe81fe12"
+    "size": 33198,
+    "sha256": "308226f431ecab4055fc029fbeb629dda705afc5ead0e39b0d20509f6a5564d9"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/biblio.typ",
@@ -41,8 +41,8 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/definitions.typ",
-    "size": 7955,
-    "sha256": "f40242011aa8c0822c7a8b94f6c133441100cb139a6cd0efb0029c8994021936"
+    "size": 8022,
+    "sha256": "d317143dbcc9e1ffa2fa4ec89c7103d8ded17f245904d9a8024c9fb8e90a2e29"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/notes.typ",
@@ -66,22 +66,22 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/typst-show.typ",
-    "size": 2211,
-    "sha256": "a57cd3c066ecdecae5f568719a9f727949a201d1ad132cba6a3116c62853a142"
+    "size": 2493,
+    "sha256": "2f804e5e65aae0b8d761d0d1fcdb38dbfcbad5d387085c61e7b7d36fdfc0f13d"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/typst-template.typ",
-    "size": 3578,
-    "sha256": "1b1de16b5b676e2a8d15169cb3bf365d8e9ae16d5d2fd93034b5cc62e21c8f81"
+    "size": 3918,
+    "sha256": "6aaab91e15a7c9d47ce8f3dfb5ffe564dfd2f9e40a9abd23369c5cde214e214f"
   },
   {
     "path": "meta.json",
     "size": 179,
-    "sha256": "29830c4ec5093c0946db263f5102f95ee4122356c9e9baac8b1b632c7d75edca"
+    "sha256": "78357051a71f104f88556ca9d30a14b8019c1973106190af6ab4f43d7c088c16"
   },
   {
     "path": "reference/all-docx.typ",
-    "size": 13962,
-    "sha256": "f707b0970227b7ffa7ec5bf22e3c580a3280f7e0a116bad554cd6c8bca5cbd7f"
+    "size": 14369,
+    "sha256": "086317bf2be3506297b470eadc931b5c730e8cd4c9045c7c46d08e531ec682bc"
   }
 ]

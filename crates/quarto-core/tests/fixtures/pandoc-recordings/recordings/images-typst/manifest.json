@@ -6,13 +6,13 @@
   },
   {
     "path": "capture/images.typ",
-    "size": 12840,
-    "sha256": "2f45700568c6609327c681ae729e05382ddb5b0f2c0e27f42aed59a78509f4cc"
+    "size": 13247,
+    "sha256": "2d0b8b938f7c1b522f08cd6a4c8f6db41dba3e80bc37efda2998882d5bb6a5f6"
   },
   {
     "path": "env.json",
-    "size": 17572,
-    "sha256": "4784faa1857f82460d02cc2bdf0fcf57f505b1a22b6a1dd1bed1cbd4fc30734d"
+    "size": 17984,
+    "sha256": "28ec9939fc4df814a48ce06d7c5517bad797f994f684d7a233d9ca99423c7998"
   },
   {
     "path": "fs/__q2_doc__/images.qmd",
@@ -31,8 +31,8 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 22954,
-    "sha256": "1c65413abcc7ac13e72c0a8a2b2a9204f028fbf17cbe320d1bdf69fad7ae2417"
+    "size": 24136,
+    "sha256": "883d8f8d8e64bba58c1204d431c8111125bb030133e3ebee2e5a8983dd654bb8"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/biblio.typ",
@@ -41,8 +41,8 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/definitions.typ",
-    "size": 7955,
-    "sha256": "f40242011aa8c0822c7a8b94f6c133441100cb139a6cd0efb0029c8994021936"
+    "size": 8022,
+    "sha256": "d317143dbcc9e1ffa2fa4ec89c7103d8ded17f245904d9a8024c9fb8e90a2e29"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/notes.typ",
@@ -66,22 +66,22 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/typst-show.typ",
-    "size": 2211,
-    "sha256": "a57cd3c066ecdecae5f568719a9f727949a201d1ad132cba6a3116c62853a142"
+    "size": 2493,
+    "sha256": "2f804e5e65aae0b8d761d0d1fcdb38dbfcbad5d387085c61e7b7d36fdfc0f13d"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/typst-template.typ",
-    "size": 3578,
-    "sha256": "1b1de16b5b676e2a8d15169cb3bf365d8e9ae16d5d2fd93034b5cc62e21c8f81"
+    "size": 3918,
+    "sha256": "6aaab91e15a7c9d47ce8f3dfb5ffe564dfd2f9e40a9abd23369c5cde214e214f"
   },
   {
     "path": "meta.json",
     "size": 173,
-    "sha256": "9c89b9d72511d5ac5e713c6b7660c02206a1ea689c14fbe5f1f6e3f4f0df353e"
+    "sha256": "f1438360c0a93d6c7c33bf5fb361485beb6bd6b55d0cec3224c70be6dd279efe"
   },
   {
     "path": "reference/images.typ",
-    "size": 12840,
-    "sha256": "2f45700568c6609327c681ae729e05382ddb5b0f2c0e27f42aed59a78509f4cc"
+    "size": 13247,
+    "sha256": "2d0b8b938f7c1b522f08cd6a4c8f6db41dba3e80bc37efda2998882d5bb6a5f6"
   }
 ]

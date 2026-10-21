@@ -6,7 +6,7 @@ into the pandoc share tree, per the External Sources Policy (see root
 
 ## Source
 
-Copied from quarto-cli tag `v1.11.3`:
+Copied from quarto-cli tag `v1.11.3`, unchanged through `v1.11.6` (verified 2026-10-21; recorded as `v1.11.6`):
 
 - `html/styles-callout.html` ← `src/resources/formats/html/styles-callout.html`
   (byte-identical)
@@ -22,7 +22,7 @@ Embedded via `include_dir!` as `FORMATS_DIR` / `FORMATS_DOCX_DIR` in
 
 ```bash
 cd external-sources/quarto-cli   # or any clone, at the new tag
-git diff v1.11.3 <new-tag> -- src/resources/formats/html/styles-callout.html \
+git diff v1.11.6 <new-tag> -- src/resources/formats/html/styles-callout.html \
   src/resources/formats/html/pandoc/styles.html src/resources/formats/docx
 ```
 
