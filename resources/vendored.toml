@@ -772,18 +772,23 @@ notes = "Update the provenance header (Commit, Vendored date) when re-copying. T
 
 [[asset]]
 id = "chicago-author-date-csl"
-title = "Default CSL style (chicago-author-date)"
+title = "Default CSL style (Pandoc's data/default.csl, chicago-author-date)"
 paths = ["crates/pampa/resources/csl"]
 policy = "track"
-version = "2025-08-07T00:00:00+00:00"
-version_sources = [{ kind = "file-regex", file = "crates/pampa/resources/csl/chicago-author-date.csl", regex = '<updated>([^<]+)</updated>' }]
-upstream = { kind = "git", repo = "https://github.com/citation-style-language/styles", track = { branch = "master" }, paths = ["chicago-author-date.csl"] }
+group = "pandoc"
+version = "3.11"
+version_sources = [{ kind = "file-contains", file = "crates/pampa/resources/csl/README.md" }]
+upstream = { kind = "git", repo = "https://github.com/jgm/pandoc", track = "tags", paths = ["data/default.csl"] }
 guards = ["quarto-citeproc tests", "pampa citeproc tests"]
+procedure = "crates/pampa/resources/csl/README.md"
 license = "CC-BY-SA-3.0"
 last_reviewed = "2026-10-21"
 notes = '''
-`version` is the style's own <updated> stamp, not a git ref; compare it to
-the <updated> stamp of the upstream file at the latest commit.
+Byte-identical to Pandoc's data/default.csl (3.11 through 3.12.1), so its
+upstream is Pandoc, NOT citation-style-language/styles: the styles repo's
+chicago-author-date.csl is an older revision (<updated> 2025-02-09 vs
+Pandoc's 2025-08-07) and differs substantially. The 2026-10-21 survey filed
+bd-grbnhs0y against the styles repo by mistake; corrected here.
 '''
 
 [[asset]]
