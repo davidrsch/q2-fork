@@ -90,14 +90,16 @@ use crate::transform::{AstTransform, TransformPhase};
 use crate::transforms::append_with_sentinel;
 
 /// Exact-pinned mermaid.js version (decision 1, plan §Resolved
-/// decisions — matches the copy Quarto 1 bundles). The TS preview
+/// decisions). Originally matched the copy Quarto 1 bundles (11.12.0);
+/// moved ahead of Quarto 1 to 12.x on 2026-10-21 (bd-2qy6mdhq), taking
+/// mermaid 12's new defaults (ELK layout, `neo` look). The TS preview
 /// component pins the same version in
 /// `ts-packages/preview-renderer/src/q2-preview/blocks/MermaidCodeBlock.tsx`;
 /// bump both together.
 ///
 /// Must equal the version embedded in the vendored bundle — enforced
 /// by `vendored_bundle_matches_pinned_version`.
-pub const MERMAID_VERSION: &str = "11.12.0";
+pub const MERMAID_VERSION: &str = "12.2.0";
 
 /// The vendored mermaid runtime, embedded at compile time.
 ///

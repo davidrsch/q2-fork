@@ -119,7 +119,7 @@ describe('MermaidCodeBlock', () => {
     it('pins the same mermaid version as the Rust transform', () => {
         // Keep in sync with MERMAID_VERSION in
         // crates/quarto-core/src/transforms/mermaid.rs.
-        expect(MERMAID_VERSION).toBe('11.12.0');
+        expect(MERMAID_VERSION).toBe('12.2.0');
     });
 
     it('is shadowed by a user render-components CodeBlock override', () => {

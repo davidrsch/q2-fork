@@ -528,7 +528,7 @@ id = "mermaid"
 title = "mermaid runtime bundle"
 paths = ["resources/mermaid"]
 policy = "track"
-version = "11.12.0"
+version = "12.2.0"
 version_sources = [
   { kind = "file-contains", file = "resources/mermaid/README.md" },
   { kind = "file-regex", file = "crates/quarto-core/src/transforms/mermaid.rs", regex = 'MERMAID_VERSION: &str = "([^"]+)"' },
@@ -542,7 +542,12 @@ guards = [
 procedure = "resources/mermaid/README.md#updating"
 license = "MIT"
 last_reviewed = "2026-10-21"
-notes = "Not an npm dependency of the workspace: fetched with `npm pack`. Update the README's SHA-256 too."
+notes = '''
+Not an npm dependency of the workspace: fetched with `npm pack`. Update the
+README's SHA-256 too. Ahead of Quarto 1 (11.12.0) since 2026-10-21 by
+decision (bd-2qy6mdhq): q2 tracks mermaid's own releases, not Quarto 1's.
+Majors change diagram layout/look defaults; read the release notes.
+'''
 
 # ===========================================================================
 # reveal.js
