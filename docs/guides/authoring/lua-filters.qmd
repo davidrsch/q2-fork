@@ -231,6 +231,39 @@ an equation unnumbered. The attribute exists only once cross-references
 have been resolved, so list the filter *after* the `quarto` entry in
 `filters:`; a filter listed before it runs too early to see the number.
 
+## Parsing strings: `pandoc.read`
+
+`pandoc.read(text, format)` parses a string into a document, so a filter or
+an `{lmd}` cell can turn text into nodes. Three formats are available, and
+`pandoc.readers` lists them:
+
+- `"markdown"` (the default, also spelled `"qmd"`) reads Quarto Markdown,
+  exactly as a document body is read.
+- `"commonmark"` reads plain CommonMark.
+- `"json"` reads a document in Pandoc's JSON format.
+
+Quarto Markdown is strict on purpose: braces are reserved for attributes,
+`$` starts math, a bare `[...]` is a span, and quotes must balance. That
+suits text written as a document, and it is wrong for text that never was:
+descriptions from a JSON schema, a database or a CMS. Such prose may contain
+`{env:VAR}`, `$HOME` or `["a", "b"]`, which the `"markdown"` reader rejects
+or rewrites. Read that kind of text with `"commonmark"`:
+
+``` lua
+local blocks = pandoc.read(entry.description, "commonmark").blocks
+```
+
+CommonMark has emphasis, links, code and lists, but no attributes, divs,
+math or tables. Raw HTML in the text becomes raw `html` nodes, as in pandoc.
+
+Format extensions (`"commonmark+smart"`) are accepted and ignored, for
+every format.
+
+Warnings about the text point into the string itself, labelled with the
+line of the call, for example `doc.qmd[pandoc.read, line 14]`. This covers
+the reader's own warnings and warnings a later step raises about the nodes
+you returned.
+
 ## Tables, definition lists and figures built from Lua
 
 Quarto's markdown has shorthand for three structures: a `::: {.list-table}`

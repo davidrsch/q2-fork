@@ -129,6 +129,16 @@ Requires the #883 plan merged.
 - Tests: the issue's motivating strings (`{env:VAR}`, `$HOME`, `"<name>"`, `["a", "b"]`) round-trip unchanged through `commonmark` where `markdown` throws or alters them. Phase 0's property test is parameterized over both readers. An e2e diagnostic about a commonmark-read node shows the string snippet.
 - **WASM size check:** comrak is an unconditional pampa dependency but is currently reachable only from the pampa binary, so it's likely dead-stripped from the hub-client wasm. The new arm pulls it in. Measure `wasm-quarto-hub-client` bundle size before and after and report it in the PR.
 
+**As built (Phase 4, 2026-10-22):**
+
+- `"commonmark"` is in `SUPPORTED_READER_FORMATS` (so `pandoc.readers.commonmark` is true). The arm mints the file, calls `commonmark::convert(text, fid)`, runs `desugar_document`, and forwards the collector. Extensions are ignored. Heading ids come from the pipeline transform, as for every other route; no reader-side ids.
+- **Found:** `comrak-to-pandoc` was written as a CommonMark *subset* for differential testing. It panicked on four core constructs comrak produces with default options: setext headings, indented code blocks, HTML blocks and inline HTML. Through `pandoc.read` that would crash the render, and `catch_unwind` is no help on wasm, where panics abort. These now convert as pandoc's `commonmark` reader does: `Header`, `CodeBlock` (no classes), and `RawBlock`/`RawInline` `"html"`. A new test, `comrak-to-pandoc` `tests/integration/commonmark_spec.rs`, converts all 655 spec examples (`external-sources/commonmark-spec/spec.txt`) with source tracking on and requires that none panics. Extension-only nodes still panic, since extensions are never enabled.
+- **Found:** minted ids must fit 53 bits. `quarto.warn(msg, node)` round-trips a node's location through a Lua table (i64 integers), and JSON consumers in JavaScript are exact only to 2^53. Full-width hashes lost the location about half the time; the test `minted_ids_survive_quarto_warn` covers this. The same latent problem for config-file hash ids is filed as `bd-hash-fileid-width-clu2hu32`.
+- Unrelated finding, filed as `bd-stringify-pandoc-doc-yg3bt9kk`: `pandoc.utils.stringify(doc)` returns `""` for a whole `Pandoc` document.
+- Docs: new section "Parsing strings: `pandoc.read`" in `docs/guides/authoring/lua-filters.qmd`.
+- **WASM size** (`hub-client/scripts/build-wasm.js`, `wasm_quarto_hub_client_bg.wasm` after `wasm-opt -Oz`): without Phase 4, 39,093,125 bytes (gzip -9: 10,651,617); with it, 39,560,648 (10,747,041). That is +467 KB raw (+1.2%) and +95 KB gzipped (+0.9%), from comrak becoming reachable.
+- Tests: `lua::readwrite::tests::{pandoc_read_commonmark_keeps_prose_qmd_rejects, pandoc_read_commonmark_spans_root_in_the_call_s_own_file, pandoc_read_commonmark_is_listed_and_desugared, minted_ids_survive_quarto_warn}`, and the e2e `commonmark_pandoc_read_node_locations_resolve_into_the_string`.
+
 ### Verification (every phase)
 
 - `cargo nextest run -p pampa -p quarto-core -p quarto`

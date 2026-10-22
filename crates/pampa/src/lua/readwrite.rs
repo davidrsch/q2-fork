@@ -20,8 +20,8 @@ use crate::options::{
 
 /// The text one `pandoc.read` call parsed, as a virtual file (GH #884).
 ///
-/// Every span in the call's result is rooted at `file_id`. The id is a hash
-/// minted at call time (the way `MetadataMergeStage` registers config files
+/// Every span in the call's result is rooted at `file_id`. The id is a 53-bit
+/// hash minted at call time (the way `MetadataMergeStage` registers config files
 /// under `quarto_yaml::file_id_for_filename`), so the Lua side needs no
 /// knowledge of the host document's `SourceContext`. A host that drains these
 /// with [`take_read_sources`] and registers them ([`register_read_sources`])
@@ -100,7 +100,10 @@ fn mint_read_source(lua: &Lua, content: String) -> quarto_source_map::FileId {
     sources.calls += 1;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     ("pandoc.read", &label, &content, sources.calls).hash(&mut hasher);
-    let file_id = quarto_source_map::FileId(hasher.finish() as usize);
+    // 53 bits: the id must survive Lua (a node's location passes through a
+    // Lua table, whose integers are i64, in `quarto.warn(msg, node)`) and
+    // JavaScript (JSON consumers' numbers are exact only to 2^53).
+    let file_id = quarto_source_map::FileId((hasher.finish() & ((1 << 53) - 1)) as usize);
     sources.pending.push(ReadSource {
         file_id,
         label,
@@ -395,6 +398,27 @@ fn pandoc_read(lua: &Lua, args: mlua::MultiValue) -> Result<Value> {
                     )))
                 }
             }
+        }
+        "commonmark" => {
+            // CommonMark through comrak (GH #885): for strings that were never
+            // written as qmd (data-driven prose), where the qmd reader's
+            // reserved braces, bare brackets, quote balancing and `$` math
+            // would reject or rewrite ordinary text. Spans root in this
+            // call's own file, like the qmd arm's. Precision limits are those
+            // of `comrak-to-pandoc`: a `Code` span covers its backticks while
+            // its text does not, link and image URLs carry no provenance, and
+            // a known multi-character entity directly followed by `&` or `\`
+            // can misattribute within a token. Extensions are ignored, as for
+            // every format here.
+            let text = String::from_utf8_lossy(&content).into_owned();
+            let file_id = mint_read_source(lua, text.clone());
+            let pandoc = crate::readers::commonmark::convert(&text, file_id);
+            // The structural desugaring set the other arms get; for
+            // CommonMark input that is in practice the implicit figure.
+            let mut collector = crate::utils::diagnostic_collector::DiagnosticCollector::new();
+            let pandoc = crate::pandoc::desugar::desugar_document(pandoc, &mut collector);
+            super::diagnostics::push_diagnostics(lua, collector.into_diagnostics());
+            rust_pandoc_to_lua_table(lua, &pandoc)
         }
         "json" => {
             // Lua-side `pandoc.read(json, "json")` — the JSON comes from the
@@ -1480,5 +1504,105 @@ print(1)
             diags.iter().any(|d| d.code.as_deref() == Some("Q-2-35")),
             "{diags:#?}"
         );
+    }
+
+    /// GH #885: `commonmark` reads ordinary prose that the qmd reader rejects
+    /// or rewrites (reserved braces, `$`, bare brackets) as the text it is.
+    #[test]
+    fn pandoc_read_commonmark_keeps_prose_qmd_rejects() {
+        let lua = filter_lua();
+        for text in [
+            "Set {env:VAR} first.",
+            "Uses $HOME and $PATH.",
+            r#"Allowed kinds: ["skills", "commands"] only."#,
+        ] {
+            lua.globals().set("SRC", text).unwrap();
+            let out: String = lua
+                .load("return pandoc.utils.stringify(pandoc.read(SRC, 'commonmark').blocks)")
+                .eval()
+                .unwrap_or_else(|e| panic!("{text:?}: {e}"));
+            assert_eq!(out, text);
+        }
+        // Raw HTML in CommonMark, an error in qmd: it must at least read.
+        lua.load(r#"pandoc.read('Call it "<name>".', 'commonmark')"#)
+            .exec()
+            .unwrap();
+    }
+
+    /// GH #885: commonmark-read spans root in the call's own file, like the
+    /// qmd arm's (no FileId(0), one minted id).
+    #[test]
+    fn pandoc_read_commonmark_spans_root_in_the_call_s_own_file() {
+        let lua = filter_lua();
+        let ids = original_file_ids_of_read(
+            &lua,
+            r#"return pandoc.read([==[
+# Heading
+
+Para with *emph*, **strong**, `code`, a [link](http://a.b "t"),
+![img](i.png), an &amp; entity, a hard\
+break and <https://auto.link>.
+
+- item
+- item
+
+> quote
+
+```python
+x = 1
+```
+]==], "commonmark")"#,
+        );
+        assert!(!ids.is_empty());
+        assert!(!ids.contains(&0), "{ids:?}");
+        assert_eq!(ids.len(), 1, "{ids:?}");
+    }
+
+    /// GH #885: `commonmark` is a listed reader, and its result gets the
+    /// structural desugaring the other arms apply (here, an implicit figure).
+    #[test]
+    fn pandoc_read_commonmark_is_listed_and_desugared() {
+        let lua = filter_lua();
+        let listed: bool = lua.load("return pandoc.readers.commonmark").eval().unwrap();
+        assert!(listed);
+        let kind: String = lua
+            .load("return pandoc.read('![alt](x.png)', 'commonmark').blocks[1].t")
+            .eval()
+            .unwrap();
+        assert_eq!(kind, "Figure");
+    }
+
+    /// Minted ids survive the trip through Lua: `quarto.warn(msg, node)`
+    /// serializes the node's location into a Lua table, whose integers are
+    /// i64, and the JSON writer's ids reach JavaScript, whose numbers are
+    /// exact only to 2^53. Many reads, so that a full-width hash (half of
+    /// which exceed i64::MAX) cannot pass by luck.
+    #[test]
+    fn minted_ids_survive_quarto_warn() {
+        let lua = filter_lua();
+        lua.load(
+            r#"
+            for i = 1, 64 do
+              local doc = pandoc.read("text number " .. i, "commonmark")
+              quarto.warn("w" .. i, doc.blocks[1])
+            end
+        "#,
+        )
+        .exec()
+        .unwrap();
+
+        let sources = take_read_sources(&lua);
+        let diags = super::super::diagnostics::extract_lua_diagnostics(&lua).unwrap();
+        assert_eq!(sources.len(), 64);
+        assert_eq!(diags.len(), 64);
+        for (source, diag) in sources.iter().zip(&diags) {
+            assert!(source.file_id.0 < (1 << 53), "{:?}", source.file_id);
+            let (file, _, _) = diag
+                .location
+                .as_ref()
+                .and_then(|l| l.resolve_byte_range())
+                .unwrap_or_else(|| panic!("{} lost its location", diag.title));
+            assert_eq!(file, source.file_id.0, "{}", diag.title);
+        }
     }
 }

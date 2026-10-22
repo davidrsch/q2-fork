@@ -199,3 +199,33 @@ fn pandoc_read_reader_warnings_reach_the_render() {
         "expected the string as snippet:\n{out}"
     );
 }
+
+/// GH #885: a diagnostic about a node `pandoc.read(…, "commonmark")`
+/// returned shows the string, under the call-site label.
+#[test]
+fn commonmark_pandoc_read_node_locations_resolve_into_the_string() {
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path();
+    std::fs::write(
+        dir.join("cm.qmd"),
+        "---\ntitle: commonmark locations\n---\n\n```{lmd}\nlocal blocks = pandoc.read('Some *emphasised* prose.', 'commonmark').blocks\nquarto.warn('look here', blocks[1].content[3])\nreturn blocks\n```\n",
+    )
+    .unwrap();
+
+    let text = run_q2_render(dir, &["cm.qmd", "--to", "html"]);
+    assert!(
+        text.status.success(),
+        "render must succeed:\n{}",
+        combined(&text)
+    );
+    let out = combined(&text);
+    assert!(out.contains("look here"), "expected the warning:\n{out}");
+    assert!(
+        out.contains("cm.qmd[pandoc.read, line 6]"),
+        "expected the call-site label:\n{out}"
+    );
+    assert!(
+        out.contains("Some *emphasised* prose."),
+        "expected the string as snippet:\n{out}"
+    );
+}
