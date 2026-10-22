@@ -762,6 +762,13 @@ impl PipelineStage for LmdExecuteStage {
             &mut diagnostics,
         )
         .await;
+        // Give the text each `pandoc.read` call parsed a home in the
+        // document (GH #884), in both contexts and in the same order, so
+        // the nodes it returned locate diagnostics in that text.
+        let read_sources = runtime.take_read_sources();
+        for source_context in [&mut doc.ast_context.source_context, &mut doc.source_context] {
+            pampa::lua::register_read_sources(source_context, &read_sources);
+        }
         for diag in &diagnostics {
             trace_event!(ctx, EventLevel::Warn, "{}", diag.title);
         }

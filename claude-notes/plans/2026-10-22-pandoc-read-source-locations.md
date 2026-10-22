@@ -2,7 +2,7 @@
 title: 'pandoc.read text gets a home in the document''s SourceContext: correct locations (GH #884), forwarded reader diagnostics (bd-fwswbxnl), and a commonmark reader (GH #885)'
 date: 2026-10-22
 description: 'Nodes pandoc.read returns carry offsets into the string, which later passes read as offsets into the host document. Give each pandoc.read call its own hash-FileId file, register it in the document''s contexts when the host drains it, and build the commonmark arm on the same mechanism.'
-status: draft  # awaiting go-ahead
+status: in-progress  # go-ahead 2026-10-22; Phases 0-2 implemented, see Progress
 braid:
   strands:
     - bd-pandoc-read-host-locations-k9v9bviz   # GH #884 (Phases 0-2)
@@ -12,7 +12,7 @@ github:
   issues: [884, 885]
 ---
 
-**Branch (proposed):** integration branch `feature/pandoc-read-source-locations` off `main`. Each strand gets a topic branch via `cargo xtask switch-task <id> --from feature/pandoc-read-source-locations` and is merged `--no-ff`.
+**Branch:** integration branch `feature/pandoc-read-source-locations` off `main`. Each strand gets a topic branch via `cargo xtask switch-task <id> --from feature/pandoc-read-source-locations` and is merged `--no-ff`.
 **Depends on:** `2026-10-22-commonmark-reader-single-fileid.md` (GH #883) for Phase 4 only.
 
 ## Why one plan for #884 and #885 (and bd-fwswbxnl)
@@ -46,7 +46,7 @@ Scratch files: `/private/tmp/claude-501/-Users-cscheid-rooms-room-3-q2/ece4cad0-
 
 - **Hash-based FileIds are an established pattern in the document context.** `MetadataMergeStage` registers `_quarto.yml` and friends under `quarto_yaml::file_id_for_filename(path)` via `add_file_with_id`, into **both** `doc.ast_context.source_context` and `doc.source_context` "in the same order" (`metadata_merge.rs:222`). A hash id needs no knowledge of the host context's current length, which matters because quarto-source-map 0.3.0 has no `len()` and is an external crate (`posit-dev/quarto-source-map`).
 - **An id the context doesn't know resolves to nothing, not to something wrong.** `map_offset` → `ctx.get_file(id)?` → `None`, and the renderer then has no snippet. `--json-errors`\' `json_source_file` drops to its fallback when the file doesn't map, or when its path doesn't exist on disk (`quarto/src/commands/render.rs:2062`).
-- **The qmd reader can parse "into" a parent.** With `parent_source_info: Some(p)`, Ok-path spans become `Substring(p, …)` and Err-path diagnostics are rerooted (`reroot_diagnostics_into_parent`). **But coverage has stragglers:** `create_line_break_inline` (`treesitter_utils/text_helpers.rs:385`) stamps `SoftBreak`/`LineBreak` with a hard-coded `FileId(0)`, ignoring the parent. There are ~20 `FileId(0)` literals across `pandoc/treesitter_utils/*` and `pandoc/location.rs`. Some are tests or legitimate, but each needs checking. Any straggler would keep #884 alive for that node type, so Phase 0 includes a property test that catches all of them.
+- **The qmd reader can parse "into" a parent, but only partly.** With `parent_source_info: Some(p)`, node spans built by `node_source_info_with_context` become `Substring(p, …)`, and Err-path diagnostics are rerooted (`reroot_diagnostics_into_parent`). **Found during implementation (2026-10-22):** about 40 other sites build spans as `SourceInfo::from_range(context.current_file_id(), …)` and ignore the parent, and `current_file_id()` always returned FileId(0). A probe through `pandoc.read` showed `Emph`/`Strong`/`Strikeout`/`Superscript`/`Subscript` own spans and attribute spans rooted at FileId(0). So the parent route could not fix #884 without touching all of them; see "As built" below for the route taken, and `bd-qmd-reader-parent-aware-spans-mq5u2001` for the parent fix itself.
 - **lmd chunks are named `@<doc path>` with line padding** (`lmd_execute.rs:239`), so `filter_source_info(lua)` inside a cell yields `By::filter("<doc path>", <document line>)`. That's the call-site frame the issue asks for, at no extra cost. In a filter it yields the `.lua` path and line.
 - **Host drain points already exist** for Lua-side state: `extract_lua_diagnostics` in `apply_lua_filter_with`, and `LmdRuntime::take_diagnostics`. `UserFiltersStage` adopts `output.context` into `doc.ast_context` only (`user_filters.rs:286`), so it must also register into `doc.source_context`. `doc.source_context` is what final diagnostics render against (e.g. `pipeline.rs:1230`, `render_html.rs:161`).
 
@@ -57,7 +57,7 @@ Scratch files: `/private/tmp/claude-501/-Users-cscheid-rooms-room-3-q2/ece4cad0-
 1. Builds a label for the file from the call site: `{chunk}[pandoc.read, line {line}]` (e.g. `loc.qmd[pandoc.read, line 14]`), using `filter_source_info(lua)`\'s `By::filter(path, line)`, with the path shown relative where possible. The form follows the existing notebook-cell label (`notebook.ipynb[cell 2, markdown]`). The label is the only provenance for now; a structured origin is deferred to a design session (see the appendix).
 2. Mints `FileId = hash(label, content, per-Lua-state counter)`. Same recipe family as `file_id_for_filename`. The counter keeps two reads from the same line, such as a loop, apart.
 3. Parses so that every span is rooted at that FileId:
-   - qmd arm: `parent_source_info = Some(SourceInfo::original(fid, 0, len))`, where `len` covers the newline-terminated text the reader actually parses.
+   - qmd arm: `qmd::read_as_file(text, …, fid, …)`, which registers the newline-terminated text under `fid` in the reader's private context and makes `fid` the context's `current_file_id()`, so every span is a plain `Original(fid, …)`. (The plan first said `parent_source_info = Some(Original(fid, 0, len))`; see "As built".)
    - commonmark arm (Phase 4): `commonmark::convert(text, fid)` (the entry point from the #883 plan), so no parent is needed.
 4. Records `(fid, label, content)` in a Lua app-data registry, `PandocReadSources`.
 
@@ -72,6 +72,16 @@ Why not the alternatives:
 - *Sequential `add_file` ids:* the Lua side would need the host context's length at call time. There's no accessor, and shortcodes only hold `&SourceContext`.
 - *Clone the host context into the Lua state:* clones whole document contents per filter, and still needs lockstep handling for the two contexts.
 
+## As built (Phases 0–2, 2026-10-22)
+
+- **A real FileId for the reader's context instead of a parent.** `ASTContext` gained `file_id: FileId` (default FileId(0)); `current_file_id()` and `primary_file_id()` return it. `readers::qmd::read_as_file(input, label, file_id, out, prune_errors)` registers the input under `file_id` and stamps every span there; on the Err path it reroots diagnostics through `Original(file_id, 0, len)` with the existing `reroot_diagnostics_into_parent`. This mirrors `commonmark::convert(input, file_id)` from the #883 plan. The five `ASTContext { … }` struct literals (pipeline.rs ×2, wasm-quarto-hub-client ×2, readers/json.rs) set `file_id: FileId(0)`.
+- **Why not the parent:** ~40 span sites ignore `parent_source_info` (finding above). Making them parent-aware is a separate fix (`bd-qmd-reader-parent-aware-spans-mq5u2001`, follow-up PR) and does not undo this one: the parent-aware helper falls back to `current_file_id()`.
+- **Placeholder:** `location::empty_source_info()` is a zero-length `Original(FileId(0), 0, 0)` used at ~17 sites (e.g. a list table\'s absent caption). It still names FileId(0); the property test skips exactly that shape, and the follow-up strand records the question.
+- **Registry API** (`pampa::lua`): `ReadSource { file_id, label, content }`, `take_read_sources(&Lua)`, `register_read_sources(&mut SourceContext, &[ReadSource])` (skips ids already present).
+- **Label:** `{chunk}[pandoc.read, line {line}]`. The chunk is the name Lua reports, with a leading `@`/`=` stripped (lmd names cells `@<doc>`; filters pass their path bare); a multi-line name (an unnamed chunk\'s source text) becomes `<string>`. Paths are shown as Lua has them (absolute in a render), not relativized.
+- **Hosts:** Lua filters register into their output context and return `read_sources` through `lua::FilterOutput` and `unified_filter::FilterOutput`; `UserFiltersStage` registers into `doc.source_context`. `LmdRuntime::take_read_sources` is drained by `LmdExecuteStage` into both contexts. Shortcodes: the drive-by stayed simple — `LuaShortcodeEngine::take_read_sources` → `RenderContext::read_sources` → `AstTransformsStage` registers into both contexts after the pipeline returns.
+- **Tests:** `crates/quarto/tests/integration/pandoc_read_locations_e2e.rs` (lmd and filter; JSON has no `source_file`, text shows the string under the label); `lua::readwrite::tests::{pandoc_read_spans_root_in_the_call_s_own_file, two_pandoc_reads_mint_distinct_files}`; `shortcode_resolve::…::lua_shortcode_pandoc_read_hands_its_text_to_the_context`.
+
 ## Plan
 
 ### Phase 0 — failing tests first
@@ -83,8 +93,8 @@ Why not the alternatives:
 
 ### Phase 1 — mint per-call FileIds in `pandoc.read` (pampa only)
 
-- `lua/readwrite.rs`: label, hash FileId, registry (`PandocReadSources` in Lua app data, created lazily), parse the qmd arm with the parent, record.
-- **Fix the parent-ignoring stragglers** the property test finds, starting with `create_line_break_inline`. Each fix threads the context's base (as `location.rs:299/342/366` already do) instead of `FileId(0)`.
+- `lua/readwrite.rs`: label, hash FileId, registry (`ReadSources` in Lua app data, created lazily), parse the qmd arm with `read_as_file`, record.
+- ~~Fix the parent-ignoring stragglers~~: superseded. There were ~40, not a handful; `read_as_file` makes them correct as they stand. See "As built".
 - Result: #884's wrong location becomes *no* location everywhere. This is an intermediate state, not a separate merge: Phases 0–2 ship as one PR (decided 2026-10-22).
 
 ### Phase 2 — hosts register the files (fixes #884 properly)

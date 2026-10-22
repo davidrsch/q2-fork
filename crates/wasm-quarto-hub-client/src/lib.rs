@@ -999,6 +999,7 @@ pub async fn parse_qmd_to_ast_with_attribution(
         example_list_counter: std::cell::Cell::new(1),
         source_context: output.source_context.clone(),
         parent_source_info: None,
+        file_id: quarto_source_map::FileId(0),
     };
 
     // Serialize the AST to JSON using pampa's writer. When attribution
@@ -2939,6 +2940,7 @@ async fn render_project_active_page_to_response(
             example_list_counter: std::cell::Cell::new(1),
             source_context: context.source_context.clone(),
             parent_source_info: None,
+            file_id: quarto_source_map::FileId(0),
         };
         let json_config = JsonConfig {
             include_inline_locations: true,

@@ -341,6 +341,12 @@ pub struct RenderContext<'a> {
     /// the one validated sink — see bd-cfl67.
     pub resource_copies: Vec<ResourceCopyIntent>,
 
+    /// The virtual files `pandoc.read` minted in Lua shortcode handlers
+    /// (GH #884). `AstTransformsStage` registers them in the document's
+    /// source contexts once the transforms finish, so the spans of nodes a
+    /// handler built with `pandoc.read` resolve into that text.
+    pub read_sources: Vec<pampa::lua::ReadSource>,
+
     /// Resolved listings produced by `ListingGenerateTransform` and
     /// consumed by `ListingRenderTransform`. Populated only when the
     /// host page declares a `listing:` key. Both transforms run
@@ -610,6 +616,7 @@ impl<'a> RenderContext<'a> {
             user_grammar_provider: None,
             resource_report: crate::project_resources::DocumentResourceReport::new(),
             resource_copies: Vec::new(),
+            read_sources: Vec::new(),
             resolved_listings: Vec::new(),
             listings_resolved: false,
             code_block_decorations: std::collections::HashMap::new(),
