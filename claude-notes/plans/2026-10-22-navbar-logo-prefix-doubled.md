@@ -2,13 +2,13 @@
 title: 'Custom project type: extension-fragment navbar logo doubled `_extensions/` prefix (bd-74ktvzv7)'
 date: 2026-10-22
 description: 'Paths and hrefs that a `contributes.project` fragment sets in `website.*` get mis-resolved: the navbar logo picks up a doubled `_extensions/<ext>/` prefix, hrefs resolve against the extension dir, and the favicon is wrong in subdirectories. This plan sketches a fix that treats fragment values as project-root-relative.'
-status: draft  # Investigation — pending design alignment with user; do not implement before the go-ahead
+status: in-progress
 braid:
   strand: bd-74ktvzv7
 ---
 
 **Branch:** `braid/bd-74ktvzv7-navbar-logo-prefix-doubled` (topic branch in the main checkout, based on `main` @ `7584d6276`)
-**Do not start implementation until the user gives the go-ahead.**
+**Go-ahead given 2026-10-22.** Decisions are recorded under § Decisions.
 
 ## Triage verdict
 
@@ -106,7 +106,20 @@ Repro: `claude-notes/plans/navbar-logo-prefix-doubled-investigation/`
 - **Phase 5 — Changelog** entry (and a docs note if the extension-authoring
   guide says how fragment paths resolve).
 
-## Open design questions for the user
+## Decisions (2026-10-22)
+
+1. **Broad short-circuit.** `resolve_metadata_path` returns `raw` for every value
+   whose source file is an extension manifest. The more general fix is to defer
+   resolution and carry the base directory with the value, so that an
+   extension's (or any) subdirectory `_metadata.yml` resolves correctly. That
+   is filed as follow-up **bd-0x1znhgb**.
+2. **`contributes.metadata` / `contributes.formats` included.** The broad check
+   is the desired behaviour for them too.
+3. **Sidebar logo dropped** from this strand's acceptance criteria. bd-ht0n has
+   a note to cover the extension-fragment case with this fixture.
+4. **The subdirectory favicon fix (Phase 2) is in scope.**
+
+## Open design questions for the user (answered, see § Decisions)
 
 1. **Scope of the `resolve_metadata_path` short-circuit.** Narrow it to
    `ConfigValueKind::Path`-rebased values (the strand's (a), narrow form), or
@@ -141,3 +154,35 @@ Repro: `claude-notes/plans/navbar-logo-prefix-doubled-investigation/`
 - Embedded built-in extensions rebase to absolute paths (`rebase_candidate`
   fallback). The short-circuit must not turn those into broken page-relative
   links. Check whether any built-in extension contributes `website.*` paths.
+
+## Implementation log (2026-10-22)
+
+- **Phase 0.** Added `extension_fragment_logo_favicon_and_logo_href_single_prefix`
+  and `extension_fragment_navbar_href_resolves_against_project_root` to
+  `crates/quarto-core/tests/integration/metadata_path_resolution.rs`. Both
+  failed for the expected reasons: the doubled logo src, and the
+  `_extensions/x/index.qmd` href. Also added the unit test
+  `metadata_path_extension_manifest_is_project_root_relative`.
+- **Phase 1.** `resolve_metadata_path` resolves values whose source file is an
+  `_extension.yml` inside the project against the project root, so `/`
+  stripping and `..` normalization match `_quarto.yml` values. A manifest
+  outside the project (embedded built-in) keeps the old return-`raw`
+  behaviour, so absolute rebased paths are not mangled. No built-in extension
+  contributes a project type today. TODO points at bd-0x1znhgb.
+- **Phase 2.** Split `FRAGMENT_SITE_PATH_PATTERNS` (`website.favicon`,
+  `navbar.logo`, `navbar.logo-href`, `sidebar.logo`) out of
+  `FRAGMENT_PATH_PATTERNS`. Site leaves are rebased in place as plain string
+  scalars (span kept). `format.*` / `project.*` / `brand` leaves stay `Path`.
+  `custom_project_type::extension_favicon_and_logo_rebased_to_project_root` now
+  asserts the scalar kind and covers `logo-href`.
+- **Phase 3.** `logo-href` is in the site table (above).
+- **Phase 4.** The repro fixture renders correct links at root and `sub/`.
+  Headless Chromium shows `naturalWidth > 0` for the navbar logo on the fixture
+  (root + sub) and on product-doc-theme `index.html` / `admin.html`. The
+  product-doc-theme diagnostics are unchanged versus the old binary: Q-13-2
+  for the unparsable grid.qmd (F5), Q-2-9 ×24 (F9) and Q-2-47. Its remaining
+  broken images are the footer's raw `/_extensions/…` `<img>` tags, which are
+  the extension-side finding F2.
+- **Phase 5.** Added a paragraph on non-bundled fragment paths to
+  `docs/guides/authoring/extensions.qmd` § Bundled files, and a
+  hub-client changelog entry.
