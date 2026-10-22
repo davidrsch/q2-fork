@@ -1,0 +1,44 @@
+---
+title: "Invalid draft-mode Value"
+description: "`draft-mode` must be `gone`, `unlinked`, or `visible`. Draft pages are treated as `gone` instead."
+code: Q-5-49
+subsystem: project
+status: complete
+since: "99.9.9"
+categories:
+  - project
+---
+
+# `Q-5-49` — Invalid draft-mode Value
+
+> `draft-mode` must be `gone`, `unlinked`, or `visible`. Draft pages
+> are treated as `gone` instead.
+
+## What this means
+
+`draft-mode` controls how pages marked `draft: true` appear in a
+rendered website:
+
+| Value | The draft page | Links to it |
+|---|---|---|
+| `gone` (default) | blank | removed |
+| `unlinked` | rendered, with a "Draft" banner | removed |
+| `visible` | rendered, with a "Draft" banner | kept |
+
+Any other value is reported with this warning on each draft page it
+applies to, and the page is treated as `gone`:
+
+```yaml
+# _quarto.yml
+website:
+  draft-mode: hidden      # Q-5-49: not one of gone / unlinked / visible
+```
+
+`draft-mode` can be set anywhere metadata can — `_quarto.yml` (as
+`draft-mode` or `website.draft-mode`), a directory's `_metadata.yml`,
+or a page's front matter — so the warning's location points at the
+value that applies to the page.
+
+## How to fix it
+
+Change the value to `gone`, `unlinked`, or `visible`.

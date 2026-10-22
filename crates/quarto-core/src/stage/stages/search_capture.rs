@@ -129,7 +129,7 @@ fn capture_record(
     let href = profile.output_href.clone();
 
     let is_html = crate::format::lua_format_for(&ctx.format.target_format) == "html";
-    if !is_html || !profile_is_indexable(profile) || !page_search_enabled(meta) {
+    if !is_html || !profile_is_indexable(&index, profile) || !page_search_enabled(meta) {
         return Some((href, CaptureRecord::Excluded));
     }
 

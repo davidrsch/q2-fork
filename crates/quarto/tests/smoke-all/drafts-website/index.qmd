@@ -1,0 +1,19 @@
+---
+title: Home
+_quarto:
+  render-project: true
+  tests:
+    html:
+      noErrors: true
+      # item2 is a `gone` draft: dropped from the navbar, and the body
+      # link to it keeps its text but loses the link (Quarto 1's
+      # resolveProjectInputLinks).
+      ensureHtmlElements:
+        - ['a.nav-link[href="index.html"]']
+        - ['a[href="item2.html"]']
+      ensureFileRegexMatches:
+        - ['the second item']
+        - []
+---
+
+A published page. See [the second item](item2.qmd).

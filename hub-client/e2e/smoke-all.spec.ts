@@ -45,7 +45,9 @@ test.describe('smoke-all E2E tests', () => {
   test.setTimeout(90000);
 
   for (const fixture of allTests) {
-    const skipReason = shouldSkip(fixture.runConfig, fixture.relPath);
+    const skipReason = fixture.renderProject
+      ? 'render-project fixture: asserts on a native whole-project render'
+      : shouldSkip(fixture.runConfig, fixture.relPath);
 
     for (const spec of fixture.formatSpecs) {
       const testName = `${fixture.relPath} [${spec.format}]`;

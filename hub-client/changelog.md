@@ -23,6 +23,12 @@ WASM rebuild is needed for a changelog-only edit.
 
 -->
 
+### 2026-10-22
+
+- [`0dd67e3e0`](https://github.com/quarto-dev/q2/commits/0dd67e3e0): Websites can list draft pages by path or glob pattern with `drafts` (or `website: drafts`), as an alternative to `draft: true` in each page.
+- [`c1c7b49b2`](https://github.com/quarto-dev/q2/commits/c1c7b49b2): Rendered websites no longer link to draft pages: drafts are dropped from the navbar, sidebar, page footer, listings, feeds and the sitemap, and links to them in page text keep their words but lose the link. Set `draft-mode: visible` to keep them linked; previews still show everything.
+- [`79f9ef3af`](https://github.com/quarto-dev/q2/commits/79f9ef3af): Rendered websites now publish draft pages as blank, unindexed pages by default, matching Quarto 1's `draft-mode: gone`; use `draft-mode: unlinked` to render them with the "Draft" banner instead. `draft-mode` can be set per directory or per page, and previews always show drafts in full.
+
 ### 2026-10-21
 
 - [`a43fb04b1`](https://github.com/quarto-dev/q2/commits/a43fb04b1): The placeholder shortcode no longer calls the retired svg2png.deno.dev service. It uses SVG for HTML and Typst, and a PNG drawn locally with typst for LaTeX and Word output; where typst is unavailable, as in the browser, a PNG placeholder now reports a clear error instead of failing obscurely.

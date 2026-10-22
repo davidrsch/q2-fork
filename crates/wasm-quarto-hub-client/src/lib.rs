@@ -20,6 +20,7 @@ use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 
 use quarto_core::overlay_runtime::RenderOverlay;
+use quarto_core::project::drafts::RenderAudience;
 use quarto_core::project::render_scripts::RenderHost;
 use quarto_core::{
     BinaryDependencies, DocumentInfo, Format, HtmlRenderConfig, ProjectConfig, ProjectContext,
@@ -2799,7 +2800,10 @@ async fn render_project_active_page_to_response(
                 runtime_arc,
                 renderer,
             )
-            .with_mode(RenderMode::ActivePage(active_canonical.clone()));
+            .with_mode(RenderMode::ActivePage(active_canonical.clone()))
+            // Every hub-client render is an authoring view: drafts are
+            // always visible (bd-2hy80x1j, `project::drafts`).
+            .with_audience(RenderAudience::Authoring);
             match pipeline.run().await {
                 Ok(s) => s,
                 Err(e) => return render_error_response(e),
@@ -2821,7 +2825,10 @@ async fn render_project_active_page_to_response(
                 runtime_arc,
                 renderer,
             )
-            .with_mode(RenderMode::ActivePage(active_canonical.clone()));
+            .with_mode(RenderMode::ActivePage(active_canonical.clone()))
+            // Every hub-client render is an authoring view: drafts are
+            // always visible (bd-2hy80x1j, `project::drafts`).
+            .with_audience(RenderAudience::Authoring);
             match pipeline.run().await {
                 Ok(s) => s,
                 Err(e) => return render_error_response(e),

@@ -498,6 +498,9 @@ pub fn render_blocking(job: RenderJob) -> RenderOutcome {
         typst_target,
         captures: job.captures.clone(),
         attribution_json: job.attribution_json.clone(),
+        // The preview's PDF and download routes are authoring views:
+        // drafts render whatever their `draft-mode` (bd-2hy80x1j).
+        audience: quarto_core::project::drafts::RenderAudience::Authoring,
         ..Default::default()
     };
 

@@ -1614,6 +1614,7 @@ fn main() -> Result<()> {
             // `q2 render` always executes; only `q2 preview --static`
             // narrows this (bd-sl79jjiq).
             execution_policy: quarto_core::engine::ExecutionPolicy::All,
+            audience: quarto_core::project::drafts::RenderAudience::Reading,
         }),
         Commands::Preview {
             path,

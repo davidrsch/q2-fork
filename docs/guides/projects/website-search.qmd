@@ -76,8 +76,8 @@ search configuration problem never fails a render.
 ## What gets indexed
 
 Every rendered HTML page, as the reader sees it: body text, headings,
-tables, callouts, code and its output. Drafts and the `404.html` page
-are left out. To keep a page out of the index without hiding it, set
+tables, callouts, code and its output. [Drafts](drafts.qmd) (unless
+their `draft-mode` is `visible`) and the `404.html` page are left out. To keep a page out of the index without hiding it, set
 `search: false` in its front matter:
 
 ```yaml

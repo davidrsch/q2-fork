@@ -120,7 +120,7 @@ pub(super) fn write_llms_artifacts(
     let pages: Vec<LlmsPage> = index
         .profiles()
         .iter()
-        .filter(|p| profile_has_companion(p))
+        .filter(|p| profile_has_companion(index, p))
         .filter_map(|profile| {
             companion_href(&profile.output_href).map(|md_href| LlmsPage { profile, md_href })
         })

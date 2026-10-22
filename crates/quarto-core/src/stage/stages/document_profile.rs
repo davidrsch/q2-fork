@@ -84,6 +84,30 @@ impl PipelineStage for DocumentProfileStage {
         let mut profile =
             DocumentProfile::extract(&doc.ast, &source_path, &output_href, &format_id);
 
+        // `drafts:` / `website.drafts` (bd-2hy80x1j): a page whose path
+        // matches is a draft, exactly as if it said `draft: true` — so
+        // the flag is folded into the merged metadata too, where the
+        // Pass-2 draft transform (banner / `gone`) reads it. Needs the
+        // `SourceContext` to anchor each pattern at its declaring file,
+        // so it lives here rather than in the pure `extract`. Bad
+        // patterns are reported by the draft transform, not here
+        // (profile-time diagnostics do not survive profile caching).
+        if crate::project::drafts::match_drafts_list(
+            &doc.ast.meta,
+            Some(&doc.ast_context.source_context),
+            &ctx.project.dir,
+            &source_path,
+        )
+        .matched
+        {
+            crate::project::drafts::mark_as_draft(&mut profile);
+            let source_info = doc.ast.meta.source_info.clone();
+            doc.ast.meta.insert_path(
+                &["draft"],
+                quarto_pandoc_types::ConfigValue::new_bool(true, source_info),
+            );
+        }
+
         // Drain the include side-channel populated by
         // `IncludeExpansionStage` into the profile so cache-key
         // construction and `bd-r82e` invalidation can see every

@@ -450,6 +450,7 @@ async fn render_project_request_resolved(
     // Whole-book: the data describes the active file only, so it is not used.
     let renderer = RenderToPandocRequestRenderer::new(prepare_options.clone(), renderer_captures)
         .with_attribution(if whole_book { None } else { attribution });
+    // The browser's export is an authoring view (bd-2hy80x1j).
     let mut pipeline = ProjectPipeline::with_renderer(
         &mut project,
         project_type,
@@ -457,7 +458,8 @@ async fn render_project_request_resolved(
         format_str,
         runtime,
         renderer,
-    );
+    )
+    .with_audience(crate::project::drafts::RenderAudience::Authoring);
 
     if whole_book {
         let mut outcome = pipeline

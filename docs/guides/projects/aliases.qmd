@@ -90,9 +90,9 @@ than guessing.
 
 ## Drafts
 
-A page marked `draft: true` writes no redirects. A live URL pointing at
-an unfinished page would reveal its existence, which defeats the point
-of marking it a draft.
+A [draft](drafts.qmd) page writes no redirects, whatever its
+`draft-mode`. A live URL pointing at an unfinished page would reveal its
+existence, which defeats the point of marking it a draft.
 
 ## When aliases conflict
 

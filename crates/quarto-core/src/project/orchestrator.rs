@@ -44,6 +44,7 @@ use quarto_error_reporting::{DiagnosticKind, DiagnosticMessage, DiagnosticMessag
 
 use crate::Result;
 
+use super::drafts::{DraftView, RenderAudience};
 use super::index::ProjectIndex;
 use super::{ProjectContext, ProjectKind};
 
@@ -1006,6 +1007,11 @@ pub struct ProjectPipeline<'a, R: Pass2Renderer> {
     /// Explicit Pass-2 worker-count override (`with_jobs`). `None`
     /// ⇒ use the `QUARTO_JOBS`/auto default via [`worker_count`].
     jobs: Option<usize>,
+    /// Who this render is for (`project::drafts`). Default `Reading`;
+    /// authoring views (hub-client, `q2 preview --static`) set
+    /// `Authoring` via [`with_audience`](Self::with_audience), which
+    /// makes every draft `visible`.
+    audience: RenderAudience,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1033,6 +1039,7 @@ impl<'a> ProjectPipeline<'a, RenderToFileRenderer<'a>> {
             runtime,
             RenderToFileRenderer::new(options),
         )
+        .with_audience(options.audience)
     }
 
     /// Set the CLI `--to` override (bd-l6itt34u minimal slice). When `Some`,
@@ -1543,7 +1550,7 @@ impl<'a> ProjectPipeline<'a, RenderToFileRenderer<'a>> {
         extras: crate::project::book::single_file_render::BookFileExtras<'_>,
     ) -> Result<crate::project::book::single_file_render::BookFileOutcome> {
         let (profiles, _pass1_failures) = self.pass_one().await;
-        let index = Arc::new(ProjectIndex::new(profiles));
+        let index = Arc::new(self.build_index(profiles));
         self.project_type
             .pre_render(self.project, &index, self.runtime.as_ref())
             .await
@@ -1596,7 +1603,7 @@ impl<'a> ProjectPipeline<'a, RenderToFileRenderer<'a>> {
                 stopped_early: true,
             });
         }
-        let index = Arc::new(ProjectIndex::new(profiles));
+        let index = Arc::new(self.build_index(profiles));
         self.project_type
             .pre_render(self.project, &index, self.runtime.as_ref())
             .await
@@ -1726,7 +1733,7 @@ impl<'a> ProjectPipeline<'a, RenderToFileRenderer<'a>> {
                 stopped_early: true,
             });
         }
-        let index = Arc::new(ProjectIndex::new(profiles));
+        let index = Arc::new(self.build_index(profiles));
         self.project_type
             .pre_render(self.project, &index, self.runtime.as_ref())
             .await
@@ -1887,6 +1894,7 @@ impl<'a, R: Pass2Renderer> ProjectPipeline<'a, R> {
             renderer,
             fail_fast: false,
             jobs: None,
+            audience: RenderAudience::default(),
         }
     }
 
@@ -1925,6 +1933,20 @@ impl<'a, R: Pass2Renderer> ProjectPipeline<'a, R> {
     pub fn with_jobs(mut self, jobs: usize) -> Self {
         self.jobs = Some(jobs);
         self
+    }
+
+    /// Set who this render is for. See [`RenderAudience`].
+    pub fn with_audience(mut self, audience: RenderAudience) -> Self {
+        self.audience = audience;
+        self
+    }
+
+    /// Build the Pass-2 [`ProjectIndex`] with this render's draft view.
+    fn build_index(&self, profiles: Vec<crate::document_profile::DocumentProfile>) -> ProjectIndex {
+        ProjectIndex::new(profiles).with_draft_view(DraftView::new(
+            self.audience,
+            self.project.project_kind() == ProjectKind::Website,
+        ))
     }
 
     /// Read-only view of the project-wide artifact accumulator
@@ -2091,7 +2113,7 @@ impl<'a, R: Pass2Renderer> ProjectPipeline<'a, R> {
             ));
         }
 
-        let index = Arc::new(ProjectIndex::new(profiles));
+        let index = Arc::new(self.build_index(profiles));
 
         // Fail-fast barrier: if Pass-1 surfaced any error, stop before
         // running the `pre_render` hook, Pass-2, `post_render`, resource
@@ -2428,7 +2450,7 @@ impl<'a, R: Pass2Renderer> ProjectPipeline<'a, R> {
     ) -> crate::pandoc_request::render::PandocRequestOutcome {
         use crate::pandoc_request::render::PandocRequestOutcome;
         let (profiles, _pass1_failures) = self.pass_one().await;
-        let index = Arc::new(ProjectIndex::new(profiles));
+        let index = Arc::new(self.build_index(profiles));
         if let Err(e) = self
             .project_type
             .pre_render(self.project, &index, self.runtime.as_ref())
