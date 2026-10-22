@@ -2,19 +2,19 @@
 title: 'Diagram cells: honour fig-align (bd-2pmjmjmj)'
 date: 2026-10-22
 description: 'Stop rejecting fig-align on mermaid cells with Q-2-47, and decide whether q2 should apply it as alignment (Quarto 1 mostly does not in HTML).'
-status: draft  # Investigation — pending design alignment with user; do not implement before the go-ahead
+status: in-review  # Implemented; PR open
 braid:
   strand: bd-2pmjmjmj
 ---
 
 **Branch:** `braid/bd-2pmjmjmj-diagram-fig-align` (topic branch in the main checkout, based on `main` @ `8ddbf8b17`)
-**Do not start implementation until the user gives the go-ahead.**
+**Implemented 2026-10-22** (go-ahead given); see § Implementation.
 
 ## Triage verdict
 
 **Ready to implement once the remaining question below is answered.** The 2026-10-22 design answers are recorded under § Decisions. One premise in the strand does not hold up: Quarto 1 never honours the **cell option** `fig-align` on a diagram in HTML, whether the cell is labelled or not. Quarto 1 honours only the **document-level** `fig-align`, and only on labelled floats, where it even overrides a conflicting cell option. Fixtures: `q1-cell-option.qmd` and `q1-document-option.qmd`.
 
-**Pre-flight at HEAD** (`cargo xtask verify --skip-hub-build`): all Rust tests passed (17226). Two hub-client wasm tests failed, both outside this area: `importDocument … writer-bugs-docx` (footnote text) and `applyNodeEdit … DefinitionList round-trip`. The likely cause is a stale wasm build under `--skip-hub-build`. This is unconfirmed.
+**Pre-flight at HEAD** (`cargo xtask verify --skip-hub-build`): all Rust tests passed (17226). Two hub-client wasm tests failed, both outside this area: `importDocument … writer-bugs-docx` (footnote text) and `applyNodeEdit … DefinitionList round-trip`. Confirmed later: both pass once the WASM is rebuilt (`npm run build:wasm`), so they were stale-build artifacts of `--skip-hub-build`, not real failures.
 
 ## Issue context
 
@@ -78,15 +78,20 @@ The handler turns `fig-align` into `layout-align` on the `.cell` div (`src/core/
 4. **Mermaid only.** Drop `dot` from the strand title and acceptance criteria.
 5. **`default` means `center`.** Any value other than `left`, `center`, `right` or `default` warns.
 
-## Proposed phases (draft)
+## Implementation
 
-- Phase 0: tests first. Add a codeblock_shorthand unit test where `fig-align` on a diagram cell draws no Q-2-47, and keep the existing `echo` test showing that unknown keys still warn. Add a smoke-all fixture that asserts the wrapper class for left, center and right on the caption and float paths.
-- Phase 1: accept the key. Add `fig-align` to `DIAGRAM_OPTION_KEYS` and consume it. Fix the hint text, which lists the accepted keys.
-- Phase 2 (if Q1 = apply it): carry the value to `crossref_render`. One option is a `fig-align` attribute on the wrapper (`Wrapper::Float` attributes / `Figure` attr), which `render_float_ref_target` and `wrap_standalone_figure` read when no image supplied one. Check that `.quarto-figure-left > figure > div` gives a `pre.mermaid` SVG the expected `text-align`.
-- Phase 3: the bare cell (decision 2). `fig-align` alone wraps the diagram in an uncaptioned `quarto-figure-<align>` div, or puts a class on the `pre.mermaid`. Choose whichever stays closer to the existing wrapper shapes.
-- Phase 3b: revealjs (decision 3). Add CSS so the client-rendered SVG follows the wrapper class.
-- Phase 3c: validate the value (decision 5). `default` becomes `center`; any other value warns.
-- Phase 4: docs. Mention `fig-align` wherever the diagram cell options are documented.
+What shipped, and where it departs from the draft phases.
+
+- [x] **Carrier: an attribute on the code block, not the wrapper.** `codeblock_shorthand` consumes `fig-align` on a mermaid cell and puts it on the code block as a `fig-align` attribute, which is how an image carries the same option. Every position then works through existing machinery:
+  - `crossref_render` (`harvest_figure_attrs`) treats a mermaid code block like the float's first image. It moves the value onto the `quarto-figure-<align>` wrapper class and strips it from the block. This covers numbered floats and unlabelled captioned figures.
+  - A **bare** diagram has no wrapper to harvest it. `MermaidRenderTransform` turns the leftover attribute into a class on `<pre class="mermaid quarto-figure-<align>">`. Q1 does the same for bare images (`quarto-post/html.lua`\'s Image handler). The values are allow-listed, because the attribute form `{.mermaid fig-align=...}` skips cell-option validation.
+  - The **preview** runs no `crossref_render`, so the attribute reaches `MermaidCodeBlock.tsx` in every position. It becomes `text-align` on the diagram container.
+- [x] **Validation.** `left`, `center` and `right` pass through; `default` becomes `center`. Any other value draws the new **Q-2-57** at the value and is dropped. Q-2-47's accepted-key list, its catalog message and its doc page now include `fig-align`.
+- [x] **CSS: the main surprise.** q2 emitted `quarto-figure-<align>` classes but shipped **no CSS for them**. Q1's `.quarto-figure-<align> > figure > p/div` rules (`_quarto-rules.scss` L105–130) were never ported; the inventory filed them under bd-9fz5fweg, which was blocked on the class taxonomy. So no figure in q2 aligned visibly, images included. This strand adds only the diagram slice: rules that give `pre.mermaid > svg` `display: block` and auto margins, the same technique as Q1's `fixupAlignment` (`core/svg.ts`). They appear in both `_bootstrap-rules.scss` and `quarto-revealjs.scss`, keyed on the wrapper class or the `<pre>` class. The general image rules stay with bd-9fz5fweg, where q2's different `<figure>` DOM needs its own selector work: the `<img>` is a direct child of `<figure>`, not wrapped in a `<p>`.
+  - Side effect: a **captioned diagram without `fig-align`** used to render left-aligned, even though its wrapper always said `quarto-figure-center`. It now renders centered, matching Q1. An uncaptioned diagram without the option keeps the plain `<pre class="mermaid">` and still sits at the start of the line.
+- [x] **Tests.** `codeblock_shorthand` covers bare, figure and float carriage, `default`, Q-2-57, and an executable cell left untouched. `crossref_render` covers mermaid harvesting. `mermaid.rs` covers the bare class and the allow-list. `MermaidCodeBlock.test.tsx` covers the preview alignment. Two smoke-all fixtures, `mermaid/fig-align.qmd` and `mermaid/fig-align-revealjs.qmd`, check classes and the absence of Q-2-47/48/57. I checked that the negated warning assertion fails on a bad value.
+- [x] **Visual check** (headless Chromium, measuring SVG versus `<pre>` box). In HTML, the right float and the bare right diagram are flush right, the left figure is flush left, and `default` has equal gaps on both sides. Revealjs matches.
+- [x] **Docs.** The diagrams guide has a new § Alignment and a Quarto 1 difference note. Added a Q-2-57 page and updated the Q-2-47 page.
 
 ## Open design questions for the user
 

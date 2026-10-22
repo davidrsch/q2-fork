@@ -1,0 +1,44 @@
+---
+title: "Invalid `fig-align` value on a diagram cell"
+description: "A diagram's `fig-align` must be `left`, `center`, `right`, or `default`."
+code: Q-2-57
+subsystem: markdown
+status: stub
+since: "99.9.9"
+categories:
+  - markdown
+---
+
+# `Q-2-57` — Invalid `fig-align` value on a diagram cell
+
+> A diagram cell's `fig-align` must be `left`, `center`, `right`, or
+> `default`; any other value is ignored.
+
+## What this means
+
+`fig-align` places a diagram on the page:
+
+```` markdown
+```mermaid
+%%| fig-align: left
+flowchart LR
+  A --> B
+```
+````
+
+Quarto understands four values. `left`, `center`, and `right` say where
+the diagram goes; `default` means `center`. Any other value raises this
+warning, and Quarto ignores the option: the diagram is placed as if
+`fig-align` were absent.
+
+## How to fix
+
+Change the value to one of the four. A common slip is a word from
+another vocabulary, such as `middle` or `start`. CSS-style values are
+not accepted either.
+
+## Related
+
+- [`Q-2-47`](Q-2-47.qmd) — an option a diagram cell does not
+  understand at all.
+- [Diagrams guide](../../guides/authoring/diagrams.qmd#alignment)

@@ -58,7 +58,7 @@
 //!   and `<reftype>-cap` (the `<reftype>` set comes from the
 //!   [`RefTypeRegistry`], so user-declared categories work out of the
 //!   box), plus `fig-scap` on the unlabelled figure path and `fig-alt`
-//!   on a diagram cell.
+//!   and `fig-align` on a diagram cell.
 //! - **Passed to the engine** — left in the body. This is everything
 //!   else (`echo`, `eval`, engine-specific options), *and* any
 //!   recognized key q2 has nowhere to put in this position. Consuming
@@ -214,6 +214,17 @@ fn try_desugar_code_block(
         None
     };
 
+    // Alignment (bd-2pmjmjmj), also independent of any wrapper: on a
+    // diagram, `fig-align` becomes a `fig-align` attribute on the code
+    // block — the carrier an image uses for the same option — so
+    // `crossref_render` harvests it onto whichever figure wrapper the
+    // cell gets, and a bare diagram keeps it for the mermaid transform.
+    let fig_align = if is_diagram_language(&language) {
+        consume("fig-align".to_string()).and_then(|v| diagram_fig_align(v, diagnostics))
+    } else {
+        None
+    };
+
     // A diagram cell has no engine to hand the leftovers to (decision 4).
     if is_diagram_language(&language) {
         warn_unconsumed_options(&parsed, &consumed, diagnostics);
@@ -227,8 +238,12 @@ fn try_desugar_code_block(
     if let Some(description) = acc_descr {
         text = inject_acc_descr(&text, &description);
     }
+    let mut attr = cb.attr.clone();
+    if let Some(align) = fig_align {
+        attr.2.insert("fig-align".to_string(), align);
+    }
     let new_code_block = Block::CodeBlock(quarto_pandoc_types::block::CodeBlock {
-        attr: cb.attr.clone(),
+        attr,
         text,
         source_info: cb.source_info.clone(),
         attr_source: cb.attr_source.clone(),
@@ -274,8 +289,8 @@ fn try_desugar_code_block(
                 attr_source: AttrSourceInfo::empty(),
             })
         }
-        // Nothing to wrap — the cell was rewritten in place (today only
-        // by the accessibility injection).
+        // Nothing to wrap — the cell was rewritten in place (by the
+        // accessibility injection and/or the `fig-align` attribute).
         Wrapper::None => new_code_block,
     })
 }
@@ -392,7 +407,37 @@ fn is_diagram_language(language: &str) -> bool {
 /// they warn here — correctly, today. The mermaid theming strands
 /// (bd-sehm2rha, bd-nj25kgbu) should add `theme` when they land, or
 /// authors who follow Q1 will get a warning for an option that works.
-const DIAGRAM_OPTION_KEYS: &[&str] = &["label", "fig-cap", "fig-scap", "fig-alt"];
+const DIAGRAM_OPTION_KEYS: &[&str] = &["label", "fig-cap", "fig-scap", "fig-alt", "fig-align"];
+
+/// The alignment a diagram cell's `fig-align` asks for, or `None` (with a
+/// `Q-2-57` warning) when the value is not one q2 understands.
+///
+/// `default` means `center`, the alignment a figure gets when nothing
+/// sets one. Unlike Q1 — which diverts the cell option to the `.cell`
+/// div's `layout-align`, where only panel layouts read it — q2 applies
+/// it to every diagram, captioned or not (bd-2pmjmjmj).
+fn diagram_fig_align(
+    option: &OptionValue,
+    diagnostics: &mut Vec<DiagnosticMessage>,
+) -> Option<String> {
+    match option.value.as_str() {
+        "left" | "center" | "right" => Some(option.value.clone()),
+        "default" => Some("center".to_string()),
+        other => {
+            diagnostics.push(
+                DiagnosticMessageBuilder::warning("Invalid `fig-align` value on a diagram cell")
+                    .with_code("Q-2-57")
+                    .with_location(option.value_source.clone())
+                    .problem(format!(
+                        "`{other}` is not an alignment, so the option is ignored."
+                    ))
+                    .add_hint("Use `left`, `center`, `right`, or `default`.")
+                    .build(),
+            );
+            None
+        }
+    }
+}
 
 /// Report options a diagram cell carried but nothing acted on
 /// (decision 4).
@@ -427,7 +472,7 @@ fn warn_unconsumed_options(
         let hint = if recognized {
             "Remove it, or move it to a position where it applies."
         } else {
-            "Diagram cells accept `label`, `fig-cap`, `fig-scap`, and `fig-alt`. \
+            "Diagram cells accept `label`, `fig-cap`, `fig-scap`, `fig-alt`, and `fig-align`. \
              A diagram has no execution engine, so other options have nowhere to go."
         };
         diagnostics.push(
@@ -1455,6 +1500,104 @@ mod tests {
             "got {:?}",
             diagnostics[0]
         );
+    }
+
+    /// The code block a desugared cell ends up as, wherever the wrapper
+    /// put it.
+    fn diagram_code_block(block: &Block) -> &quarto_pandoc_types::block::CodeBlock {
+        match block {
+            Block::CodeBlock(cb) => cb,
+            Block::Div(d) => diagram_code_block(&d.content[0]),
+            Block::Figure(f) => diagram_code_block(&f.content[0]),
+            other => panic!("expected a diagram code block; got {other:?}"),
+        }
+    }
+
+    /// bd-2pmjmjmj: `fig-align` on a diagram is consumed (no Q-2-47) and
+    /// travels as a `fig-align` attribute on the code block — the same
+    /// carrier an image uses — in every wrapper position, including the
+    /// bare cell, which Q1 leaves unaligned.
+    #[test]
+    fn diagram_fig_align_becomes_a_code_block_attribute() {
+        let reg = RefTypeRegistry::builtin();
+        for (options, wrapper) in [
+            ("%%| fig-align: left\n", "bare"),
+            ("%%| fig-cap: Cap.\n%%| fig-align: left\n", "figure"),
+            (
+                "%%| label: fig-a\n%%| fig-cap: Cap.\n%%| fig-align: left\n",
+                "float",
+            ),
+        ] {
+            let mut blocks = vec![code_in(
+                "mermaid",
+                &format!("{options}flowchart LR\n  A --> B\n"),
+            )];
+            let diagnostics = desugar_collecting(&mut blocks, &reg);
+            assert!(diagnostics.is_empty(), "{wrapper}: got {diagnostics:?}");
+
+            let cb = diagram_code_block(&blocks[0]);
+            assert_eq!(
+                cb.attr.2.get("fig-align").map(String::as_str),
+                Some("left"),
+                "{wrapper}: got {:?}",
+                cb.attr
+            );
+            assert!(
+                !cb.text.contains("fig-align"),
+                "{wrapper}: a consumed option must leave the diagram source; got:\n{}",
+                cb.text
+            );
+        }
+    }
+
+    /// `default` is the alignment a figure gets when nothing sets one.
+    #[test]
+    fn diagram_fig_align_default_means_center() {
+        let reg = RefTypeRegistry::builtin();
+        let mut blocks = vec![code_in("mermaid", "%%| fig-align: default\nflowchart LR\n")];
+        assert!(desugar_collecting(&mut blocks, &reg).is_empty());
+        let cb = diagram_code_block(&blocks[0]);
+        assert_eq!(
+            cb.attr.2.get("fig-align").map(String::as_str),
+            Some("center")
+        );
+    }
+
+    /// Any other value warns with Q-2-57 at the value, and is dropped
+    /// rather than reaching the output.
+    #[test]
+    fn diagram_fig_align_invalid_value_warns() {
+        let reg = RefTypeRegistry::builtin();
+        let mut blocks = vec![code_in(
+            "mermaid",
+            "%%| fig-cap: Cap.\n%%| fig-align: middle\nflowchart LR\n",
+        )];
+        let diagnostics = desugar_collecting(&mut blocks, &reg);
+
+        assert_eq!(diagnostics.len(), 1, "got {diagnostics:?}");
+        let d = &diagnostics[0];
+        assert_eq!(d.code.as_deref(), Some("Q-2-57"));
+        assert!(format!("{d:?}").contains("middle"), "got {d:?}");
+        assert!(d.location.is_some(), "got {d:?}");
+
+        let cb = diagram_code_block(&blocks[0]);
+        assert!(!cb.attr.2.contains_key("fig-align"), "got {:?}", cb.attr);
+        assert!(!cb.text.contains("fig-align"), "got:\n{}", cb.text);
+    }
+
+    /// On an executable cell `fig-align` is the engine's to read: it
+    /// stays in the body, and no attribute is added.
+    #[test]
+    fn executable_cell_fig_align_is_left_for_the_engine() {
+        let reg = RefTypeRegistry::builtin();
+        let mut blocks = vec![code_in(
+            "{python}",
+            "#| label: fig-p\n#| fig-cap: A plot.\n#| fig-align: left\nplot()\n",
+        )];
+        assert!(desugar_collecting(&mut blocks, &reg).is_empty());
+        let cb = diagram_code_block(&blocks[0]);
+        assert!(cb.text.contains("#| fig-align: left"), "got:\n{}", cb.text);
+        assert!(!cb.attr.2.contains_key("fig-align"), "got {:?}", cb.attr);
     }
 
     /// A brace-form executable cell still resolves to its language's

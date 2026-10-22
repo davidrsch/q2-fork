@@ -578,6 +578,32 @@ section.has-dark-background {
   }
 }
 
+// --- diagram alignment ------------------------------------------------------
+// Diagram alignment (bd-2pmjmjmj). mermaid.js swaps a `pre.mermaid`'s
+// text for an inline <svg>; align that box with margins, as Q1's
+// `fixupAlignment` (core/svg.ts) does in revealjs. The class sits on the
+// figure wrapper (`.quarto-figure-<align>`) or, for a bare diagram, on the
+// <pre> itself. Kept in step with the Bootstrap copy in
+// `resources/scss/bootstrap/_bootstrap-rules.scss`.
+.quarto-figure-left pre.mermaid > svg,
+pre.mermaid.quarto-figure-left > svg {
+  display: block;
+  margin-left: 0;
+  margin-right: auto;
+}
+.quarto-figure-center pre.mermaid > svg,
+pre.mermaid.quarto-figure-center > svg {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+.quarto-figure-right pre.mermaid > svg,
+pre.mermaid.quarto-figure-right > svg {
+  display: block;
+  margin-left: auto;
+  margin-right: 0;
+}
+
 // --- edge navigation-control spacing (we default controlsLayout: edges) ------
 @media screen and (min-width: 500px) {
   $arrow-spacing: 0.2em;

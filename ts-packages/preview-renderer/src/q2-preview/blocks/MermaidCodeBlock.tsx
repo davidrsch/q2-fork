@@ -84,7 +84,20 @@ export function setMermaidLoaderForTests(loader: MermaidLoader | null): void {
  */
 let renderSeq = 0;
 
-const MermaidDiagram = ({ code }: { code: string }) => {
+/**
+ * bd-2pmjmjmj: a diagram cell's `%%| fig-align` arrives as a `fig-align`
+ * attribute on the CodeBlock (the preview pipeline has no
+ * `crossref_render` to harvest it onto a figure wrapper). The rendered
+ * SVG is an inline box capped by `max-width`, so `text-align` on its
+ * container places it. Allow-listed: the attribute form
+ * (`{.mermaid fig-align=...}`) skips the cell option's validation.
+ */
+function figAlign(attrs: [string, string][]): 'left' | 'center' | 'right' | undefined {
+    const value = attrs.find(([key]) => key === 'fig-align')?.[1];
+    return value === 'left' || value === 'center' || value === 'right' ? value : undefined;
+}
+
+const MermaidDiagram = ({ code, align }: { code: string; align?: 'left' | 'center' | 'right' }) => {
     const ref = useRef<HTMLDivElement | null>(null);
     const [error, setError] = useState<string | null>(null);
 
@@ -116,14 +129,21 @@ const MermaidDiagram = ({ code }: { code: string }) => {
         );
     }
 
-    return <div ref={ref} className="mermaid-diagram" data-mermaid-diagram="" />;
+    return (
+        <div
+            ref={ref}
+            className="mermaid-diagram"
+            data-mermaid-diagram=""
+            style={align ? { textAlign: align } : undefined}
+        />
+    );
 };
 
 export const MermaidCodeBlock = (args: NodeArgs<CodeBlockType>) => {
     const { node } = args;
     const ctx = useContext(PreviewContext);
     const anchorRef = useCommentAnchorRef(node);
-    const [[, classes], code] = node.c;
+    const [[, classes, attrs], code] = node.c;
 
     if (!classes.includes('mermaid')) {
         return <CodeBlock {...args} />;
@@ -140,7 +160,7 @@ export const MermaidCodeBlock = (args: NodeArgs<CodeBlockType>) => {
 
     return (
         <div ref={anchorRef} className="mermaid-diagram-container" {...affordanceAttr} {...dataLocProps(node)}>
-            <MermaidDiagram code={code} />
+            <MermaidDiagram code={code} align={figAlign(attrs)} />
         </div>
     );
 };
