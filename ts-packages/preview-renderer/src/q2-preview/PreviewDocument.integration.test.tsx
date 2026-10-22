@@ -858,3 +858,49 @@ describe('PreviewDocument draft alert (bd-3cpv7dah)', () => {
         expect(container.querySelector('#quarto-draft-alert')).toBeNull();
     });
 });
+
+describe('PreviewDocument skip-to-content link (bd-21n09dwj)', () => {
+    // Mirrors template.rs `SKIP_LINK_PARTIAL`: the first element of the
+    // page, ahead of the draft banner and site header, targeting `<main>`.
+    // The label is the `skip-to-content` term from the resolved language
+    // table the preview AST carries at `meta.quarto.language`.
+    const NAVBAR = '<nav class="navbar"><span>site</span></nav>';
+    const withTerm = (term: string) => ({
+        quarto: mm({ language: mm({ 'skip-to-content': ms(term) }) }),
+    });
+
+    it('renders the link ahead of the draft banner and header', () => {
+        const { container } = mount({
+            ...withTerm('Skip to main content'),
+            rendered: mm({
+                'draft-alert-text': ms('Draft'),
+                navigation: mm({ navbar: ms(NAVBAR) }),
+            }),
+        });
+        const link = container.querySelector('a#quarto-skip-link');
+        expect(link).not.toBeNull();
+        expect(link!.className).toBe('visually-hidden-focusable');
+        expect(link!.getAttribute('href')).toBe('#quarto-document-content');
+        expect(link!.textContent).toBe('Skip to main content');
+        expect(container.querySelector('a, div, header')).toBe(link);
+    });
+
+    it('uses the localized term, as text', () => {
+        const { container } = mount(withTerm('Aller au <contenu> & plus'));
+        const link = container.querySelector('a#quarto-skip-link')!;
+        expect(link.textContent).toBe('Aller au <contenu> & plus');
+        expect(link.children).toHaveLength(0);
+    });
+
+    it('falls back to English without a language table', () => {
+        const { container } = mount({});
+        expect(container.querySelector('a#quarto-skip-link')!.textContent).toBe(
+            'Skip to main content',
+        );
+    });
+
+    it('is absent in minimal mode, like the minimal template', () => {
+        const { container } = mount({ minimal: mb(true), ...withTerm('Skip') });
+        expect(container.querySelector('#quarto-skip-link')).toBeNull();
+    });
+});

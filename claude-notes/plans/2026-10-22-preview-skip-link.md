@@ -2,13 +2,12 @@
 title: 'Preview: render the skip-to-content link in hub-client preview (bd-21n09dwj)'
 date: 2026-10-22
 description: 'Decide whether the q2-preview iframe renders the skip-to-content link that render emits since bd-rbd3jq4n, and turn the red hub smoke-all E2E job green either way.'
-status: draft  # Investigation — pending design alignment with user; do not implement before the go-ahead
+status: in-progress
 braid:
   strand: bd-21n09dwj
 ---
 
 **Branch:** `braid/bd-21n09dwj-preview-skip-link` (topic branch in the main checkout, no worktree; based on `main` @ `a5f86afdc`)
-**Do not start implementation until the user gives the go-ahead.**
 
 ## Triage verdict
 
@@ -105,62 +104,54 @@ and the `#quarto-skip-link:focus` rule from bd-rbd3jq4n's SCSS would apply.
 The label needs `language.skip-to-content`. The draft-alert path already
 reads language terms React-side, so follow `DraftAlertSlot` for that.
 
-## Proposed phases (draft)
+## Decisions (2026-10-22, with the user)
 
-These depend on design question 1.
+1. **Render in preview (Option A).** With decisions 3 and 5 below, A
+   needs less new code than B, which would have needed a per-selector
+   exemption mechanism in the E2E runner.
+2. **No stopgap.** Don't add `DOM_ASSERTIONS_PENDING_PARITY` entries; fix
+   the job directly.
+3. **Keep the link inside React's `#root`, and relax the fixtures.** Drop
+   `body >` / `:first-child` from the skip-link selectors. Render's "first
+   element of body" guarantee moves into an `ensureFileRegexMatches`
+   regex, which both runners evaluate against the full render.
+4. **General focus fix.** Every intercepted `#frag` jump focuses its
+   target when the target can take focus. `focus()` is a no-op otherwise,
+   so heading targets behave as before.
+5. **Every q2-preview context**, with no embed-only condition.
 
-**Option A — render in preview:**
+## Implementation (as built)
 
-- Phase 0 — Tests: a unit test that `PreviewDocument` emits the link
-  (localized, escaped by React), plus an E2E check that activating the link
-  moves focus to `<main>`.
-- Phase 1 — Insert the link as `document.body`'s first child: a portal
-  or effect alongside `HeaderIncludesEffect`, outside `#root`. Skip it for
-  minimal/theme-none, as render does.
-- Phase 2 — Make `#quarto-document-content` (or any `#frag` whose target
-  is focusable) also `focus({preventScroll: true})` in the anchor handler.
-- Phase 3 — Reconcile the fixtures: the website fixture's
-  `~ header#quarto-header` sibling selector can't hold, so relax it or
-  list it under a preview-specific exemption.
-- Phase 4 — Update the stale "render-only (bd-21n09dwj)" comment in
-  `PreviewDocument.tsx:402`, and add a hub-client changelog entry.
+- `crates/quarto-core/tests/integration/preview_language_terms.rs`:
+  pins that the q2-preview AST carries `meta.quarto.language`
+  (`skip-to-content`, English and `lang: fr`). The preview label depends
+  on this.
+- `SkipLinkSlot` (`chromeSlots.tsx`), rendered as the first element of
+  the non-minimal branch of `PreviewDocument`. The label comes from
+  `meta.quarto.language['skip-to-content']`, falling back to "Skip to
+  main content", and React escapes it.
+- `utils/jumpToAnchor.ts`: scroll plus `focus({preventScroll: true})`.
+  It is shared by all three anchor-scroll sites: the q2-preview
+  `entry.tsx`, `MorphIframe` (q2-html-render, which already showed
+  render's link with the same focus bug), and `DoubleBufferedIframe`.
+- Fixtures: the four failing fixtures are relaxed. `skip-link.qmd` gains
+  the `<body…>\s*<a id="quarto-skip-link"` regex, and the website
+  fixture keeps `a#quarto-skip-link ~ header#quarto-header`. That holds
+  in preview because the link and the header are siblings in the
+  fragment `PreviewDocument` returns.
 
-**Option B — stay render-only:**
+## Phases
 
-- Phase 1 — Add a narrow preview exemption for the body-anchored skip-link
-  selectors only, not the whole fixture. Either use a per-selector
-  allowlist in `smokeAllAssertions.ts`, or split the fixtures so the
-  body-anchored selectors live in a fixture marked as not applicable to
-  the hub runner.
-- Phase 2 — Record the divergence in the PreviewDocument comment and in
-  the bd-rbd3jq4n plan.
-
-**Either way, Phase −1 (stopgap):** if the design takes more than a day,
-add the four fixtures to `DOM_ASSERTIONS_PENDING_PARITY` under
-bd-21n09dwj to turn the job green now, and remove them when this strand
-closes.
-
-## Open design questions for the user
-
-1. **Render or exempt?** Should the q2-preview iframe render the skip link
-   (Option A), or should preview stay render-only, with the hub E2E runner
-   exempting the body-anchored selectors (Option B)? A favours the
-   preview-embed/reader surface. B avoids a second "Skip to main content"
-   stop in the editor, where hub-client's own `SkipLink` already exists.
-2. **Stopgap now?** Should I land the `DOM_ASSERTIONS_PENDING_PARITY`
-   entries for the four fixtures as a separate small PR today, so the
-   nightly goes green while the real fix is designed?
-3. **(If A) DOM placement.** Is inserting the link imperatively as
-   `document.body.firstChild` (outside React's `#root`) acceptable? The
-   alternative is to keep it inside `#root` and relax the fixtures to
-   `a#quarto-skip-link` with no `body >` anchoring.
-4. **(If A) Focus behaviour for fragment links.** Should the preview's
-   `#frag` handler move focus for every fragment link whose target is
-   focusable, or only for the skip link? Moving focus for every link is
-   closer to native browser behaviour.
-5. **(If A) Editor vs. embed.** Render the link in every q2-preview
-   context, or only in the `VITE_PREVIEW_EMBED` / reader build, where the
-   iframe is the whole page?
+- [x] Phase 0 — Tests first: the Rust preview-AST contract test,
+  `PreviewDocument` skip-link tests (order, localized and escaped,
+  fallback, absent in minimal), and `jumpToAnchor` tests (focuses a
+  focusable target, leaves focus alone otherwise).
+- [x] Phase 1 — `SkipLinkSlot` + label.
+- [x] Phase 2 — `jumpToAnchor` at the three call sites.
+- [x] Phase 3 — Relax the fixtures; the native smoke-all run passes.
+- [ ] Phase 4 — Hub E2E smoke-all for the skip-link fixtures
+  (chromium + firefox), and the full preview-renderer suites.
+- [ ] Phase 5 — hub-client changelog entry.
 
 ## Risks / tradeoffs (draft)
 
