@@ -977,10 +977,24 @@ fn write_inline<W: Write>(
         Inline::Image(image) => {
             write!(ctx, "<img src=\"{}\"", escape_html(&image.target.0))?;
             write!(ctx, " alt=\"")?;
-            // For alt text, we need to extract plain text from inlines
-            write_inlines_as_text(&image.content, ctx)?;
+            // An `alt` key-value is Pandoc's alt text and beats the alt
+            // inlines; writing both would emit `alt` twice. quarto-core's
+            // `image-alt-normalize` folds it into the inlines before the
+            // writer runs, so this only matters for bare pampa use.
+            let alt_kv = image.attr.2.get("alt");
+            match alt_kv {
+                Some(alt) => write!(ctx, "{}", escape_html(alt))?,
+                // For alt text, we need to extract plain text from inlines
+                None => write_inlines_as_text(&image.content, ctx)?,
+            }
             write!(ctx, "\"")?;
-            write_attr(&image.attr, ctx)?;
+            if alt_kv.is_some() {
+                let mut attr = image.attr.clone();
+                attr.2.remove("alt");
+                write_attr(&attr, ctx)?;
+            } else {
+                write_attr(&image.attr, ctx)?;
+            }
             if !image.target.1.is_empty() {
                 write!(ctx, " title=\"{}\"", escape_html(&image.target.1))?;
             }
@@ -1254,27 +1268,37 @@ fn write_inlines_as_text<W: Write>(
     inlines: &[Inline],
     ctx: &mut HtmlWriterContext<'_, W>,
 ) -> std::io::Result<()> {
-    for inline in inlines {
-        match inline {
-            Inline::Str(s) => write!(ctx, "{}", escape_html(&s.text))?,
-            Inline::Space(_) => write!(ctx, " ")?,
-            Inline::SoftBreak(_) | Inline::LineBreak(_) => write!(ctx, " ")?,
-            Inline::Emph(e) => write_inlines_as_text(&e.content, ctx)?,
-            Inline::Strong(s) => write_inlines_as_text(&s.content, ctx)?,
-            Inline::Underline(u) => write_inlines_as_text(&u.content, ctx)?,
-            Inline::Strikeout(s) => write_inlines_as_text(&s.content, ctx)?,
-            Inline::Superscript(s) => write_inlines_as_text(&s.content, ctx)?,
-            Inline::Subscript(s) => write_inlines_as_text(&s.content, ctx)?,
-            Inline::SmallCaps(s) => write_inlines_as_text(&s.content, ctx)?,
-            Inline::Span(span) => write_inlines_as_text(&span.content, ctx)?,
-            Inline::Quoted(q) => write_inlines_as_text(&q.content, ctx)?,
-            Inline::Code(c) => write!(ctx, "{}", escape_html(&c.text))?,
-            Inline::Link(link) => write_inlines_as_text(&link.content, ctx)?,
-            Inline::Image(image) => write_inlines_as_text(&image.content, ctx)?,
-            _ => {}
+    write!(ctx, "{}", escape_html(&inlines_as_text(inlines)))
+}
+
+/// The plain text of `inlines` as the writer renders text-only contexts
+/// (an image's `alt=`), unescaped.
+fn inlines_as_text(inlines: &[Inline]) -> String {
+    fn push(inlines: &[Inline], out: &mut String) {
+        for inline in inlines {
+            match inline {
+                Inline::Str(s) => out.push_str(&s.text),
+                Inline::Space(_) => out.push(' '),
+                Inline::SoftBreak(_) | Inline::LineBreak(_) => out.push(' '),
+                Inline::Emph(e) => push(&e.content, out),
+                Inline::Strong(s) => push(&s.content, out),
+                Inline::Underline(u) => push(&u.content, out),
+                Inline::Strikeout(s) => push(&s.content, out),
+                Inline::Superscript(s) => push(&s.content, out),
+                Inline::Subscript(s) => push(&s.content, out),
+                Inline::SmallCaps(s) => push(&s.content, out),
+                Inline::Span(span) => push(&span.content, out),
+                Inline::Quoted(q) => push(&q.content, out),
+                Inline::Code(c) => out.push_str(&c.text),
+                Inline::Link(link) => push(&link.content, out),
+                Inline::Image(image) => push(&image.content, out),
+                _ => {}
+            }
         }
     }
-    Ok(())
+    let mut out = String::new();
+    push(inlines, &mut out);
+    out
 }
 
 /// Build the `<li>`'s composed `Attr` for the current incremental state and any
@@ -1414,6 +1438,44 @@ impl QfCaptionKvs {
         }
         classes
     }
+}
+
+/// Whether a figure's `<figcaption>` only repeats its image's alt text
+/// (bd-ykjwiqcc D5). Pandoc's rule: when the figure holds a single image
+/// (directly, or as the only content of a link) whose alt text equals the
+/// caption's text, the figcaption is hidden from assistive tech so the text
+/// is announced once, and the `<img>` keeps its `alt`. The caption is
+/// compared as written, so a crossref float's "Figure 1: …" prefix keeps
+/// its figcaption exposed and the figure number stays announced.
+fn figcaption_duplicates_alt(figure: &crate::pandoc::Figure) -> bool {
+    let content = match figure.content.as_slice() {
+        [Block::Plain(p)] => &p.content,
+        [Block::Paragraph(p)] => &p.content,
+        _ => return false,
+    };
+    let image = match content.as_slice() {
+        [Inline::Image(image)] => image,
+        [Inline::Link(link)] => match link.content.as_slice() {
+            [Inline::Image(image)] => image,
+            _ => return false,
+        },
+        _ => return false,
+    };
+    // The caption's text, if it is one run of inlines (the reader's and
+    // the crossref renderer's shape); a multi-block caption is never a
+    // mere repeat of an alt text.
+    let caption = match figure.caption.long.as_deref() {
+        Some([Block::Plain(p)]) => &p.content,
+        Some([Block::Paragraph(p)]) => &p.content,
+        _ => return false,
+    };
+    // The alt text exactly as the `Inline::Image` arm writes it.
+    let alt = match image.attr.2.get("alt") {
+        Some(alt) => alt.clone(),
+        None => inlines_as_text(&image.content),
+    };
+    let alt = alt.trim();
+    !alt.is_empty() && alt == inlines_as_text(caption).trim()
 }
 
 fn read_qf_caption_kvs(kvs: &hashlink::LinkedHashMap<String, String>) -> Option<QfCaptionKvs> {
@@ -1655,6 +1717,11 @@ fn write_block<W: Write>(block: &Block, ctx: &mut HtmlWriterContext<'_, W>) -> s
             // and top/bottom placement. Contract:
             // claude-notes/designs/float-layout-class-taxonomy.md.
             let qf = read_qf_caption_kvs(&figure.attr.2);
+            let aria_hidden = if figcaption_duplicates_alt(figure) {
+                " aria-hidden=\"true\""
+            } else {
+                ""
+            };
             if let Some(qf) = &qf {
                 let stripped_attr = (
                     figure.attr.0.clone(),
@@ -1677,9 +1744,10 @@ fn write_block<W: Write>(block: &Block, ctx: &mut HtmlWriterContext<'_, W>) -> s
                     {
                         writeln!(
                             ctx,
-                            "<figcaption id=\"{}\" class=\"{}\">",
+                            "<figcaption id=\"{}\" class=\"{}\"{}>",
                             escape_html(&qf.caption_id),
-                            qf.caption_classes()
+                            qf.caption_classes(),
+                            aria_hidden
                         )?;
                         write_blocks(long_caption, ctx)?;
                         writeln!(ctx, "</figcaption>")?;
@@ -1703,7 +1771,7 @@ fn write_block<W: Write>(block: &Block, ctx: &mut HtmlWriterContext<'_, W>) -> s
                 if let Some(ref long_caption) = figure.caption.long
                     && !long_caption.is_empty()
                 {
-                    writeln!(ctx, "<figcaption>")?;
+                    writeln!(ctx, "<figcaption{}>", aria_hidden)?;
                     write_blocks(long_caption, ctx)?;
                     writeln!(ctx, "</figcaption>")?;
                 }
@@ -2031,6 +2099,84 @@ mod tests {
 
     fn dummy_source_info() -> SourceInfo {
         SourceInfo::for_test()
+    }
+
+    /// Read `qmd` and write it as HTML, the `pampa -t html` path (no
+    /// quarto-core transforms, so no `image-alt-normalize`).
+    fn qmd_to_html(qmd: &str) -> String {
+        let (pandoc, ctx, _) = crate::readers::qmd::read(
+            qmd.as_bytes(),
+            false,
+            "test.qmd",
+            &mut std::io::sink(),
+            true,
+            None,
+        )
+        .expect("qmd parses");
+        let mut output = Vec::new();
+        write(&pandoc, &ctx, &mut output).unwrap();
+        String::from_utf8(output).unwrap()
+    }
+
+    /// bd-ykjwiqcc: an `alt` key-value is Pandoc's alt text. It used to be
+    /// written after the alt inlines' `alt=""`, giving the `<img>` two
+    /// `alt` attributes (browsers keep the first, empty one).
+    #[test]
+    fn test_image_alt_key_value_is_the_single_alt_attribute() {
+        let html = qmd_to_html("Text ![](x.png){alt=\"KV\"} text.\n");
+        assert_eq!(html.matches(" alt=").count(), 1, "exactly one alt: {html}");
+        assert!(html.contains(" alt=\"KV\""), "the key-value wins: {html}");
+    }
+
+    #[test]
+    fn test_image_alt_key_value_beats_alt_inlines() {
+        let html = qmd_to_html("Text ![inlines](x.png){alt=\"KV\"} text.\n");
+        assert_eq!(html.matches(" alt=").count(), 1, "exactly one alt: {html}");
+        assert!(html.contains(" alt=\"KV\""), "the key-value wins: {html}");
+    }
+
+    #[test]
+    fn test_image_without_alt_key_value_uses_alt_inlines() {
+        let html = qmd_to_html("Text ![inlines](x.png) text.\n");
+        assert!(html.contains(" alt=\"inlines\""), "{html}");
+    }
+
+    /// The `<figcaption …>` open tag of `html`'s only figure.
+    fn figcaption_tag(html: &str) -> &str {
+        let start = html.find("<figcaption").expect("a figcaption");
+        &html[start..start + html[start..].find('>').unwrap() + 1]
+    }
+
+    /// bd-ykjwiqcc D5, Pandoc's rule: a figure whose image alt text is its
+    /// caption keeps the alt and hides the duplicate figcaption from
+    /// assistive tech, so the text is announced once.
+    #[test]
+    fn test_figcaption_duplicating_alt_is_aria_hidden() {
+        let html = qmd_to_html("![Cap One](x.png)\n");
+        assert!(html.contains(" alt=\"Cap One\""), "alt is kept: {html}");
+        assert_eq!(figcaption_tag(&html), "<figcaption aria-hidden=\"true\">");
+    }
+
+    #[test]
+    fn test_figcaption_duplicating_alt_compares_plain_text() {
+        // Markup in the caption does not make the announced text differ.
+        let html = qmd_to_html("![Cap *Three*](x.png)\n");
+        assert_eq!(figcaption_tag(&html), "<figcaption aria-hidden=\"true\">");
+    }
+
+    #[test]
+    fn test_figcaption_differing_from_alt_stays_exposed() {
+        let html = qmd_to_html("![Cap](x.png){alt=\"Something else\"}\n");
+        assert!(html.contains(" alt=\"Something else\""), "{html}");
+        assert_eq!(figcaption_tag(&html), "<figcaption>");
+    }
+
+    #[test]
+    fn test_figcaption_with_decorative_image_stays_exposed() {
+        // `alt=""` marks the image decorative; the caption is the only text.
+        let html = qmd_to_html("![Cap](x.png){alt=\"\"}\n");
+        assert!(html.contains(" alt=\"\""), "{html}");
+        assert_eq!(figcaption_tag(&html), "<figcaption>");
     }
 
     #[test]

@@ -122,3 +122,69 @@ describe('float figcaption synthesis (React renderer)', () => {
         expect(figcaption.className).toContain('quarto-uncaptioned');
     });
 });
+
+/** A plain (non-float) Figure: one image whose alt inlines are `alt`. */
+function imageFigureAst(alt: string, caption: string, kvs: [string, string][] = []): string {
+    const words = (text: string) =>
+        text
+            .split(' ')
+            .filter((w) => w.length > 0)
+            .flatMap((w, i) => (i === 0 ? [{ t: 'Str', c: w }] : [{ t: 'Space' }, { t: 'Str', c: w }]));
+    const figure = {
+        t: 'Figure',
+        c: [
+            ['', [], kvs],
+            [null, [{ t: 'Plain', c: words(caption), s: 2 }]],
+            [
+                {
+                    t: 'Plain',
+                    c: [{ t: 'Image', c: [['', [], []], words(alt), ['x.png', '']], s: 1 }],
+                    s: 1,
+                },
+            ],
+        ],
+        s: 0,
+    };
+    return JSON.stringify({
+        blocks: [figure],
+        meta: {},
+        'pandoc-api-version': [1, 23, 1],
+        astContext: {
+            files: [{ line_breaks: [10], name: '/t.qmd', total_length: 40 }],
+            p: [
+                { d: 0, r: [0, 40], t: 0 },
+                { d: 0, r: [0, 20], t: 0 },
+                { d: 0, r: [2, 10], t: 0 },
+            ],
+        },
+    });
+}
+
+// bd-ykjwiqcc D5 — the preview twin of pampa's `figcaption_duplicates_alt`:
+// a figcaption that only repeats the image's alt text is hidden from
+// assistive tech (Pandoc's rule) and the <img> keeps its alt.
+describe('figcaption repeating the alt text (React renderer)', () => {
+    it('is aria-hidden when it equals the alt text', () => {
+        const { container } = mountPreviewRoot(imageFigureAst('Cap One', 'Cap One'));
+        expect(container.querySelector('img')!.getAttribute('alt')).toBe('Cap One');
+        expect(container.querySelector('figcaption')!.getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('stays exposed when the alt text differs', () => {
+        const { container } = mountPreviewRoot(imageFigureAst('Alt B', 'Caption B'));
+        expect(container.querySelector('img')!.getAttribute('alt')).toBe('Alt B');
+        expect(container.querySelector('figcaption')!.hasAttribute('aria-hidden')).toBe(false);
+    });
+
+    it('stays exposed for a decorative (empty-alt) image', () => {
+        const { container } = mountPreviewRoot(imageFigureAst('', 'Cap'));
+        expect(container.querySelector('figcaption')!.hasAttribute('aria-hidden')).toBe(false);
+    });
+
+    it('stays exposed for a crossref caption carrying its number', () => {
+        const { container } = mountPreviewRoot(
+            imageFigureAst('Cap', 'Figure 1: Cap', BOTTOM_KVS),
+        );
+        expect(container.querySelector('figcaption')!.hasAttribute('aria-hidden')).toBe(false);
+    });
+});

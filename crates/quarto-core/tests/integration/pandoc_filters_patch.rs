@@ -4,6 +4,9 @@
 //!
 //! T6.1a/T6.1b/T6.1c per the P3 Task 6 test seam spec
 //! (`.superpowers/sdd/2026-09-18-pandoc-hybrid-P3-implementation/task-6-brief.md`).
+//!
+//! The marker inventory also covers later upstream backports carried the
+//! same way: #15077's `render_docx_fixups` (bd-ykjwiqcc).
 
 use std::path::{Path, PathBuf};
 
@@ -27,17 +30,23 @@ fn read_filter(rel: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("failed to read {path:?}: {e}"))
 }
 
-/// The exact set of files that carry a `QUARTO-PATCH(upstream PR
-/// quarto-dev/quarto-cli#14913)` marker for this patch. Kept as a
-/// hard-coded list (not derived from the walk) so that a stray marker
-/// showing up in an unexpected file reddens this test.
-const EXPECTED_MARKER_FILES: &[&str] = &[
-    "main.lua",
-    "customnodes/floatreftarget.lua",
-    "modules/callouts.lua",
-    "modules/crossref_numbering.lua",
-    "modules/import_all.lua",
-    "crossref/format.lua",
+/// Every file that carries a `QUARTO-PATCH(upstream PR
+/// quarto-dev/quarto-cli#<N>)` marker, with the upstream PRs its markers
+/// name. Kept as a hard-coded list (not derived from the walk) so that a
+/// stray marker showing up in an unexpected file, or naming an unexpected
+/// PR, reddens this test.
+///
+/// - #14913: P3's crossref-numbering patch.
+/// - #15077: `render_docx_fixups` (bd-ykjwiqcc), which q2's Pandoc cut
+///   relies on to fold a standalone image's `fig-alt` for docx.
+const EXPECTED_MARKER_FILES: &[(&str, &[u32])] = &[
+    ("main.lua", &[14913, 15077]),
+    ("customnodes/floatreftarget.lua", &[14913]),
+    ("modules/callouts.lua", &[14913]),
+    ("modules/crossref_numbering.lua", &[14913]),
+    ("modules/import_all.lua", &[14913]),
+    ("crossref/format.lua", &[14913]),
+    ("quarto-post/docx.lua", &[15077]),
 ];
 
 /// T6.1a: the vendored tree's marker inventory.
@@ -78,36 +87,62 @@ fn test_marker_inventory() {
 
     let mut expected: Vec<String> = EXPECTED_MARKER_FILES
         .iter()
-        .map(|s| s.to_string())
+        .map(|(rel, _)| rel.to_string())
         .collect();
     expected.sort();
 
     assert_eq!(
         files_with_marker, expected,
         "the set of files carrying a QUARTO-PATCH(upstream PR quarto-dev/quarto-cli#...) \
-         marker no longer matches the expected list for this patch"
+         marker no longer matches the expected list"
     );
 
     // Every marker instance must be followed by real digits, not the
-    // literal `#<N>` placeholder.
-    for rel in EXPECTED_MARKER_FILES {
+    // literal `#<N>` placeholder, and name one of the file's expected PRs;
+    // every expected PR must be named at least once.
+    for (rel, prs) in EXPECTED_MARKER_FILES {
         let content = read_filter(rel);
-        let mut any_marker = false;
+        let mut seen: Vec<u32> = Vec::new();
         for (idx, _) in content.match_indices(MARKER_PREFIX) {
-            any_marker = true;
             let after = &content[idx + MARKER_PREFIX.len()..];
-            let digit_count = after.chars().take_while(|c| c.is_ascii_digit()).count();
+            let digits: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
             assert!(
-                digit_count > 0,
+                !digits.is_empty(),
                 "{rel}: marker at byte {idx} is not followed by a real PR number \
                  (looks like the `#<N>` placeholder was left in place)"
             );
+            let pr: u32 = digits.parse().unwrap();
+            assert!(
+                prs.contains(&pr),
+                "{rel}: marker at byte {idx} names #{pr}, not one of {prs:?}"
+            );
+            seen.push(pr);
         }
-        assert!(
-            any_marker,
-            "{rel} is in the expected list but has no marker"
-        );
+        for pr in *prs {
+            assert!(
+                seen.contains(pr),
+                "{rel} is expected to carry a #{pr} marker but has none"
+            );
+        }
     }
+}
+
+/// bd-ykjwiqcc: the #15077 docx backport is present and registered.
+///
+/// Revert hunk: re-vendor `quarto-post/docx.lua` or `main.lua` from the
+/// v1.11.6 pin (overwriting the backport) -> one of the assertions below
+/// goes RED, and docx loses the description of every standalone image
+/// (see `crates/quarto-core/src/pandoc_filters/image_alt_encode.rs`).
+#[test]
+fn test_docx_fixups_backport_is_registered() {
+    assert!(
+        read_filter("quarto-post/docx.lua").contains("function render_docx_fixups()"),
+        "quarto-post/docx.lua lost render_docx_fixups -- did a re-vendor overwrite the backport?"
+    );
+    assert!(
+        read_filter("main.lua").contains("filter = render_docx_fixups(),"),
+        "main.lua no longer registers post-render-docx-fixups"
+    );
 }
 
 /// T6.1b: the vendored `main.lua`'s assignment gate, structurally.

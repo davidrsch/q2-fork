@@ -25,7 +25,9 @@ WASM rebuild is needed for a changelog-only edit.
 
 ### 2026-10-21
 
+- [`f4c4ec189`](https://github.com/quarto-dev/q2/commits/f4c4ec189): A figure whose caption is also its image's alt text is announced once by screen readers: the caption is hidden from assistive technology and the image keeps its alt text.
 - [`9a141cf61`](https://github.com/quarto-dev/q2/commits/9a141cf61): Rendered HTML pages start with a "Skip to main content" link, hidden until a keyboard user tabs to it, that jumps past the navbar and sidebar to the page content; the link text follows the document language.
+- [`08a1d37da`](https://github.com/quarto-dev/q2/commits/08a1d37da): An image's `fig-alt` now becomes its alt text in the preview and in every rendered format (HTML, slides, Word, Typst), instead of being dropped.
 - [`b7126df57`](https://github.com/quarto-dev/q2/commits/b7126df57): Sync the Quarto 1 filters, Typst templates, translations and knitr scripts with Quarto 1.11.6: Typst documents can show lists of figures and tables, inline images with alt text keep their pixel sizes, Azerbaijani is available, and keyboard focus rings return on toolbar buttons.
 - [`57087e9bd`](https://github.com/quarto-dev/q2/commits/57087e9bd): Upgrade pandoc to 3.12.1 for "Download as" and document import; Word output now styles the paragraph after a figure, table or callout as "First Paragraph", and importing Word documents with nested comments pairs each comment with its own text again.
 - [`f89adae50`](https://github.com/quarto-dev/q2/commits/f89adae50): Upgrade mermaid to 12.2.0; diagrams without an explicit layout now use the ELK layout and mermaid's new default look.

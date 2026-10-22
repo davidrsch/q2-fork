@@ -18,6 +18,7 @@ pub mod diagnostics;
 pub mod format_defaults;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod harness;
+pub mod image_alt_encode;
 pub mod meta_coerce;
 pub mod params;
 pub mod params_codec;

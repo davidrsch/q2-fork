@@ -1,7 +1,39 @@
 import { useContext } from 'react';
-import { Node, dataLocProps } from '../../framework';
+import { Node, dataLocProps, inlinesToPlainText } from '../../framework';
 import type { BlockNode, FigureBlock, InlineNode, NodeArgs } from '../../framework';
 import { PreviewContext } from '../PreviewContext';
+
+/** The inlines of a lone `Plain`/`Para`, else `null`. */
+function loneRunOfInlines(blocks: BlockNode[]): InlineNode[] | null {
+    if (blocks.length !== 1) return null;
+    const [block] = blocks as any[];
+    return block.t === 'Plain' || block.t === 'Para' ? (block.c as InlineNode[]) : null;
+}
+
+/**
+ * Whether the figcaption only repeats the image's alt text (bd-ykjwiqcc
+ * D5) — the twin of pampa's `figcaption_duplicates_alt`. Pandoc's rule:
+ * for a figure holding a single image (or a link around one) whose alt
+ * text equals the caption, the figcaption is hidden from assistive tech so
+ * the text is announced once, and the `<img>` keeps its `alt`. The caption
+ * is compared as written, so a crossref "Figure 1: …" caption stays
+ * exposed. Alt is projected as `Image.tsx` renders it; the pipeline has
+ * already folded any `alt`/`fig-alt` key-value into the alt inlines.
+ */
+function figcaptionDuplicatesAlt(bodyBlocks: BlockNode[], captionBlocks: BlockNode[]): boolean {
+    const body = loneRunOfInlines(bodyBlocks);
+    const caption = loneRunOfInlines(captionBlocks);
+    if (!body || !caption || body.length !== 1) return false;
+    let inline = body[0] as any;
+    if (inline.t === 'Link') {
+        const content = inline.c[1] as any[];
+        if (content.length !== 1) return false;
+        inline = content[0];
+    }
+    if (inline.t !== 'Image') return false;
+    const alt = inlinesToPlainText(inline.c[1] as InlineNode[]).trim();
+    return alt.length > 0 && alt === inlinesToPlainText(caption).trim();
+}
 
 /**
  * Figure → <figure> + optional <figcaption>. Reads `c[1][1]`
@@ -42,6 +74,9 @@ export const Figure = (args: NodeArgs<FigureBlock>) => {
     const qfCaptionId = kvMap.get('data-qf-caption-id');
     const qfLocation = kvMap.get('data-qf-caption-location') ?? 'bottom';
     const figcaptionProps: Record<string, string> = {};
+    if (figcaptionDuplicatesAlt(bodyBlocks, captionBlocks)) {
+        figcaptionProps['aria-hidden'] = 'true';
+    }
     if (qfCaptionId !== undefined) {
         const refType = kvMap.get('data-qf-ref-type') ?? 'fig';
         let captionClasses =

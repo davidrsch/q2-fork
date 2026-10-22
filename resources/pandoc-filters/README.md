@@ -117,7 +117,7 @@ The following files and modifications are *not* from `v1.11.6` and should be pre
 
 **Format for entries:** List items must be shaped exactly as `` - `<path/from/repo/root>` — description `` (backtick immediately after `- `) so the `cargo xtask lint` rule `vendored-pandoc-filters` can verify the path exists. The rule checks that every path listed here actually exists on disk.
 
-- `resources/pandoc-filters/filters/main.lua` — patched three times, independently.
+- `resources/pandoc-filters/filters/main.lua` — patched four times, independently.
   (0) bd-2uva9urq: the `pre-shortcodes-filter` entry's flag is changed from
   `has_shortcodes` to `q2_lua_shortcodes_disabled` (never set), marked
   `QUARTO2-PATCH`. The `shortcodes_filter()` call stays, since
@@ -134,6 +134,20 @@ The following files and modifications are *not* from `v1.11.6` and should be pre
   `_quarto.modules.crossref_numbering.assign_crossref_numbers()`, and add a
   fail-fast guard rejecting `crossref-numbering: external` combined with a
   LaTeX-family or Typst target.
+  (3) bd-ykjwiqcc, backport of upstream PR quarto-dev/quarto-cli#15077
+  (c1800b927; not in any tag through the v1.11.6 pin): the
+  `post-render-docx-fixups` entry after `post-render-latex-fixups`, marked
+  `QUARTO-PATCH`. Drop on a re-vendor to a tag that contains #15077.
+- `resources/pandoc-filters/filters/quarto-post/docx.lua` — patched (backport
+  of upstream PR quarto-dev/quarto-cli#15077, c1800b927, marked
+  `QUARTO-PATCH`; bd-ykjwiqcc). Appends `render_docx_fixups()`, which folds
+  an image's `fig-alt` (or `alt`) into its alt inlines after figure layout,
+  so Pandoc's docx writer gets the picture description. q2 depends on it:
+  `crate::pandoc_filters::image_alt_encode` respells a standalone image's
+  alt text as `fig-alt` at the Pandoc cut, so `parsefiguredivs.lua` does
+  not read it as an implicit-figure caption. Tests:
+  `crates/quarto-core/tests/integration/fig_alt.rs`. Drop on a re-vendor to
+  a tag that contains #15077.
 - `resources/pandoc-filters/filters/crossref/crossref.lua` — patched (ours,
   bd-2uva9urq; no upstream PR — marked `QUARTO2-PATCH`). The
   `pre-shortcodes-filter` entry's flag is changed from `has_shortcodes` to
