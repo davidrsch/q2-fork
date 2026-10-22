@@ -2,7 +2,7 @@
 title: 'qmd reader: make every span honor parent_source_info'
 date: 2026-10-22
 description: 'About 40 span constructions in the tree-sitter conversion build Original(current_file_id(), range) and ignore parent_source_info, so a reparse into a parent roots emphasis, attribute and similar spans in the wrong file. Route them through the existing parent-aware helper.'
-status: in-progress  # go-ahead 2026-10-22 (follow-up to GH #884, same session)
+status: done  # implemented 2026-10-22 on feature/pandoc-read-source-locations
 braid:
   strand: bd-qmd-reader-parent-aware-spans-mq5u2001
 ---

@@ -2,7 +2,7 @@
 title: 'pandoc.read text gets a home in the document''s SourceContext: correct locations (GH #884), forwarded reader diagnostics (bd-fwswbxnl), and a commonmark reader (GH #885)'
 date: 2026-10-22
 description: 'Nodes pandoc.read returns carry offsets into the string, which later passes read as offsets into the host document. Give each pandoc.read call its own hash-FileId file, register it in the document''s contexts when the host drains it, and build the commonmark arm on the same mechanism.'
-status: in-progress  # go-ahead 2026-10-22; Phases 0-2 implemented, see Progress
+status: done  # implemented 2026-10-22 on feature/pandoc-read-source-locations (Phases 0-4)
 braid:
   strands:
     - bd-pandoc-read-host-locations-k9v9bviz   # GH #884 (Phases 0-2)

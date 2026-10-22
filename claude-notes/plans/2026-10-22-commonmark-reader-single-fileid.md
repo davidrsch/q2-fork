@@ -2,7 +2,7 @@
 title: 'commonmark reader: register the input once and stamp nodes with that FileId (GH #883)'
 date: 2026-10-22
 description: 'readers::commonmark::read registers its input twice and stamps every node with the content-less first entry; register once, use the returned FileId, and expose a FileId-taking entry point for embedding callers (pandoc.read, GH #885).'
-status: draft  # awaiting go-ahead
+status: done  # implemented 2026-10-22 on feature/pandoc-read-source-locations
 braid:
   strand: bd-commonmark-reader-fileid-xtvc23oz
 github:
