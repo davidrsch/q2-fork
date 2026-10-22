@@ -783,3 +783,22 @@ fn figure_with_empty_alt_is_written_with_empty_fig_alt() {
     )]));
     assert_eq!(qmd, "![Cap I](i.png){fig-alt=\"\"}\n");
 }
+
+// ---------------------------------------------------------------------------
+// Blank lines inside list items (bd-byr1oonq)
+// ---------------------------------------------------------------------------
+
+/// A blank line inside a list item is written empty, not as
+/// indentation-only whitespace, which the qmd reader would take as making
+/// the list tight (bd-25ezfgs8).
+#[test]
+fn loose_bullet_item_with_a_non_paragraph_block_round_trips() {
+    let item = || vec![para(inl("Text.")), code_block("1 + 1")];
+    for list in [bullet_list(vec![item()]), ordered_list(1, vec![item()])] {
+        let qmd = assert_roundtrip(doc(vec![list]));
+        assert!(
+            !qmd.lines().any(|l| !l.is_empty() && l.trim().is_empty()),
+            "whitespace-only line in {qmd:?}"
+        );
+    }
+}

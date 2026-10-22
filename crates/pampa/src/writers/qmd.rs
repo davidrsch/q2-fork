@@ -240,7 +240,10 @@ impl<'a, W: Write + ?Sized> Write for BulletListContext<'a, W> {
                 if self.is_first_line {
                     self.inner.write_all(&[self.marker, b' '])?;
                     self.is_first_line = false;
-                } else {
+                } else if byte != b'\n' {
+                    // A blank line stays empty: the qmd reader takes an
+                    // indentation-only line as making the list tight
+                    // (bd-25ezfgs8), and CommonMark does not need it indented.
                     self.inner.write_all(b"  ")?;
                 }
                 self.at_line_start = false;
@@ -317,7 +320,8 @@ impl<'a, W: Write + ?Sized> Write for OrderedListContext<'a, W> {
                         }
                     }
                     self.is_first_line = false;
-                } else {
+                } else if byte != b'\n' {
+                    // A blank line stays empty (see `BulletListContext`).
                     self.inner.write_all(self.indent.as_bytes())?;
                 }
                 self.at_line_start = false;
