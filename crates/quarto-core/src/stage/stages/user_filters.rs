@@ -284,6 +284,10 @@ impl PipelineStage for UserFiltersStage {
 
         doc.ast = output.pandoc;
         doc.ast_context = output.context;
+        // The adopted `ast_context` already holds the files `pandoc.read`
+        // minted (GH #884); keep `doc.source_context`, which diagnostics
+        // render against, in lockstep.
+        pampa::lua::register_read_sources(&mut doc.source_context, &output.read_sources);
         ctx.diagnostics.extend(output.diagnostics);
         // book-projects P6: harvest this chapter's citation manifest
         // alongside the citeproc filter's own unchanged pass. `None` when

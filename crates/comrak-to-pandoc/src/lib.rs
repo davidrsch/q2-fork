@@ -5,8 +5,10 @@
  * Convert comrak's CommonMark AST to quarto-pandoc-types AST.
  *
  * This crate provides direct conversion from comrak's arena-based AST
- * to our owned Pandoc AST structures. Only the CommonMark subset is
- * supported; GFM extensions will panic.
+ * to our owned Pandoc AST structures. All of CommonMark is supported
+ * (raw HTML becomes `html` RawBlock/RawInline, as in pandoc's commonmark
+ * reader); nodes that only comrak extensions produce (GFM and others) panic,
+ * so callers must parse with extensions off.
  */
 
 mod block;

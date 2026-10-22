@@ -12,8 +12,8 @@ use comrak::arena_tree::Node;
 use comrak::nodes::{Ast, NodeCode, NodeLink, NodeValue};
 use hashlink::LinkedHashMap;
 use quarto_pandoc_types::{
-    AttrSourceInfo, Code, Emph, Image, Inline, Inlines, LineBreak, Link, SoftBreak, Strong,
-    TargetSourceInfo,
+    AttrSourceInfo, Code, Emph, Image, Inline, Inlines, LineBreak, Link, RawInline, SoftBreak,
+    Strong, TargetSourceInfo,
 };
 use quarto_source_map::SourceInfo;
 use std::cell::RefCell;
@@ -103,10 +103,17 @@ fn convert_inline<'a>(
             convert_children_to_inlines_with_source(node, source_ctx)
         }
 
-        // Unsupported inline types - panic as they're outside CommonMark subset
-        NodeValue::HtmlInline(_) => {
-            panic!("HtmlInline not supported in CommonMark subset")
+        // Raw HTML, as pandoc's commonmark reader (raw_html on) produces it.
+        NodeValue::HtmlInline(html) => {
+            vec![Inline::RawInline(RawInline {
+                format: "html".to_string(),
+                text: html.clone(),
+                source_info,
+            })]
         }
+
+        // Unsupported inline types - panic as they're outside CommonMark;
+        // they require comrak extensions, which we don't enable
         NodeValue::Strikethrough => {
             panic!("Strikethrough (GFM extension) not supported in CommonMark subset")
         }

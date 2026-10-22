@@ -12,7 +12,7 @@ use crate::pandoc::{Inline, Shortcode, ShortcodeArg, Space};
 use hashlink::LinkedHashMap;
 
 use super::pandocnativeintermediate::PandocNativeIntermediate;
-use super::text_helpers::extract_quoted_text;
+use super::text_helpers::extract_quoted_text_with_context;
 
 // Helper function to process shortcode_naked_string and shortcode_name nodes
 pub fn process_shortcode_string_arg(
@@ -35,7 +35,7 @@ pub fn process_shortcode_string_arg(
 /// the token was widened to a blocklist — `\>` is the only way to write a
 /// literal `>`, which would otherwise close the shortcode.
 ///
-/// Delegates to [`extract_quoted_text`], which already implements exactly this
+/// Delegates to [`extract_quoted_text_with_context`], which already implements exactly this
 /// rule and is the same decoder `key_value_value` uses, so a naked value and a
 /// `key=value` value decode identically. Its quote-stripping cannot misfire
 /// here: the grammar forbids a naked token from *starting* with a quote, and
@@ -51,7 +51,7 @@ pub fn process_shortcode_naked_string(
 ) -> PandocNativeIntermediate {
     let raw = node.utf8_text(input_bytes).unwrap();
     let (decoded, _content_source) =
-        extract_quoted_text(raw, context.current_file_id(), node.start_byte());
+        extract_quoted_text_with_context(raw, context, node.start_byte());
     let source_info = node_source_info_with_context(node, context);
     let range =
         crate::pandoc::location::source_info_to_qsm_range_or_fallback(&source_info, context);

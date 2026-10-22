@@ -317,7 +317,7 @@ fn add_diagnostic(lua: &Lua, quarto: &Table, kind: &str, args: MultiValue) -> Re
 ///
 /// Walks up the stack looking for the first Lua function call (not a C function).
 /// Returns (source_path, line_number).
-fn get_caller_location(lua: &Lua) -> (String, i64) {
+pub(crate) fn get_caller_location(lua: &Lua) -> (String, i64) {
     // Walk up the stack looking for filter code
     // Level 0 is the current function, level 1 is the caller, etc.
     // We start at level 1 to find the actual caller
@@ -346,10 +346,33 @@ fn get_caller_location(lua: &Lua) -> (String, i64) {
     ("unknown".to_string(), 0)
 }
 
+/// Diagnostics that Rust code reached from Lua raised as structured
+/// messages (code, hints, details and all), such as the reader diagnostics
+/// `pandoc.read` forwards (bd-fwswbxnl). They bypass `quarto._diagnostics`,
+/// whose entries carry only a kind, a message and a location, and are
+/// drained by [`extract_lua_diagnostics`] with the rest.
+#[derive(Default)]
+struct PendingDiagnostics(Vec<DiagnosticMessage>);
+
+/// Queue structured diagnostics for the host to collect through
+/// [`extract_lua_diagnostics`].
+pub(crate) fn push_diagnostics(
+    lua: &Lua,
+    diagnostics: impl IntoIterator<Item = DiagnosticMessage>,
+) {
+    if lua.app_data_ref::<PendingDiagnostics>().is_none() {
+        lua.set_app_data(PendingDiagnostics::default());
+    }
+    if let Some(mut pending) = lua.app_data_mut::<PendingDiagnostics>() {
+        pending.0.extend(diagnostics);
+    }
+}
+
 /// Extract diagnostics from the Lua state after filter execution
 ///
 /// Returns a vector of DiagnosticMessage objects that were collected
-/// during filter execution via quarto.warn() and quarto.error().
+/// during filter execution via quarto.warn() and quarto.error(), followed by
+/// the structured ones queued with [`push_diagnostics`] (which are drained).
 pub fn extract_lua_diagnostics(lua: &Lua) -> Result<Vec<DiagnosticMessage>> {
     let quarto: Table = lua.globals().get("quarto")?;
     let diagnostics: Table = quarto.get("_diagnostics")?;
@@ -386,6 +409,10 @@ pub fn extract_lua_diagnostics(lua: &Lua) -> Result<Vec<DiagnosticMessage>> {
         };
 
         result.push(diag);
+    }
+
+    if let Some(mut pending) = lua.app_data_mut::<PendingDiagnostics>() {
+        result.append(&mut pending.0);
     }
 
     Ok(result)
