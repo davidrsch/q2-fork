@@ -1,8 +1,8 @@
 ---
 title: 'Table caption classes → Bootstrap table-* classes (bd-hfghrqvh)'
 date: 2026-10-22
-description: 'Map Q1''s Bootstrap table shorthands (.striped .hover .sm .responsive-md …) written in a table caption''s attribute block to table-* classes on the <table>, for unlabelled, #tbl-labelled and ::: {#tbl-} div-form tables.'
-status: planned  # Design aligned with user 2026-10-22; ready to implement
+description: 'Map Q1''s Bootstrap table shorthands (.striped .hover .sm .responsive-md …) written in a table caption''s attribute block to table-* classes on the `<table>`, for unlabelled, #tbl-labelled and ::: {#tbl-} div-form tables.'
+status: implemented  # PR open; see Implementation notes
 braid:
   strand: bd-hfghrqvh
 ---
@@ -26,7 +26,7 @@ rewrites `: caption {.striped .hover}` to
 attribute block entirely".
 
 Acceptance criteria (verbatim): *A caption attribute block {.striped .hover}
-yields <table class="… table table-striped table-hover"> with the classes
+yields `<table class="… table table-striped table-hover">` with the classes
 removed from the rendered caption; all Q1 shorthands in table-classes.lua are
 mapped; .sm adds small; non-shorthand classes are forwarded verbatim; works for
 labelled and unlabelled captions; smoke-all fixture.*
@@ -124,7 +124,7 @@ The pipeline facts below are what decide the design:
     `Block::Custom` arm, so it never reaches tables inside a float in the
     preview. They likely get no `table`/`caption-top` classes today, a
     pre-existing preview gap to confirm in Phase 4.
-- **`crossref-render`'s table logic only looks at bare top-level tables.**
+- **The table logic in `crossref-render` only looks at bare top-level tables.**
   - It drops the table's own caption (bd-4m2n6qf1) only for a
     `Block::Table` sitting directly in the float content.
   - It skips image-attribute harvesting only when `content.first()` is a
@@ -247,3 +247,54 @@ the shorthand list, and our single late pass gives the same result.
   local `hub-client/dist-preview-embed/` is stale. It has no `pdfjs/` folder
   (built on Sep 9, before `7b9ac798b`), so `editor_ui_serves_pdfjs_from_the_viewer_bundle`
   gets a 404. Rebuild the embed before the final verify.
+
+## Implementation notes (2026-10-22)
+
+Phases 0–4 are done on this branch. The design above held. These details
+were added or changed along the way:
+
+- **Forward pass:** `TableFloatClassForwardTransform`
+  (`table-float-class-forward`) lives in `table_bootstrap_class.rs`.
+  - It is registered just before `crossref-render`.
+  - It is listed in `PANDOC_TRANSFORM_EXCLUDED` and bucketed as B4, like
+    `table-bootstrap-class`.
+  - It is *not* preview-excluded, and it was added to the three exact-order
+    pipeline tests.
+  - It walks with `ast_walk::block_children_mut` / `ListVisitor` and stops at
+    nested `FloatRefTarget` nodes.
+- **`apply_to_blocks`** now walks with `ast_walk::for_each_block_list_mut`, so
+  it also reaches custom-node slots. This fixed the pre-existing preview gap,
+  which I confirmed: on `main`, a labelled table in the q2-preview AST had
+  classes `[]`, not even `table`.
+  - Pinned by `crates/quarto-core/tests/integration/table_bootstrap_classes_preview.rs`.
+  - All three tests in that file fail against the old transform code.
+- **Scope addition (parser).** product-doc-theme writes its caption directly
+  under the table with no space after the colon:
+  `:This table … {.striped .hover}`. Pandoc accepts that form. In q2 it goes
+  through the caption-as-last-row fixup in `pampa` `postprocess.rs`, and the
+  attribute block was dropped even earlier:
+  `process_pipe_table_cell` discarded every `IntermediateAttr`.
+  - Cells now keep the attribute as an `Inline::Attr`.
+  - `process_pipe_table` strips it from every row except a final single-cell
+    row starting with `:`, and re-trims those cells, so ordinary cells behave
+    exactly as before.
+  - The fixup then lifts it onto the table through the new
+    `take_caption_attr` helper. The blank-line caption path now uses the same
+    helper (the inline merge code was extracted into it).
+  - Tests: `test_adjacent_no_space_caption_attr_merges_into_table` and
+    `test_attr_in_ordinary_table_cell_is_still_dropped` in
+    `crates/pampa/tests/integration/test_attr_source_parsing.rs`, plus the
+    `:Adjacent caption` case in the smoke fixture.
+- **product-doc-theme example:** `user.html` now renders
+  `<table class="table-striped table-hover caption-top table">`, the same as
+  Q1.
+
+**Strands filed (all discovered-from bd-hfghrqvh):**
+
+- bd-7zw93czl: do the class normalization for all formats.
+- bd-44t9rqtp: float caption is placed at the bottom instead of the top.
+- bd-ymyeef2e: a multi-table float drops the captions its inner tables carry. The
+  bd-4m2n6qf1 elision is too broad. Because of this, the fixture does not
+  anchor on `<caption>Left`.
+- bd-0vje43lp: `:NoSpace` after a blank line is not parsed as a caption at
+  all. This is a grammar issue.
