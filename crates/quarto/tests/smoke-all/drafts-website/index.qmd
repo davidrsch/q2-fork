@@ -1,0 +1,13 @@
+---
+title: Home
+_quarto:
+  render-project: true
+  tests:
+    html:
+      noErrors: true
+      ensureHtmlElements:
+        - ['a.nav-link[href="index.html"]']
+        - []
+---
+
+A published page.

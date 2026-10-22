@@ -356,7 +356,11 @@ is one commit or a small group, with tests.
      points.
    - Integration test: `Authoring` overrides an explicit `draft-mode:
      gone`.
-3. **Gone page output.**
+3. **Gone page output.** *Done 2026-10-22.* The transform kept its
+   `draft-alert` name. The smoke fixture is `smoke-all/drafts-website/`
+   with `render-project: true`. The hub-client WASM smoke runner now skips
+   `render-project` fixtures, because they assert on a native
+   whole-project (reading-view) render and the hub is an authoring view.
    - Policy-aware `DraftTransform`, plus the constant noindex shell in
      `apply_template`.
    - Update `llms_txt.rs:568`, which asserts that drafts render fully.

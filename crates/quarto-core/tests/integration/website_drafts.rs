@@ -233,3 +233,89 @@ fn authoring_view_overrides_explicit_gone() {
     let (dir, _) = render_project_with(options, fixture);
     assert!(has_companion(&dir, "secret.md"), "authoring view shows it");
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// The draft page itself
+// ═══════════════════════════════════════════════════════════════════
+
+fn read(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e))
+}
+
+/// Under `gone` (the default) the draft's URL still exists, but the page
+/// is a fixed blank shell: no title, no body, no banner, no navigation,
+/// marked `noindex` and `quarto:status=draft-remove`.
+#[test]
+fn gone_draft_is_a_blank_noindex_page() {
+    let (dir, _) = render_project(|d| {
+        write(
+            &d.join("_quarto.yml"),
+            &quarto_yml("  navbar:\n    left:\n      - index.qmd\n"),
+        );
+        write(&d.join("index.qmd"), "---\ntitle: Home\n---\n\nHi.\n");
+        write(&d.join("secret.qmd"), &draft_page("Secret Title", ""));
+    });
+    let html = read(&dir.join("_site/secret.html"));
+    assert!(
+        html.contains(r#"<meta name="robots" content="noindex">"#),
+        "{html}"
+    );
+    assert!(html.contains(r#"content="draft-remove""#), "{html}");
+    assert!(!html.contains("Draft body."), "body must be gone: {html}");
+    assert!(!html.contains("Secret Title"), "title must be gone: {html}");
+    assert!(!html.contains("quarto-draft-alert"), "no banner: {html}");
+    assert!(!html.contains("navbar"), "no site chrome: {html}");
+    assert!(!html.contains("<script"), "no scripts: {html}");
+
+    // Non-draft pages are untouched.
+    let home = read(&dir.join("_site/index.html"));
+    assert!(home.contains("Hi."));
+}
+
+/// Under `unlinked` the draft renders fully, with the banner.
+#[test]
+fn unlinked_draft_renders_with_banner() {
+    let (dir, _) = render_project(|d| {
+        write(
+            &d.join("_quarto.yml"),
+            &quarto_yml("  draft-mode: unlinked\n"),
+        );
+        write(&d.join("secret.qmd"), &draft_page("Secret Title", ""));
+    });
+    let html = read(&dir.join("_site/secret.html"));
+    assert!(html.contains("Draft body."), "{html}");
+    assert!(html.contains("quarto-draft-alert"), "{html}");
+    assert!(!html.contains("draft-remove"), "{html}");
+}
+
+/// An authoring view never blanks a draft.
+#[test]
+fn authoring_view_never_blanks() {
+    let options = RenderToFileOptions {
+        audience: RenderAudience::Authoring,
+        ..Default::default()
+    };
+    let (dir, _) = render_project_with(options, |d| {
+        write(&d.join("_quarto.yml"), &quarto_yml(""));
+        write(&d.join("secret.qmd"), &draft_page("Secret Title", ""));
+    });
+    let html = read(&dir.join("_site/secret.html"));
+    assert!(html.contains("Draft body."), "{html}");
+    assert!(html.contains("quarto-draft-alert"), "{html}");
+}
+
+/// Blanking is a website behaviour: in other project types `gone`
+/// behaves as `unlinked`, so drafts keep rendering with their banner.
+#[test]
+fn non_website_project_never_blanks() {
+    let (dir, _) = render_project(|d| {
+        write(
+            &d.join("_quarto.yml"),
+            "project:\n  type: default\ndraft-mode: gone\n",
+        );
+        write(&d.join("secret.qmd"), &draft_page("Secret Title", ""));
+    });
+    let html = read(&dir.join("secret.html"));
+    assert!(html.contains("Draft body."), "{html}");
+    assert!(html.contains("quarto-draft-alert"), "{html}");
+}

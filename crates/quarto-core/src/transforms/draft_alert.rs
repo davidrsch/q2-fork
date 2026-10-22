@@ -67,14 +67,20 @@
 //! Bootstrap's `.alert-warning`), and an original placement decision that
 //! Q1 ships no reference output for.
 //!
-//! ## Interaction with `draft-mode`
+//! ## Interaction with `draft-mode` (bd-2hy80x1j)
 //!
-//! Q1 suppresses the banner for `draft-mode: gone`, where the page is
-//! emptied and marked `draft-remove` instead. Q2 has no `draft-mode`
-//! option yet (**bd-w0o9**), so every q2 draft is in Q1's
-//! "any other mode" case and an unconditional banner is exactly
-//! Q1-correct today. When `draft-mode` lands, its suppression belongs in
-//! [`apply_draft_alert`] — the single gate.
+//! A draft whose effective `draft-mode` is `gone` (see
+//! [`crate::project::drafts`]) gets no banner: its blocks are cleared
+//! here, in Normalization — after engine execution, which still runs so
+//! its side effects happen — and `rendered.draft-remove` is set, so
+//! `ApplyTemplateStage` writes [`GONE_PAGE_HTML`] instead of any
+//! template. That mirrors Q1's `normalize/draft.lua` (empty the blocks,
+//! mark `draft-remove`) plus `website-draft.ts` (wipe the document).
+//! Under `unlinked` / `visible`, and in every authoring view, the page
+//! renders with the banner as before. Same HTML-not-slides scope as the
+//! banner, which is Q1's scope for blanking too.
+//!
+//! [`GONE_PAGE_HTML`]: crate::project::drafts::GONE_PAGE_HTML
 
 use quarto_pandoc_types::ConfigValue;
 use quarto_pandoc_types::pandoc::Pandoc;
@@ -82,7 +88,7 @@ use quarto_pandoc_types::pandoc::Pandoc;
 use crate::Result;
 use crate::format::{Format, is_revealjs_target};
 use crate::language::LanguageTerms;
-use crate::project::drafts::{meta_is_draft, resolve_draft_mode};
+use crate::project::drafts::{DRAFT_REMOVE_PATH, meta_is_draft, resolve_draft_mode};
 use crate::render::RenderContext;
 use crate::template::escape_html_text;
 use crate::transform::{AstTransform, TransformPhase};
@@ -138,9 +144,30 @@ impl AstTransform for DraftAlertTransform {
         if !format_supports_draft_alert(ctx.format) {
             return Ok(());
         }
+        if page_is_gone(&ast.meta, ctx) {
+            ast.blocks.clear();
+            let source_info = ast.meta.source_info.clone();
+            ast.meta
+                .insert_path(&DRAFT_REMOVE_PATH, ConfigValue::new_bool(true, source_info));
+            return Ok(());
+        }
         apply_draft_alert(&mut ast.meta);
         Ok(())
     }
+}
+
+/// Is this a draft page that this render must blank? Needs the project
+/// index: its draft view knows the audience (authoring views never
+/// blank) and whether the project is a website (only websites blank).
+/// The mode is re-resolved from the page's merged metadata — the same
+/// input, through the same function, that produced the page's profile.
+fn page_is_gone(meta: &ConfigValue, ctx: &RenderContext) -> bool {
+    meta_is_draft(meta)
+        && ctx.project_index.as_ref().is_some_and(|index| {
+            index
+                .draft_view()
+                .page_is_gone(true, resolve_draft_mode(meta).mode)
+        })
 }
 
 /// Whether `format` should get a draft banner: HTML, but not reveal.js.

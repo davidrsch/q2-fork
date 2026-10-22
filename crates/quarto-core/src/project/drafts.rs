@@ -223,6 +223,31 @@ impl DraftView {
     }
 }
 
+/// The whole output of a `gone` draft page in a reading view: a fixed
+/// shell with no title, navigation, scripts or styles, so nothing about
+/// the draft leaks. Quarto 1 writes an empty `<html></html>` (its
+/// `website-draft.ts` post-processor wipes the document); q2 adds
+/// `noindex` so crawlers that reach the URL do not index a blank page,
+/// and keeps the `quarto:status` marker Q1's filter emits.
+pub const GONE_PAGE_HTML: &str = "<!DOCTYPE html>\n\
+<html>\n\
+<head>\n\
+<meta charset=\"utf-8\">\n\
+<meta name=\"robots\" content=\"noindex\">\n\
+<meta name=\"quarto:status\" content=\"draft-remove\">\n\
+</head>\n\
+<body></body>\n\
+</html>\n";
+
+/// Metadata path the draft transform sets on a page it blanked, read by
+/// `ApplyTemplateStage` to emit [`GONE_PAGE_HTML`] instead of a template.
+pub const DRAFT_REMOVE_PATH: [&str; 2] = ["rendered", "draft-remove"];
+
+/// Was this page blanked by the draft transform?
+pub fn is_draft_removed(meta: &ConfigValue) -> bool {
+    meta.get_path(&DRAFT_REMOVE_PATH).and_then(|v| v.as_bool()) == Some(true)
+}
+
 /// Is this page a draft at all, whatever the mode? Only for behaviour
 /// that is deliberately mode-independent (alias stubs: a draft never
 /// claims redirects). Everything about *visibility* goes through
