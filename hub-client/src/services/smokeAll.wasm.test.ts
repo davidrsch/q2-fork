@@ -394,6 +394,17 @@ describe('smoke-all WASM tests', () => {
       }
       const content = await readFile(testFile, 'utf-8');
       const metadata = readFrontmatter(content);
+
+      // `render-project: true` fixtures assert on a native whole-project
+      // render (`q2 render` of the project — a reading view). The hub
+      // renders one page at a time as an authoring view, where e.g. a
+      // `gone` draft is deliberately shown in full (bd-2hy80x1j), so
+      // those assertions do not apply here.
+      const quarto = metadata._quarto as Record<string, unknown> | undefined;
+      if (quarto?.['render-project'] === true) {
+        skipped++;
+        continue;
+      }
       const { runConfig, formatSpecs } = parseTestSpecs(metadata, {
         skipPrintsMessage: SKIP_PRINTS_MESSAGE.has(relPath),
       });

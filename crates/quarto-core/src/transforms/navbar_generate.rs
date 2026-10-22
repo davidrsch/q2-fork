@@ -37,6 +37,7 @@ use crate::render::RenderContext;
 use crate::transform::{AstTransform, TransformPhase};
 use crate::transforms::is_feature_disabled;
 use crate::transforms::navigation_active::{mark_active, page_relative_source};
+use crate::transforms::navigation_drafts::prune_unlinkable_items;
 use crate::transforms::navigation_enrich::enrich_navigation_items;
 use crate::transforms::navigation_href::resolve_metadata_path;
 
@@ -150,6 +151,9 @@ impl AstTransform for NavbarGenerateTransform {
         // skip enrichment and active-marking and store the navbar
         // exactly as authored.
         if let Some(index) = ctx.project_index.as_deref() {
+            // Drop links to unlinkable drafts (bd-2hy80x1j).
+            prune_unlinkable_items(&mut navbar.left, index);
+            prune_unlinkable_items(&mut navbar.right, index);
             enrich_navigation_items(&mut navbar.left, index);
             enrich_navigation_items(&mut navbar.right, index);
             let page_source = page_relative_source(ctx);

@@ -1,0 +1,23 @@
+---
+title: Item Two
+draft: true
+_quarto:
+  render-project: true
+  tests:
+    html:
+      noErrors: true
+      # `gone` (the default draft-mode): the URL exists but the page is a
+      # fixed blank shell -- Quarto 1's website-draft.ts wipes the
+      # document; q2 also marks it noindex. No title, body, banner, or
+      # site chrome may leak.
+      ensureFileRegexMatches:
+        - - '<meta name="robots" content="noindex">'
+          - '<meta name="quarto:status" content="draft-remove">'
+        - - 'Item Two'
+          - 'Work in progress'
+          - 'quarto-draft-alert'
+          - '<nav'
+          - '<script'
+---
+
+Work in progress.

@@ -1798,6 +1798,20 @@
     "docs_url": "https://quarto.org/docs/errors/project/Q-5-48",
     "since_version": "99.9.9"
   },
+  "Q-5-49": {
+    "subsystem": "project",
+    "title": "Invalid draft-mode Value",
+    "message_template": "`draft-mode` must be `gone`, `unlinked`, or `visible`. Draft pages are treated as `gone` instead.",
+    "docs_url": "https://quarto.org/docs/errors/project/Q-5-49",
+    "since_version": "99.9.9"
+  },
+  "Q-5-50": {
+    "subsystem": "project",
+    "title": "Invalid drafts Pattern",
+    "message_template": "A `drafts` entry is not a path, points outside the project, or is not a valid glob. It marks nothing as a draft.",
+    "docs_url": "https://quarto.org/docs/errors/project/Q-5-50",
+    "since_version": "99.9.9"
+  },
   "Q-13-8": {
     "subsystem": "navigation",
     "title": "Unsupported toc-location value",

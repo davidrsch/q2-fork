@@ -88,13 +88,14 @@ pub fn artifact_key(href: &str) -> String {
     format!("{SEARCH_ARTIFACT_PREFIX}{href}")
 }
 
-/// Is this profile's page a candidate for the index? Non-draft,
+/// Is this profile's page a candidate for the index? Linkable (not a
+/// draft hidden by its `draft-mode`, see [`crate::project::drafts`]),
 /// non-404, `.html` output in the plain `html` format family (a
 /// revealjs deck renders to `.html` but is not a page to search).
 /// The per-page `search: false` opt-out is a metadata decision the
 /// stage makes separately ([`super::page_search_enabled`]).
-pub fn profile_is_indexable(profile: &DocumentProfile) -> bool {
-    !profile.draft
+pub fn profile_is_indexable(index: &ProjectIndex, profile: &DocumentProfile) -> bool {
+    index.is_linkable(profile)
         && profile.output_href != HREF_404
         && profile.output_href.ends_with(".html")
         && crate::format::lua_format_for(&profile.format_id) == "html"

@@ -25,6 +25,8 @@ use quarto_source_map::{By, SourceInfo};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::project::drafts::{DraftMode, meta_is_draft, resolve_draft_mode};
+
 /// Version tag written into every serialized profile.
 ///
 /// Consumers reading a profile from disk must check this and reject on
@@ -148,7 +150,14 @@ use thiserror::Error;
 ///   field, not by key. A cached v14 profile would deserialize with
 ///   derived values sitting in the authored slots, which is exactly the
 ///   misread this bump prevents.
-pub const DOCUMENT_PROFILE_VERSION: u32 = 15;
+/// - `16`: `bd-2hy80x1j`. Adds `draft_mode: DraftMode` — the page's own
+///   `draft-mode` (or `website.draft-mode`), resolved from its merged
+///   metadata so other pages and post-render can decide whether to link
+///   to it (see `project::drafts`). Strictly additive (`#[serde(default)]`,
+///   default `gone`), but bumped: a cached v15 profile of a page under
+///   `draft-mode: visible` would deserialize as `gone` and silently
+///   vanish from the site.
+pub const DOCUMENT_PROFILE_VERSION: u32 = 16;
 
 /// Listing values L1 (`ListingItemInfoStage`) derives from a document's
 /// body, kept apart from anything the author wrote.
@@ -727,6 +736,13 @@ pub struct DocumentProfile {
     pub image: Option<String>,
     pub draft: bool,
 
+    /// The page's `draft-mode` (top-level or `website.draft-mode`),
+    /// resolved from its merged metadata. Meaningful only when `draft`
+    /// is true. Read it through `project::drafts::DraftView`, never
+    /// directly. Added v16.
+    #[serde(default)]
+    pub draft_mode: DraftMode,
+
     /// `aliases:` front-matter entries — old URLs that should redirect
     /// to this page — exactly as the author wrote them.
     ///
@@ -1035,6 +1051,7 @@ impl Default for DocumentProfile {
             keywords: Vec::new(),
             image: None,
             draft: false,
+            draft_mode: DraftMode::default(),
             aliases: Vec::new(),
             alias_sources: Vec::new(),
             order: None,
@@ -1125,7 +1142,8 @@ impl DocumentProfile {
             categories: extract_string_list(meta, "categories"),
             keywords: extract_string_list(meta, "keywords"),
             image: plain_text_field(meta, "image"),
-            draft: meta.get("draft").and_then(|v| v.as_bool()).unwrap_or(false),
+            draft: meta_is_draft(meta),
+            draft_mode: resolve_draft_mode(meta).mode,
             aliases: aliases.iter().map(|(s, _)| s.clone()).collect(),
             alias_sources: aliases.into_iter().map(|(_, info)| info).collect(),
             order: meta
@@ -2692,8 +2710,34 @@ Body.
     }
 
     #[test]
-    fn document_profile_version_is_15() {
-        assert_eq!(DOCUMENT_PROFILE_VERSION, 15);
+    fn document_profile_version_is_16() {
+        assert_eq!(DOCUMENT_PROFILE_VERSION, 16);
+    }
+
+    // bd-2hy80x1j: `draft-mode` is read from merged metadata in either
+    // spelling and stored on the profile; absent means `gone`.
+    #[test]
+    fn profile_extracts_draft_mode() {
+        use crate::project::drafts::DraftMode;
+        let absent = parse_qmd("---\ntitle: T\ndraft: true\n---\n\nBody.\n");
+        let p = DocumentProfile::extract(&absent, Path::new("a.qmd"), "a.html", "html");
+        assert!(p.draft);
+        assert_eq!(p.draft_mode, DraftMode::Gone);
+
+        let top = parse_qmd("---\ndraft: true\ndraft-mode: unlinked\n---\n\nBody.\n");
+        let p = DocumentProfile::extract(&top, Path::new("a.qmd"), "a.html", "html");
+        assert_eq!(p.draft_mode, DraftMode::Unlinked);
+
+        let nested = parse_qmd("---\ndraft: true\nwebsite:\n  draft-mode: visible\n---\n\nBody.\n");
+        let p = DocumentProfile::extract(&nested, Path::new("a.qmd"), "a.html", "html");
+        assert_eq!(p.draft_mode, DraftMode::Visible);
+
+        let json = p.to_json().unwrap();
+        assert!(json.contains("\"draft_mode\":\"visible\""), "{json}");
+        assert_eq!(
+            DocumentProfile::from_json(&json).unwrap().draft_mode,
+            DraftMode::Visible
+        );
     }
 
     // bd-listing-description-precedence-x4bh6w3m: `abstract:` is the

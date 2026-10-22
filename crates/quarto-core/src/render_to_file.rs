@@ -129,6 +129,12 @@ pub struct RenderToFileOptions {
     /// Which documents may execute code (bd-sl79jjiq). Default `All`;
     /// `q2 preview --static` narrows it to the pages being viewed.
     pub execution_policy: crate::engine::ExecutionPolicy,
+    /// Who the render is for (bd-2hy80x1j). Default `Reading` (`q2
+    /// render`, publish); authoring views — `q2 preview --static` and
+    /// the preview server's native routes — set `Authoring`, which shows
+    /// every draft as `visible` (see `project::drafts`). Applied by
+    /// `ProjectPipeline::new`.
+    pub audience: crate::project::drafts::RenderAudience,
 
     /// Resolved attribution mode (CLI override merged with YAML).
     /// `Some(AttributionMode::Git)` installs a [`GitBlameProvider`]

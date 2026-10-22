@@ -191,6 +191,7 @@ pub mod typst_render_foundations;
 pub mod unreferenced_brand;
 pub mod video_shortcode_preview;
 pub mod website_aliases;
+pub mod website_drafts;
 pub mod website_post_render;
 pub mod website_post_render_format_gate;
 pub mod website_search;

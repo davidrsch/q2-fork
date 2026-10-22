@@ -202,7 +202,7 @@ pub(crate) fn write_search_index(
     for profile in index.profiles() {
         let href = &profile.output_href;
         let cache_file = cache_file_for(project, href);
-        if !profile_is_indexable(profile) {
+        if !profile_is_indexable(index, profile) {
             remove_if_present(&cache_file, runtime)?;
             continue;
         }

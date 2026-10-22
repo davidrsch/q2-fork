@@ -37,6 +37,7 @@ use crate::render::RenderContext;
 use crate::transform::{AstTransform, TransformPhase};
 use crate::transforms::is_feature_disabled;
 use crate::transforms::navigation_active::page_relative_source;
+use crate::transforms::navigation_drafts::prune_unlinkable_sidebar;
 use crate::transforms::navigation_href::resolve_metadata_path;
 use crate::transforms::sidebar_auto::{expand_auto, strip_auto};
 
@@ -174,7 +175,12 @@ impl AstTransform for SidebarGenerateTransform {
         // Active-state: does the current page appear in this sidebar's
         // resolved contents? If so, mark and expand. Runs after
         // selection because it mutates only the sidebar we keep.
-        if ctx.project_index.is_some() {
+        if let Some(index) = ctx.project_index.as_deref() {
+            // Drop links to unlinkable drafts (bd-2hy80x1j). After
+            // selection, as Q1 gates at render time: a draft page still
+            // gets its sidebar, it just is not listed in it. Before
+            // active-state, so prev/next and breadcrumbs never see it.
+            prune_unlinkable_sidebar(&mut resolved.contents, index);
             let _ = resolve_active_state(&mut resolved, &page_source);
         }
 
