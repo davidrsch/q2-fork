@@ -90,7 +90,9 @@ The handler turns `fig-align` into `layout-align` on the `.cell` div (`src/core/
 
 ## Open design questions for the user
 
-6. **Document-level `fig-align`.** Q1 honours the document-level `fig-align` on labelled floats, including diagram floats, and lets it override a cell option. q2 does not read the document-level option for any figure, image or diagram. Should this strand add it for diagrams? If so, what precedence applies: does the cell option win, unlike Q1? Or should it be a separate strand covering images and diagrams together?
+None remain. Question 6 was moved out of scope: document-level and block-scoped `fig-align` for images and diagrams together is now bd-151xkfe5. It will use q2's block-level metadata so the setting can be scoped, for example to a single section.
+
+6. **Document-level `fig-align`** (moved to bd-151xkfe5). Q1 honours the document-level `fig-align` on labelled floats, including diagram floats, and lets it override a cell option. q2 does not read the document-level option for any figure, image or diagram. Should this strand add it for diagrams? If so, what precedence applies: does the cell option win, unlike Q1? Or should it be a separate strand covering images and diagrams together?
 
 ### Answered (kept for the record; see § Decisions)
 
