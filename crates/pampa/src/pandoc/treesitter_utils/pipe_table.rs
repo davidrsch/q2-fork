@@ -10,7 +10,7 @@ use crate::pandoc::ast_context::ASTContext;
 use crate::pandoc::attr::empty_attr;
 use crate::pandoc::block::{Block, Plain};
 use crate::pandoc::caption::Caption;
-use crate::pandoc::inline::Inlines;
+use crate::pandoc::inline::{Inline, InlineAttr, Inlines};
 use crate::pandoc::location::node_source_info_with_context;
 use crate::pandoc::table::{
     Alignment, Cell, ColSpec, ColWidth, Row, Table, TableBody, TableFoot, TableHead,
@@ -124,6 +124,9 @@ pub fn process_pipe_table_cell(
             PandocNativeIntermediate::IntermediateInlines(inlines) => {
                 plain_content.extend(inlines);
             }
+            PandocNativeIntermediate::IntermediateAttr(attr, attr_source, attr_si) => {
+                plain_content.push(Inline::Attr(InlineAttr::new(attr, attr_source, attr_si)));
+            }
             _ => {
                 // Skip other intermediate types (e.g., markers)
             }
@@ -203,6 +206,43 @@ pub fn process_pipe_table(
             }
         } else {
             panic!("Unexpected node in pipe_table: {}", node);
+        }
+    }
+
+    // A cell's `{...}` attribute block is kept only where it can be a
+    // caption written directly under the table (`:Caption {.striped}`, no
+    // blank line): a final single-cell row starting with `:`. The postprocess
+    // caption fixup lifts it onto the table (bd-hfghrqvh). Anywhere else it
+    // is dropped, as it always was.
+    let starts_with_colon = |cell: &Cell| match cell.content.first() {
+        Some(Block::Plain(p)) => {
+            matches!(p.content.first(), Some(Inline::Str(s)) if s.text.starts_with(':'))
+        }
+        _ => false,
+    };
+    let caption_row = rows.len().checked_sub(1).filter(|&last| {
+        let cells = &rows[last].cells;
+        cells.len() == 1 && starts_with_colon(&cells[0])
+    });
+    let strip_attrs = |row: &mut Row| {
+        for cell in row.cells.iter_mut() {
+            for block in cell.content.iter_mut() {
+                if let Block::Plain(p) = block
+                    && p.content.iter().any(|i| matches!(i, Inline::Attr(_)))
+                {
+                    p.content.retain(|i| !matches!(i, Inline::Attr(_)));
+                    // Re-trim: the space before a dropped attribute is now trailing.
+                    p.content = trim_inlines(std::mem::take(&mut p.content)).0;
+                }
+            }
+        }
+    };
+    if let Some(h) = header.as_mut() {
+        strip_attrs(h);
+    }
+    for (i, row) in rows.iter_mut().enumerate() {
+        if Some(i) != caption_row {
+            strip_attrs(row);
         }
     }
 

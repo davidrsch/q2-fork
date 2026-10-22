@@ -1640,3 +1640,66 @@ fn test_summary_all_inline_and_block_types_tested() {
         "All major inline and block types with attributes have been tested"
     );
 }
+
+/// bd-hfghrqvh: a caption written directly under the table with no space
+/// after the colon (`:Caption {...}`, product-doc-theme's spelling) parses
+/// through the caption-as-last-row fixup. Its attribute block must land on
+/// the table — with sources — as it does for a blank-line caption. Pandoc
+/// accepts this form.
+#[test]
+fn test_adjacent_no_space_caption_attr_merges_into_table() {
+    let input = "| Header |\n|--------|\n| Data   |\n:Caption {#tbl-1 .striped .hover key=v}\n";
+    let pandoc = parse_qmd(input);
+
+    let Block::Table(table) = &pandoc.blocks[0] else {
+        panic!("Expected Table block, got {:?}", pandoc.blocks[0]);
+    };
+    assert_eq!(table.attr.0, "tbl-1");
+    assert_eq!(
+        table.attr.1,
+        vec!["striped".to_string(), "hover".to_string()]
+    );
+    assert_eq!(table.attr.2.get("key").map(String::as_str), Some("v"));
+    assert_eq!(
+        table.bodies[0].body.len(),
+        1,
+        "caption row must leave the body"
+    );
+
+    let caption = table.caption.long.as_ref().expect("caption");
+    let Block::Plain(plain) = &caption[0] else {
+        panic!("Expected Plain caption, got {:?}", caption[0]);
+    };
+    assert!(
+        matches!(plain.content.as_slice(), [Inline::Str(s)] if s.text == "Caption"),
+        "attribute (and the space before it) must leave the caption: {:?}",
+        plain.content
+    );
+
+    assert_source_matches(input, table.attr_source.id.as_ref().unwrap(), "#tbl-1");
+    let striped = table.attr_source.classes[0].as_ref().unwrap();
+    assert_source_matches(input, striped, ".striped");
+}
+
+/// The fixup only keeps an attribute block in a final single-cell row
+/// starting with `:`. In an ordinary cell it is still dropped, with the
+/// space before it trimmed.
+#[test]
+fn test_attr_in_ordinary_table_cell_is_still_dropped() {
+    let input = "| a | b |\n|---|---|\n| x {.foo} | y |\n";
+    let pandoc = parse_qmd(input);
+
+    let Block::Table(table) = &pandoc.blocks[0] else {
+        panic!("Expected Table block, got {:?}", pandoc.blocks[0]);
+    };
+    assert!(table.attr.1.is_empty());
+    let cell = &table.bodies[0].body[0].cells[0];
+    let Block::Plain(plain) = &cell.content[0] else {
+        panic!("Expected Plain cell");
+    };
+    assert!(
+        matches!(plain.content.as_slice(), [Inline::Str(s)] if s.text == "x"),
+        "got {:?}",
+        plain.content
+    );
+}
