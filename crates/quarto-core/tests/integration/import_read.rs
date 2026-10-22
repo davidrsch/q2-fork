@@ -25,11 +25,10 @@ pub fn reads(qmd: &str) -> Result<(), String> {
     .map_err(|e| format!("{e:?}"))
 }
 
-/// `writer-bugs-docx` holds a definition with two paragraphs (pandoc's "Definition" style).
-/// The qmd writer indents the second paragraph four spaces, which the reader rejects as an
-/// indented code block (Q-2-35): the definition-list limit the epic's I18 correction records
-/// and P2 left out of scope. Remove this exemption when the writer is fixed.
-const KNOWN_UNREREADABLE: &[(&str, &str)] = &[("writer-bugs-docx", "Q-2-35")];
+/// Recordings whose untransformed qmd is known not to re-read, with the code the reader
+/// reports. Empty since bd-byr1oonq: `writer-bugs-docx` (a definition with two paragraphs)
+/// was here until the qmd writer stopped writing pandoc's `Term` / `:   Def.` syntax.
+const KNOWN_UNREREADABLE: &[(&str, &str)] = &[];
 
 #[test]
 fn every_recording_reads_and_its_untransformed_qmd_rereads() {

@@ -802,3 +802,172 @@ fn loose_bullet_item_with_a_non_paragraph_block_round_trips() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Definition lists (bd-byr1oonq): written as the `.definition-list` div the
+// qmd reader desugars, never pandoc's `Term` / `:   Def.` syntax (which the
+// qmd reader does not parse).
+// ---------------------------------------------------------------------------
+
+pub fn definition_list(entries: Vec<(Vec<Value>, Vec<Vec<Value>>)>) -> Value {
+    let entries: Vec<Value> = entries
+        .into_iter()
+        .map(|(term, definitions)| json!([term, definitions]))
+        .collect();
+    json!({"t": "DefinitionList", "c": entries})
+}
+
+#[test]
+fn definition_list_is_written_as_a_definition_list_div() {
+    let qmd = assert_roundtrip(doc(vec![definition_list(vec![
+        (inl("Term one"), vec![vec![plain(inl("Def one."))]]),
+        (inl("Term two"), vec![vec![plain(inl("Def two."))]]),
+    ])]));
+    assert_eq!(
+        qmd,
+        "::: {.definition-list}\n\n* Term one\n  - Def one.\n* Term two\n  - Def two.\n\n:::\n"
+    );
+}
+
+#[test]
+fn definition_list_shapes_round_trip() {
+    let cases: Vec<(&str, Value)> = vec![
+        (
+            "several definitions",
+            definition_list(vec![(
+                inl("T"),
+                vec![vec![plain(inl("a"))], vec![plain(inl("b"))]],
+            )]),
+        ),
+        (
+            "multi-block definition",
+            definition_list(vec![(
+                inl("T"),
+                vec![vec![para(inl("One.")), para(inl("Two."))]],
+            )]),
+        ),
+        (
+            "formatted term",
+            definition_list(vec![(
+                vec![strong(inl("Bold")), space(), emph(inl("term"))],
+                vec![vec![plain(inl("d"))]],
+            )]),
+        ),
+        (
+            "code block definition",
+            definition_list(vec![(inl("T"), vec![vec![code_block("1 + 1")]])]),
+        ),
+        (
+            "paragraph then code block",
+            definition_list(vec![(
+                inl("T"),
+                vec![vec![para(inl("Text.")), code_block("1 + 1")]],
+            )]),
+        ),
+        (
+            "paragraph then bullet list",
+            definition_list(vec![(
+                inl("T"),
+                vec![vec![
+                    para(inl("Intro.")),
+                    bullet_list(vec![vec![plain(inl("a"))], vec![plain(inl("b"))]]),
+                ]],
+            )]),
+        ),
+        (
+            "nested definition list",
+            definition_list(vec![(
+                inl("Outer"),
+                vec![vec![definition_list(vec![(
+                    inl("Inner"),
+                    vec![vec![plain(inl("Inner def."))]],
+                )])]],
+            )]),
+        ),
+        (
+            "empty definition",
+            definition_list(vec![(inl("T"), vec![vec![]])]),
+        ),
+        (
+            "inside a block quote",
+            block_quote(vec![definition_list(vec![(
+                inl("T"),
+                vec![vec![plain(inl("d"))]],
+            )])]),
+        ),
+        (
+            "inside a bullet item after a paragraph",
+            bullet_list(vec![vec![
+                para(inl("item")),
+                definition_list(vec![(inl("T"), vec![vec![plain(inl("d"))]])]),
+            ]]),
+        ),
+    ];
+    let failures: Vec<String> = cases
+        .into_iter()
+        .filter_map(|(what, block)| {
+            let t = trip(&doc(vec![block]));
+            (blocks_of(&t.before) != blocks_of(&t.after)).then(|| {
+                format!(
+                    "{what}\n--- qmd ---\n{}--- before ---\n{}\n--- after ---\n{}",
+                    t.qmd,
+                    blocks_of(&t.before),
+                    blocks_of(&t.after)
+                )
+            })
+        })
+        .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+/// Single-paragraph definitions separated by blank lines (`Para` each)
+/// read back tight: the qmd reader, like pandoc's definition-list reader,
+/// does not loosen a list for a blank line between its items. Tight/loose
+/// is not preserved here, but the list settles: the AST is stable from the
+/// first re-read and the text from the second write.
+#[test]
+fn loose_single_paragraph_definitions_settle_into_tight_ones() {
+    let loose = |b: fn(Vec<Value>) -> Value| {
+        doc(vec![definition_list(vec![(
+            inl("T"),
+            vec![vec![b(inl("a"))], vec![b(inl("b"))]],
+        )])])
+    };
+    // First trip: the loose AST reads back as the tight one.
+    let first = assert_roundtrip_with(loose(para), |expected| *expected = loose(plain));
+    // From then on the tight AST (and so its text) is a fixpoint.
+    let second = assert_roundtrip(loose(plain));
+    assert_ne!(
+        first, second,
+        "the loose spelling is written once, then settles"
+    );
+}
+
+/// An empty term is written as the `* []` placeholder, which the reader
+/// maps back to an empty term.
+#[test]
+fn definition_list_with_an_empty_term_round_trips() {
+    let qmd = assert_roundtrip(doc(vec![definition_list(vec![(
+        vec![],
+        vec![vec![plain(inl("d"))]],
+    )])]));
+    assert!(qmd.contains("* []\n"), "{qmd}");
+}
+
+/// A term with no definitions has no definition-list spelling: it falls
+/// back to the plain `.definition-list` div, which keeps its content.
+#[test]
+fn definition_list_term_without_definitions_falls_back_to_the_div() {
+    assert_roundtrip_with(
+        doc(vec![definition_list(vec![(inl("T"), vec![])])]),
+        |expected| {
+            expected["blocks"][0] = json!({
+                "t": "Div",
+                "c": [
+                    attr("", &["definition-list"], &[]),
+                    [bullet_list(vec![vec![plain(inl("T"))]])],
+                ],
+            });
+        },
+    );
+}

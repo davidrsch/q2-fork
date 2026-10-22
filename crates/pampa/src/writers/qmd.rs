@@ -1061,38 +1061,58 @@ fn write_rawblock(rawblock: &RawBlock, buf: &mut dyn std::io::Write) -> std::io:
     Ok(())
 }
 
-// INCREMENTAL WRITER COUPLING: This is the sugar transform for definition lists. The
-// incremental writer always fully rewrites DefinitionList blocks. See: postprocess.rs
-// transform registry.
+/// Write a definition list as the `.definition-list` div the qmd reader
+/// desugars (`transform_definition_list_div`): one `*` item per term, holding
+/// the term and a `-` bullet list of its definitions. Pandoc's
+/// `Term` / `:   Def.` syntax is not qmd.
+///
+/// Two shapes have no div spelling. An empty term is written as the `* []`
+/// placeholder, which the reader maps back to an empty term. A term with no
+/// definitions leaves its item without the nested list, so the div re-reads
+/// as a plain `.definition-list` div: its content survives, its shape does
+/// not (pandoc's markdown cannot express it either).
+///
+/// INCREMENTAL WRITER COUPLING: the sugared form uses BulletList (an
+/// indentation boundary), so the incremental writer always fully rewrites
+/// definition lists. See: postprocess.rs transform registry.
 fn write_definitionlist(
     deflist: &DefinitionList,
     buf: &mut dyn std::io::Write,
     ctx: &mut QmdWriterContext,
 ) -> std::io::Result<()> {
-    for (i, (term, definitions)) in deflist.content.iter().enumerate() {
-        if i > 0 {
-            writeln!(buf)?;
+    writeln!(buf, "::: {{.definition-list}}")?;
+    writeln!(buf)?;
+    for (term, definitions) in &deflist.content {
+        let mut item_writer = BulletListContext::new(buf, '*');
+        ctx.begin_block_sequence();
+        if term.is_empty() {
+            writeln!(item_writer, "[]")?;
+        } else {
+            write_plain(
+                &Plain {
+                    content: term.clone(),
+                    source_info: deflist.source_info.clone(),
+                },
+                &mut item_writer,
+                ctx,
+            )?;
         }
-
-        // Write the term
-        for inline in term {
-            write_inline(inline, buf, ctx)?;
-        }
-        writeln!(buf)?;
-
-        // Write the definitions
-        for definition in definitions {
-            write!(buf, ":   ")?;
-            ctx.begin_block_sequence();
-            for (j, block) in definition.iter().enumerate() {
-                if j > 0 {
-                    writeln!(buf)?;
-                    write!(buf, "    ")?; // Indent subsequent blocks in definition
-                }
-                write_block(block, buf, ctx)?;
-            }
+        if !definitions.is_empty() {
+            // Called directly rather than through `write_block`, whose
+            // sibling alternation would pick `*`; `-` is the documented
+            // spelling for definitions.
+            ctx.bullet_marker = '-';
+            write_bulletlist(
+                &BulletList {
+                    content: definitions.clone(),
+                    source_info: deflist.source_info.clone(),
+                },
+                &mut item_writer,
+                ctx,
+            )?;
         }
     }
+    writeln!(buf, "\n:::")?;
     Ok(())
 }
 
