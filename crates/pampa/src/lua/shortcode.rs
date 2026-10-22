@@ -132,6 +132,8 @@ impl LuaShortcodeEngine {
         super::quarto_api::register_scoped_require(&lua, runtime.clone())
             .map_err(LuaShortcodeError::LuaError)?;
         super::quarto_api::set_module_roots(&lua, options.module_roots.clone());
+        super::quarto_api::register_quarto_paths(&lua, options.typst.as_deref())
+            .map_err(LuaShortcodeError::LuaError)?;
         super::quarto_api::register_quarto_include(&lua, runtime.clone())
             .map_err(LuaShortcodeError::LuaError)?;
         for dialect in &options.dialects {
@@ -777,6 +779,44 @@ return {
         let mut engine = LuaShortcodeEngine::new("html", runtime).unwrap();
         engine.load_script(&script).await.unwrap();
         assert!(engine.has_handler("hello"));
+    }
+
+    /// `LuaOptions::typst` reaches handlers as `quarto.paths.typst()`
+    /// (bd-gebcr1sa).
+    #[tokio::test]
+    async fn test_quarto_paths_typst_comes_from_options() {
+        let tmp = TempDir::new().unwrap();
+        let script = write_script(
+            tmp.path(),
+            "paths.lua",
+            r#"
+return {
+    typstpath = function() return quarto.paths.typst() or "none" end
+}
+"#,
+        );
+        let typst = tmp.path().join("typst");
+        let options = crate::lua_options::LuaOptions {
+            typst: Some(typst.clone()),
+            ..Default::default()
+        };
+
+        for (options, expected) in [
+            (options, typst.to_string_lossy().into_owned()),
+            (Default::default(), "none".to_string()),
+        ] {
+            let mut engine =
+                LuaShortcodeEngine::new_with("html", make_runtime(), &options).unwrap();
+            engine.load_script(&script).await.unwrap();
+            let result = engine
+                .call("typstpath", &make_empty_args(), ShortcodeCallContext::Text)
+                .await
+                .unwrap();
+            match result {
+                LuaShortcodeResult::Text(t) => assert_eq!(t, expected),
+                other => panic!("Expected Text, got {:?}", other),
+            }
+        }
     }
 
     #[tokio::test]

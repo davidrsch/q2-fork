@@ -358,12 +358,12 @@ notes = '''
 Reviewed against quarto-cli v1.11.6 (2026-10-21, bd-jsfg1494): lipsum,
 version, video's filter/resources, kbd.js and every _extension.yml are
 byte-identical. Carrying q2 patches on an up-to-date upstream base: kbd.lua,
-kbd.css, video.lua, placeholder.lua (typst output uses SVG). pagebreak is
-q2's own extension adapted from Q1's filters/rmarkdown/pagebreak.lua (Q1 has
-no pagebreak extension). NOT ported: placeholder's bc2d42e00 (local typst
-rasterization instead of fetching svg2png.deno.dev) — needs
-quarto.paths.typst() and fatal() in q2's Lua API (bd-gebcr1sa). Never re-copy
-wholesale — merge upstream diffs into the q2 versions.
+kbd.css, video.lua, placeholder.lua (bc2d42e00's local typst rasterization is
+ported, bd-gebcr1sa; q2 defaults to PNG only for latex/docx instead of every
+non-typst format, and fatal()s up front when quarto.paths.typst() is nil, as
+in WASM). pagebreak is q2's own extension adapted from Q1's
+filters/rmarkdown/pagebreak.lua (Q1 has no pagebreak extension). Never
+re-copy wholesale — merge upstream diffs into the q2 versions.
 '''
 
 [[asset]]

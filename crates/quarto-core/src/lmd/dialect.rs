@@ -68,8 +68,12 @@ pub fn dialects() -> Vec<Arc<dyn SourceDialect>> {
 /// extension is addressable by name, `require("<name>/module")`, built-ins
 /// first so a user extension of the same name wins (the discovery order).
 /// For a single-file render the "project root" is the document's
-/// directory, which `ProjectContext::dir` already is.
-pub fn lua_options(project: &crate::project::ProjectContext) -> LuaOptions {
+/// directory, which `ProjectContext::dir` already is. `quarto.paths.typst()`
+/// gets the same binary the render uses (bd-gebcr1sa).
+pub fn lua_options(
+    project: &crate::project::ProjectContext,
+    runtime: &dyn quarto_system_runtime::SystemRuntime,
+) -> LuaOptions {
     LuaOptions {
         dialects: dialects(),
         module_roots: ModuleRoots {
@@ -83,6 +87,7 @@ pub fn lua_options(project: &crate::project::ProjectContext) -> LuaOptions {
                 })
                 .collect(),
         },
+        typst: crate::render::find_typst(runtime),
     }
 }
 

@@ -25,6 +25,7 @@ WASM rebuild is needed for a changelog-only edit.
 
 ### 2026-10-21
 
+- [`a43fb04b1`](https://github.com/quarto-dev/q2/commits/a43fb04b1): The placeholder shortcode no longer calls the retired svg2png.deno.dev service. It uses SVG for HTML and Typst, and a PNG drawn locally with typst for LaTeX and Word output; where typst is unavailable, as in the browser, a PNG placeholder now reports a clear error instead of failing obscurely.
 - [`f4c4ec189`](https://github.com/quarto-dev/q2/commits/f4c4ec189): A figure whose caption is also its image's alt text is announced once by screen readers: the caption is hidden from assistive technology and the image keeps its alt text.
 - [`9a141cf61`](https://github.com/quarto-dev/q2/commits/9a141cf61): Rendered HTML pages start with a "Skip to main content" link, hidden until a keyboard user tabs to it, that jumps past the navbar and sidebar to the page content; the link text follows the document language.
 - [`08a1d37da`](https://github.com/quarto-dev/q2/commits/08a1d37da): An image's `fig-alt` now becomes its alt text in the preview and in every rendered format (HTML, slides, Word, Typst), instead of being dropped.

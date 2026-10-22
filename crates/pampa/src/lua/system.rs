@@ -7,7 +7,7 @@
  * This module provides system and file operations following the Pandoc Lua API:
  * - arch, os: system information constants
  * - cputime: CPU time measurement
- * - command: execute system commands
+ * - command: execute system commands (and `pandoc.pipe`, which raises on failure)
  * - File operations: read_file, write_file, copy, rename, remove
  * - Directory operations: list_directory, make_directory, remove_directory
  * - Working directory: get_working_directory, with_working_directory
@@ -101,6 +101,31 @@ pub fn register_pandoc_system(
                     }
                     Err(e) => Err(mlua::Error::runtime(e.to_string())),
                 }
+            },
+        )?,
+    )?;
+
+    // pandoc.pipe(command, args, input) - lives on `pandoc`, not `pandoc.system`.
+    // Returns stdout; unlike `command`, a non-zero exit raises an error.
+    let rt = runtime.clone();
+    pandoc.set(
+        "pipe",
+        lua.create_function(
+            move |lua, (cmd, args, input): (String, Vec<String>, Option<mlua::String>)| {
+                let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                let input_bytes = input.map(|s| s.as_bytes().to_vec());
+
+                let output = rt
+                    .exec_command(&cmd, &args_refs, input_bytes.as_deref())
+                    .map_err(|e| mlua::Error::runtime(format!("pandoc.pipe: {cmd}: {e}")))?;
+                if output.code != 0 {
+                    return Err(mlua::Error::runtime(format!(
+                        "pandoc.pipe: {cmd} exited with code {}: {}",
+                        output.code,
+                        output.stderr_string().trim()
+                    )));
+                }
+                lua.create_string(&output.stdout)
             },
         )?,
     )?;
@@ -326,30 +351,36 @@ pub fn register_pandoc_system(
     // TEMPORARY DIRECTORIES
     // ═══════════════════════════════════════════════════════════════════════
 
-    // with_temporary_directory(parent_dir, template, callback) - create temp dir
+    // with_temporary_directory([parent_dir,] template, callback) - create temp dir.
+    // Pandoc accepts both arities; Q1's placeholder shortcode uses the short one.
     let rt = runtime.clone();
     system.set(
         "with_temporary_directory",
-        lua.create_function(
-            move |_, (parent_dir, template, callback): (Option<String>, String, Function)| {
-                // Create temp directory
-                // If parent_dir is specified, we should create the temp dir there
-                // For now, we use the system temp dir and ignore parent_dir
-                let _ = parent_dir; // TODO: Use parent_dir if specified
+        lua.create_function(move |lua, args: MultiValue| {
+            let (parent_dir, template, callback): (Option<String>, String, Function) =
+                if args.len() >= 3 {
+                    lua.unpack_multi(args)?
+                } else {
+                    let (template, callback) = lua.unpack_multi(args)?;
+                    (None, template, callback)
+                };
+            // Create temp directory
+            // If parent_dir is specified, we should create the temp dir there
+            // For now, we use the system temp dir and ignore parent_dir
+            let _ = parent_dir; // TODO: Use parent_dir if specified
 
-                let temp = rt
-                    .temp_dir(&template)
-                    .map_err(|e| mlua::Error::runtime(e.to_string()))?;
+            let temp = rt
+                .temp_dir(&template)
+                .map_err(|e| mlua::Error::runtime(e.to_string()))?;
 
-                let temp_path = temp.path().to_string_lossy().to_string();
+            let temp_path = temp.path().to_string_lossy().to_string();
 
-                // Execute callback with temp directory path
+            // Execute callback with temp directory path
 
-                // temp directory is cleaned up when `temp` drops
+            // temp directory is cleaned up when `temp` drops
 
-                callback.call::<MultiValue>(temp_path)
-            },
-        )?,
+            callback.call::<MultiValue>(temp_path)
+        })?,
     )?;
 
     // with_working_directory(directory, callback) - change working directory temporarily
@@ -524,6 +555,16 @@ mod tests {
     const CAT_STDIN_COMMAND: &str = "pandoc.system.command('cat', {}, 'hello from stdin')";
     #[cfg(windows)]
     const CAT_STDIN_COMMAND: &str = "pandoc.system.command('findstr', {'^'}, 'hello from stdin')";
+
+    #[cfg(not(windows))]
+    const PIPE_STDIN_COMMAND: &str = "return pandoc.pipe('cat', {}, 'hello from stdin')";
+    #[cfg(windows)]
+    const PIPE_STDIN_COMMAND: &str = "return pandoc.pipe('findstr', {'^'}, 'hello from stdin')";
+
+    #[cfg(not(windows))]
+    const PIPE_FALSE_COMMAND: &str = "return pandoc.pipe('false', {}, '')";
+    #[cfg(windows)]
+    const PIPE_FALSE_COMMAND: &str = "return pandoc.pipe('cmd', {'/C', 'exit', '1'}, '')";
 
     #[test]
     fn test_os_and_arch() {
@@ -724,6 +765,37 @@ mod tests {
             Value::Integer(code) => assert_ne!(code, 0),
             _ => panic!("Expected integer exit code"),
         }
+    }
+
+    #[test]
+    fn test_pipe_returns_stdout_of_stdin() {
+        let (lua, _) = create_test_lua();
+
+        let out: String = lua.load(PIPE_STDIN_COMMAND).eval().unwrap();
+
+        assert!(out.contains("hello from stdin"), "{out}");
+    }
+
+    #[test]
+    fn test_pipe_raises_on_nonzero_exit() {
+        let (lua, _) = create_test_lua();
+
+        let err = lua.load(PIPE_FALSE_COMMAND).exec().unwrap_err();
+
+        assert!(err.to_string().contains("exited with code"), "{err}");
+    }
+
+    #[test]
+    fn test_with_temporary_directory_without_parent() {
+        let (lua, _) = create_test_lua();
+
+        // Pandoc's two-argument form: (template, callback).
+        let result: String = lua
+            .load("return pandoc.system.with_temporary_directory('short', function(dir) return dir end)")
+            .eval()
+            .unwrap();
+
+        assert!(result.contains("short"), "{result}");
     }
 
     #[test]
