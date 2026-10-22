@@ -234,7 +234,7 @@ real github.com traffic.
 - [x] Run the product-doc-theme fixture with `q2 add posit-dev/product-doc-theme --trust`
       (real network, manual), then render with `type: posit-docs`. Record the result in the
       strand.
-- [x] `cargo xtask verify --skip-hub-build`: 17244 Rust tests pass. Only `quarto-hub-mcp`'s vitest
+- [x] `cargo xtask verify --skip-hub-build`: 17244 Rust tests pass. Only the vitest suite of `quarto-hub-mcp`
       failed: 1–4 random tests hit the 5 s timeout, a different set each run, and all 575 pass
       with `--testTimeout=30000`. Its WASM bundle predates this branch, so the failures are
       unrelated.
