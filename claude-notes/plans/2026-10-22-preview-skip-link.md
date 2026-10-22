@@ -149,9 +149,17 @@ reads language terms React-side, so follow `DraftAlertSlot` for that.
 - [x] Phase 1 — `SkipLinkSlot` + label.
 - [x] Phase 2 — `jumpToAnchor` at the three call sites.
 - [x] Phase 3 — Relax the fixtures; the native smoke-all run passes.
-- [ ] Phase 4 — Hub E2E smoke-all for the skip-link fixtures
+- [x] Phase 4 — Hub E2E smoke-all for the skip-link fixtures
   (chromium + firefox), and the full preview-renderer suites.
-- [ ] Phase 5 — hub-client changelog entry.
+  Results: 10/10 E2E passed. The preview-renderer suites, the hub-client
+  unit, integration and DOM-parity WASM tests, and `tsc -b` are all
+  green. `cargo xtask verify --skip-hub-build`: 15918/15919 Rust tests
+  passed. The one failure,
+  `quarto-preview editor_ui_serves_pdfjs_from_the_viewer_bundle`, comes
+  from the local environment: `q2-preview-spa/dist` was built before
+  pdf.js was bundled, so it has no `pdfjs/` tree. Verify cancels on that
+  failure, so its later TS stages were run by hand as listed above.
+- [x] Phase 5 — hub-client changelog entry.
 
 ## Risks / tradeoffs (draft)
 

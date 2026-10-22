@@ -23,6 +23,10 @@ WASM rebuild is needed for a changelog-only edit.
 
 -->
 
+### 2026-10-22
+
+- [`2270d690e`](https://github.com/quarto-dev/q2/commits/2270d690e): The preview now shows the same "Skip to main content" link as rendered pages, and following it (or any in-page link to a focusable target) moves keyboard focus there.
+
 ### 2026-10-21
 
 - [`a43fb04b1`](https://github.com/quarto-dev/q2/commits/a43fb04b1): The placeholder shortcode no longer calls the retired svg2png.deno.dev service. It uses SVG for HTML and Typst, and a PNG drawn locally with typst for LaTeX and Word output; where typst is unavailable, as in the browser, a PNG placeholder now reports a clear error instead of failing obscurely.
