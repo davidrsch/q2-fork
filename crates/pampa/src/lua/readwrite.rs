@@ -375,14 +375,20 @@ fn pandoc_read(lua: &Lua, args: mlua::MultiValue) -> Result<Value> {
                 &mut trace,
                 true, // prune_errors
             ) {
-                Ok((pandoc, _context, _warnings)) => {
-                    // Convert Rust Pandoc to Lua
+                Ok((pandoc, _context, warnings)) => {
+                    // The reader's warnings are located in this call's text,
+                    // so the host can show them there (bd-fwswbxnl).
+                    super::diagnostics::push_diagnostics(lua, warnings);
                     rust_pandoc_to_lua_table(lua, &pandoc)
                 }
                 Err(diagnostics) => {
-                    // Convert diagnostics to error message
+                    // The Lua error names the problems; the structured
+                    // diagnostics, located in the text, go to the host too,
+                    // for when the error is caught (`pcall`) or the host
+                    // reports the failure alongside them (an lmd cell).
                     let messages: Vec<String> =
                         diagnostics.iter().map(|d| d.title.clone()).collect();
+                    super::diagnostics::push_diagnostics(lua, diagnostics);
                     Err(Error::runtime(format!(
                         "pandoc.read failed: {}",
                         messages.join("; ")
@@ -404,12 +410,13 @@ fn pandoc_read(lua: &Lua, args: mlua::MultiValue) -> Result<Value> {
                 Ok((pandoc, _context)) => {
                     // The structural desugaring set (list-table, definition-list,
                     // implicit figure), as for the qmd arm above (where the reader
-                    // applies it) and the CLI's `--from json`. `pandoc.read` has
-                    // no diagnostics channel, so a malformed list-table's Q-2-35
-                    // is not reported here; the div is left as is.
+                    // applies it) and the CLI's `--from json`. Its diagnostics
+                    // (e.g. a malformed list-table's Q-2-35; the div is left as
+                    // is) go to the host (bd-fwswbxnl).
                     let mut collector =
                         crate::utils::diagnostic_collector::DiagnosticCollector::new();
                     let pandoc = crate::pandoc::desugar::desugar_document(pandoc, &mut collector);
+                    super::diagnostics::push_diagnostics(lua, collector.into_diagnostics());
                     rust_pandoc_to_lua_table(lua, &pandoc)
                 }
                 Err(e) => Err(Error::runtime(format!("pandoc.read (json) failed: {}", e))),
@@ -1411,5 +1418,67 @@ print(1)
         assert_eq!(first.len(), 1);
         assert_eq!(second.len(), 1);
         assert_ne!(first, second);
+    }
+
+    /// A Lua state with the full `pandoc` and `quarto` namespaces, as a
+    /// filter sees them.
+    fn filter_lua() -> Lua {
+        let lua = Lua::new();
+        super::super::constructors::register_pandoc_namespace(
+            &lua,
+            std::sync::Arc::new(super::super::runtime::NativeRuntime::new()),
+            super::super::mediabag::create_shared_mediabag(),
+        )
+        .unwrap();
+        super::super::diagnostics::register_quarto_namespace(&lua).unwrap();
+        lua
+    }
+
+    /// bd-fwswbxnl: the reader's own warnings reach the host, located in
+    /// the call's text.
+    #[test]
+    fn pandoc_read_forwards_the_reader_s_warnings() {
+        let lua = filter_lua();
+        lua.load(r#"pandoc.read("Term\n: Definition", "markdown")"#)
+            .exec()
+            .unwrap();
+
+        let diags = super::super::diagnostics::extract_lua_diagnostics(&lua).unwrap();
+        let sources = take_read_sources(&lua);
+        let q_2_54: Vec<_> = diags
+            .iter()
+            .filter(|d| d.code.as_deref() == Some("Q-2-54"))
+            .collect();
+        assert_eq!(q_2_54.len(), 1, "{diags:#?}");
+        let (file, _, _) = q_2_54[0]
+            .location
+            .as_ref()
+            .and_then(|l| l.resolve_byte_range())
+            .expect("located");
+        assert_eq!(sources.len(), 1);
+        assert_eq!(file, sources[0].file_id.0);
+    }
+
+    /// bd-fwswbxnl: the json arm's desugaring diagnostics (here Q-2-35, a
+    /// list-table div that is not a list of lists) reach the host too.
+    #[test]
+    fn pandoc_read_json_forwards_desugaring_diagnostics() {
+        let lua = filter_lua();
+        lua.load(
+            r#"
+            local doc = pandoc.Pandoc({
+              pandoc.Div({ pandoc.Para({ pandoc.Str("x") }) }, pandoc.Attr("", {"list-table"})),
+            })
+            pandoc.read(pandoc.write(doc, "json"), "json")
+        "#,
+        )
+        .exec()
+        .unwrap();
+
+        let diags = super::super::diagnostics::extract_lua_diagnostics(&lua).unwrap();
+        assert!(
+            diags.iter().any(|d| d.code.as_deref() == Some("Q-2-35")),
+            "{diags:#?}"
+        );
     }
 }

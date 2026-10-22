@@ -113,6 +113,8 @@ Why not the alternatives:
 - json arm: forward the desugar collector's diagnostics (e.g. Q-2-35) the same way; the comment there says they're currently dropped for lack of a channel.
 - Test: Q-2-54 (definition list) from `pandoc.read` in an lmd cell appears with the string's snippet.
 
+**As built (Phase 3, 2026-10-22):** a structured channel instead of `quarto._diagnostics`, whose entries carry only kind, message and location, and would re-code everything as Q-11-1. `lua::diagnostics::push_diagnostics(lua, …)` queues `DiagnosticMessage`s in Lua app data, and `extract_lua_diagnostics` appends and drains them. Every host already calls that function (filters, `LmdRuntime::take_diagnostics`, the shortcode engine), so no host changed. The qmd arm forwards Ok-path warnings and Err-path diagnostics (then raises as before); the json arm forwards its desugar collector. Tests: `lua::readwrite::tests::{pandoc_read_forwards_the_reader_s_warnings, pandoc_read_json_forwards_desugaring_diagnostics}` and the e2e `pandoc_read_reader_warnings_reach_the_render` (Q-2-54 under `dl.qmd[pandoc.read, line 6]`). Caveat: an Err-path diagnostic from a Lua filter that doesn\'t catch the error is still lost, because the filter run aborts before extraction.
+
 ### Phase 4 — `pandoc.read(text, "commonmark")` (GH #885)
 
 Requires the #883 plan merged.
