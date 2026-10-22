@@ -1039,6 +1039,7 @@ impl<'a> ProjectPipeline<'a, RenderToFileRenderer<'a>> {
             runtime,
             RenderToFileRenderer::new(options),
         )
+        .with_audience(options.audience)
     }
 
     /// Set the CLI `--to` override (bd-l6itt34u minimal slice). When `Some`,

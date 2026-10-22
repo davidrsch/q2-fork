@@ -23,6 +23,7 @@ use tempfile::TempDir;
 
 use quarto_core::format::Format;
 use quarto_core::project::ProjectContext;
+use quarto_core::project::drafts::RenderAudience;
 use quarto_core::project::orchestrator::{ProjectPipeline, ProjectRenderSummary, project_type_for};
 use quarto_core::render_to_file::RenderToFileOptions;
 use quarto_system_runtime::{NativeRuntime, SystemRuntime};
@@ -39,6 +40,13 @@ fn write(path: &Path, contents: &str) {
 }
 
 fn render_project(fixture: impl FnOnce(&Path)) -> (PathBuf, ProjectRenderSummary) {
+    render_project_with(RenderToFileOptions::default(), fixture)
+}
+
+fn render_project_with(
+    options: RenderToFileOptions,
+    fixture: impl FnOnce(&Path),
+) -> (PathBuf, ProjectRenderSummary) {
     let temp = TempDir::new().unwrap();
     let project_dir = canonical(temp.path());
     fixture(&project_dir);
@@ -46,7 +54,6 @@ fn render_project(fixture: impl FnOnce(&Path)) -> (PathBuf, ProjectRenderSummary
     let runtime: Arc<dyn SystemRuntime> = Arc::new(NativeRuntime::new());
     let mut project = ProjectContext::discover(&project_dir, runtime.as_ref()).unwrap();
 
-    let options = RenderToFileOptions::default();
     let project_type = project_type_for(&project);
     let mut pipeline = ProjectPipeline::new(
         &mut project,
@@ -201,4 +208,28 @@ fn invalid_value_warns_on_draft_pages_and_falls_back_to_gone() {
         1,
         "one Q-5-49, from the one draft page; got {codes:?}"
     );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Authoring views
+// ═══════════════════════════════════════════════════════════════════
+
+/// An authoring view (`q2 preview --static`, the preview server's
+/// native routes) shows every draft, even under an explicit
+/// `draft-mode: gone` — the mode governs reading views only.
+#[test]
+fn authoring_view_overrides_explicit_gone() {
+    let fixture = |d: &Path| {
+        write(&d.join("_quarto.yml"), &quarto_yml("  draft-mode: gone\n"));
+        write(&d.join("secret.qmd"), &draft_page("Secret", ""));
+    };
+    let (dir, _) = render_project(fixture);
+    assert!(!has_companion(&dir, "secret.md"), "reading view hides it");
+
+    let options = RenderToFileOptions {
+        audience: RenderAudience::Authoring,
+        ..Default::default()
+    };
+    let (dir, _) = render_project_with(options, fixture);
+    assert!(has_companion(&dir, "secret.md"), "authoring view shows it");
 }

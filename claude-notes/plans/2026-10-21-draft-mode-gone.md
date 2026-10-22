@@ -345,7 +345,11 @@ is one commit or a small group, with tests.
      `_quarto.yml`, `_metadata.yml`, front matter, `-M`), precedence
      between them, and an invalid value warning and falling back to
      `gone`.
-2. **Authoring audience.**
+2. **Authoring audience.** *Done 2026-10-22.* `RenderToFileOptions.audience`
+   (applied by `ProjectPipeline::new`); `Authoring` is set by `q2 preview
+   --static`, both hub-client WASM pipelines, the browser export
+   (`pandoc_request`), book downloads, and the preview server's native
+   PDF/download routes (`quarto-preview` `render_helper`).
    - Thread `RenderAudience` through `RenderArgs` → render options →
      pipeline → `RenderContext`/`ProjectIndex`.
    - Set it from `q2 preview --static` and the hub-client WASM entry
