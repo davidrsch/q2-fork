@@ -435,3 +435,95 @@ fn authoring_view_keeps_draft_links() {
     let home = read(&dir.join("_site/index.html"));
     assert!(links_to_item2(&home) >= 5, "{home}");
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// `drafts:` — marking pages by path
+// ═══════════════════════════════════════════════════════════════════
+
+fn plain_page(title: &str) -> String {
+    format!("---\ntitle: {title}\n---\n\nPublished body.\n")
+}
+
+/// A page listed in `website.drafts` is a draft (here: `gone`, so a
+/// blank page and no companion), without saying `draft: true` itself.
+#[test]
+fn website_drafts_list_marks_pages() {
+    let (dir, _) = render_project(|d| {
+        write(
+            &d.join("_quarto.yml"),
+            &quarto_yml("  drafts:\n    - posts/wip.qmd\n"),
+        );
+        write(&d.join("posts/wip.qmd"), &plain_page("WIP"));
+        write(&d.join("posts/done.qmd"), &plain_page("Done"));
+    });
+    assert!(!has_companion(&dir, "posts/wip.md"));
+    assert!(has_companion(&dir, "posts/done.md"));
+    let wip = read(&dir.join("_site/posts/wip.html"));
+    assert!(wip.contains("draft-remove"), "{wip}");
+}
+
+/// Globs and bare directories work; the top-level `drafts` spelling is
+/// accepted too.
+#[test]
+fn drafts_list_takes_globs_and_directories() {
+    let (dir, _) = render_project(|d| {
+        write(
+            &d.join("_quarto.yml"),
+            &format!(
+                "{}drafts:\n  - \"posts/wip-*.qmd\"\n  - scratch\n",
+                quarto_yml("")
+            ),
+        );
+        write(&d.join("posts/wip-one.qmd"), &plain_page("One"));
+        write(&d.join("posts/final.qmd"), &plain_page("Final"));
+        write(&d.join("scratch/deep/idea.qmd"), &plain_page("Idea"));
+    });
+    assert!(!has_companion(&dir, "posts/wip-one.md"));
+    assert!(has_companion(&dir, "posts/final.md"));
+    assert!(!has_companion(&dir, "scratch/deep/idea.md"));
+}
+
+/// A pattern in `posts/_metadata.yml` resolves relative to `posts/`
+/// and reaches only pages under it.
+#[test]
+fn drafts_list_in_metadata_yml_is_relative_to_its_directory() {
+    let (dir, _) = render_project(|d| {
+        write(&d.join("_quarto.yml"), &quarto_yml(""));
+        write(&d.join("posts/_metadata.yml"), "drafts:\n  - wip.qmd\n");
+        write(&d.join("posts/wip.qmd"), &plain_page("Posts WIP"));
+        write(&d.join("wip.qmd"), &plain_page("Root WIP"));
+    });
+    assert!(!has_companion(&dir, "posts/wip.md"));
+    assert!(has_companion(&dir, "wip.md"));
+}
+
+/// The listed page gets `draft-mode` like any other draft: under
+/// `unlinked` it renders with the banner.
+#[test]
+fn drafts_list_pages_follow_draft_mode() {
+    let (dir, _) = render_project(|d| {
+        write(
+            &d.join("_quarto.yml"),
+            &quarto_yml("  draft-mode: unlinked\n  drafts:\n    - wip.qmd\n"),
+        );
+        write(&d.join("wip.qmd"), &plain_page("WIP"));
+    });
+    let wip = read(&dir.join("_site/wip.html"));
+    assert!(wip.contains("Published body."), "{wip}");
+    assert!(wip.contains("quarto-draft-alert"), "{wip}");
+}
+
+/// A pattern escaping the project warns Q-5-50 and marks nothing.
+#[test]
+fn escaping_drafts_pattern_warns() {
+    let (dir, summary) = render_project(|d| {
+        write(
+            &d.join("_quarto.yml"),
+            &quarto_yml("  drafts:\n    - ../outside.qmd\n"),
+        );
+        write(&d.join("index.qmd"), &plain_page("Home"));
+    });
+    assert!(has_companion(&dir, "index.md"));
+    let codes = diagnostic_codes(&summary);
+    assert!(codes.iter().any(|c| c == "Q-5-50"), "{codes:?}");
+}

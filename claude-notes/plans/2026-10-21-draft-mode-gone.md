@@ -390,7 +390,16 @@ is one commit or a small group, with tests.
      quarto-web example (`navbar: [item1, item2]`, `item2` a draft).
    - Assertions: navbar item count, body link unwrapped, listing,
      sitemap, search.json.
-5. **`website.drafts`.**
+5. **`website.drafts`.** *Done 2026-10-22.*
+   - `drafts::match_drafts_list` is the one implementation, using the
+     shared glob API with new `GlobOptions::DRAFTS`.
+   - `DocumentProfileStage` folds a match into `profile.draft` and into
+     the merged meta as `draft: true`, so the banner and `gone` need no
+     extra plumbing.
+   - The draft transform reports bad patterns as Q-5-50 on every render.
+     The render summary coalesces them by source location.
+   - **Gap:** Q1's `metadata-files: [drafts.yml]` route doesn't work,
+     because q2 has no `metadata-files` yet (bd-spb7mobo, linked).
    - Read from merged metadata, resolve patterns against the declaring
      file, glob-match, and fold into `profile.draft`.
    - Tests: plain path, glob, pattern declared in `_metadata.yml`

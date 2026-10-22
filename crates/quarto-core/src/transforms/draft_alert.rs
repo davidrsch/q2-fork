@@ -88,10 +88,13 @@ use quarto_pandoc_types::pandoc::Pandoc;
 use crate::Result;
 use crate::format::{Format, is_revealjs_target};
 use crate::language::LanguageTerms;
-use crate::project::drafts::{DRAFT_REMOVE_PATH, meta_is_draft, resolve_draft_mode};
+use crate::project::drafts::{
+    DRAFT_REMOVE_PATH, match_drafts_list, meta_is_draft, resolve_draft_mode,
+};
 use crate::render::RenderContext;
 use crate::template::escape_html_text;
 use crate::transform::{AstTransform, TransformPhase};
+use crate::transforms::navigation_active::page_relative_source;
 use crate::transforms::website_favicon::append_to_rendered_header;
 
 /// The `<meta>` tag Q1's `normalize/draft.lua` writes for a visible
@@ -141,6 +144,19 @@ impl AstTransform for DraftAlertTransform {
         {
             ctx.diagnostics.push(diagnostic);
         }
+        // Bad `drafts:` patterns (Q-5-50). Every page carries the
+        // project's list, so this repeats per page; the render summary
+        // coalesces diagnostics by source location into one report.
+        let source = page_relative_source(ctx);
+        ctx.diagnostics.extend(
+            match_drafts_list(
+                &ast.meta,
+                ctx.source_context,
+                &ctx.project.dir,
+                std::path::Path::new(&source),
+            )
+            .diagnostics,
+        );
         if !format_supports_draft_alert(ctx.format) {
             return Ok(());
         }

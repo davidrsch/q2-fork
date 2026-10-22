@@ -145,6 +145,15 @@ impl GlobOptions {
         directory_rule: true,
         default_positive: None,
     };
+
+    /// `website.drafts` / `drafts` — pages marked as drafts by path
+    /// (bd-2hy80x1j). Matched against the page's own source path; a
+    /// bare directory marks everything beneath it, and a negation-only
+    /// list marks nothing.
+    pub const DRAFTS: Self = Self {
+        directory_rule: true,
+        default_positive: None,
+    };
 }
 
 /// Every consumer's option set in one table.
@@ -161,6 +170,7 @@ mod option_table {
     #[test]
     fn consumer_options_are_as_documented() {
         let table: &[(&str, GlobOptions)] = &[
+            ("drafts:", GlobOptions::DRAFTS),
             ("listing contents:", GlobOptions::LISTING),
             ("project.render", GlobOptions::RENDER),
             ("resources:", GlobOptions::RESOURCES),
@@ -180,6 +190,7 @@ mod option_table {
         assert_eq!(
             rendered,
             vec![
+                "drafts:: directory_rule=true, default_positive=None",
                 "listing contents:: directory_rule=true, default_positive=Some(\"*.qmd\")",
                 "project.render: directory_rule=true, default_positive=None",
                 "resources:: directory_rule=true, default_positive=None",

@@ -37,6 +37,23 @@
 //! read `draft-mode` from raw project config: that would silently ignore
 //! directory and front-matter settings.
 //!
+//! ## `drafts:` — marking pages by path
+//!
+//! Besides `draft: true`, a page is a draft when its source path
+//! matches a pattern in `drafts:` / `website.drafts` (Q1's
+//! `website.drafts`, which matches exact paths; q2 takes globs, a
+//! strict superset). The list is read from the page's merged metadata
+//! like everything else, so `_quarto.yml`, project profiles,
+//! `_metadata.yml` and front matter all contribute (arrays concatenate
+//! across layers). Each pattern resolves relative to the YAML file it
+//! was written in, per `claude-notes/designs/glob-semantics.md`
+//! (`/posts/x.qmd` anchors at the project root). A pattern only
+//! reaches pages whose merged metadata carries it: one in
+//! `posts/_metadata.yml` marks pages under `posts/`.
+//! [`match_drafts_list`] is the one implementation; the profile stage
+//! folds a match into `draft`, and the draft transform reports bad
+//! patterns (Q-5-50) on every render.
+//!
 //! ## Reading views and authoring views
 //!
 //! `draft-mode` applies only to **reading views** — output for the
@@ -68,12 +85,16 @@
 //! [`ProjectIndex::linkable_profiles`]: super::index::ProjectIndex::linkable_profiles
 //! [`resolve_website_value`]: quarto_config::resolve_website_value
 
+use std::path::Path;
+
 use quarto_config::resolve_website_value;
 use quarto_error_reporting::{DiagnosticMessage, DiagnosticMessageBuilder};
 use quarto_pandoc_types::ConfigValue;
+use quarto_source_map::SourceContext;
 use serde::{Deserialize, Serialize};
 
 use crate::document_profile::DocumentProfile;
+use crate::glob::{BaseDirContext, GlobOptions, PatternSet, RawGlob, resolve_patterns};
 
 /// How draft pages appear in a reading view. See the module docs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -171,6 +192,104 @@ pub fn resolve_draft_mode(meta: &ConfigValue) -> DraftModeResolution {
     }
 }
 
+/// Result of matching a page against its `drafts:` list.
+#[derive(Debug, Default)]
+pub struct DraftsListMatch {
+    /// The page's source path matches the list.
+    pub matched: bool,
+    /// Entries that are not strings, escape the project, or do not
+    /// compile (Q-5-50). Each matches nothing.
+    pub diagnostics: Vec<DiagnosticMessage>,
+}
+
+/// Match `source_path` (project-relative) against the `drafts:` /
+/// `website.drafts` list in the page's merged metadata. See the module
+/// docs.
+pub fn match_drafts_list(
+    meta: &ConfigValue,
+    source_context: Option<&SourceContext>,
+    project_dir: &Path,
+    source_path: &Path,
+) -> DraftsListMatch {
+    let mut out = DraftsListMatch::default();
+    let Some(value) = resolve_website_value(meta, "drafts") else {
+        return out;
+    };
+    let entries: Vec<&ConfigValue> = match value.as_array() {
+        Some(items) => items.iter().collect(),
+        None => vec![&value],
+    };
+
+    let mut raws = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let text = if entry.as_map_entries().is_some() || entry.as_array().is_some() {
+            None
+        } else {
+            entry
+                .as_str()
+                .map(str::to_owned)
+                .or_else(|| entry.as_plain_text())
+        };
+        match text {
+            Some(pattern) => raws.push(RawGlob::new(pattern, entry.source_info.clone())),
+            None => out.diagnostics.push(drafts_pattern_warning(
+                "A `drafts` entry is not a path",
+                "Each `drafts` entry must be a path or glob pattern; this entry is ignored."
+                    .to_string(),
+                entry.source_info.clone(),
+            )),
+        }
+    }
+
+    let resolution = resolve_patterns(
+        raws,
+        &BaseDirContext {
+            source_context,
+            project_dir,
+            // A value with no recoverable declaring file (`-M`,
+            // programmatic config) is project-relative, as Q1's list is.
+            fallback_dir: "",
+        },
+        &GlobOptions::DRAFTS,
+    );
+    for escaped in &resolution.escaped {
+        out.diagnostics.push(drafts_pattern_warning(
+            "A `drafts` pattern points outside the project",
+            format!(
+                "`{}` climbs above the project root, so it marks nothing as a draft.",
+                escaped.raw
+            ),
+            escaped.source.clone(),
+        ));
+    }
+    for invalid in &resolution.invalid {
+        out.diagnostics.push(drafts_pattern_warning(
+            "Invalid `drafts` pattern",
+            format!(
+                "`{}` is not a valid glob ({}), so it marks nothing as a draft.",
+                invalid.raw, invalid.message
+            ),
+            invalid.source.clone(),
+        ));
+    }
+
+    out.matched = PatternSet::compile(&resolution.globs, &GlobOptions::DRAFTS)
+        .is_ok_and(|set| set.matches_path(source_path));
+    out
+}
+
+fn drafts_pattern_warning(
+    title: &str,
+    problem: String,
+    location: quarto_source_map::SourceInfo,
+) -> DiagnosticMessage {
+    DiagnosticMessageBuilder::warning(title)
+        .with_code("Q-5-50")
+        .problem(problem)
+        .with_location(location)
+        .build()
+}
+
 /// The draft policy for one render: the audience, and whether the
 /// project is a website (where `gone` may blank pages).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,6 +373,11 @@ pub fn is_draft_removed(meta: &ConfigValue) -> bool {
 /// [`DraftView`].
 pub fn is_draft(profile: &DocumentProfile) -> bool {
     profile.draft
+}
+
+/// Mark a profile as a draft: the `drafts:` list matched its path.
+pub fn mark_as_draft(profile: &mut DocumentProfile) {
+    profile.draft = true;
 }
 
 /// Read a page's own `draft:` flag from its merged metadata. Strictly
