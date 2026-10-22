@@ -2,7 +2,7 @@
 title: 'HTML: skip-to-content link for Bootstrap-themed output (bd-rbd3jq4n)'
 date: 2026-10-21
 description: 'Port Quarto 1''s skip-to-content link (#14685) to q2''s full HTML template, SCSS and language plumbing, render-only for now.'
-status: in-progress
+status: done  # PR #889 merged 2026-10-21; preview follow-up bd-21n09dwj (PR #902)
 braid:
   strand: bd-rbd3jq4n
 ---
