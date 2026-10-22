@@ -1127,8 +1127,15 @@ pub fn postprocess(
             })
             // Items 1 and 2 of the structural desugaring set (`pandoc::desugar`):
             // list-table divs to Table blocks, definition-list divs to
-            // DefinitionList blocks.
-            .with_div(|div, _ctx| desugar_div(div, &mut error_collector_ref.borrow_mut()))
+            // DefinitionList blocks. `Unchanged` makes the traversal descend
+            // into the new block's content without re-visiting the block
+            // itself (see `desugar_div`).
+            .with_block(|block, _ctx| match block {
+                Block::Div(div) => {
+                    Unchanged(desugar_div(div, &mut error_collector_ref.borrow_mut()))
+                }
+                other => Unchanged(other),
+            })
             // Warn on doubled-brace fence openers (Quarto 1's display escape,
             // e.g. ```{{python}}). A class beginning with `{{` can only arise
             // from such an opener: attribute-form openers ({python}, {.foo})

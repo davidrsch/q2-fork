@@ -99,6 +99,18 @@ impl<'a> Filter<'a> {
         self
     }
 
+    /// A handler for any block that has no type-specific handler. Unlike
+    /// a typed handler, its `Unchanged` may hand back a block of a
+    /// different type: the traversal then descends into *that* block's
+    /// children without re-applying the filter to the block itself.
+    pub fn with_block<F>(mut self, f: F) -> Filter<'a>
+    where
+        F: FnMut(Block, &mut FilterContext) -> FilterReturn<Block, Blocks> + 'a,
+    {
+        self.block = Some(Box::new(f));
+        self
+    }
+
     pub fn with_meta<F>(mut self, f: F) -> Filter<'a>
     where
         F: FnMut(ConfigValue, &mut FilterContext) -> FilterReturn<ConfigValue, ConfigValue> + 'a,

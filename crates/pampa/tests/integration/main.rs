@@ -124,6 +124,7 @@ pub mod test_nesting_depth_limit;
 pub mod test_ordered_list_formatting;
 pub mod test_raw_json_roundtrip;
 pub mod test_rawblock_to_config_value;
+pub mod test_rewritten_div_content;
 pub mod test_section_divs;
 pub mod test_shortcode;
 pub mod test_shortcode_separator_diagnostics;
