@@ -59,11 +59,70 @@ pub fn read_bad_qmd_for_error_message(input_bytes: &[u8]) -> Vec<String> {
 
 pub fn read<T: Write>(
     input_bytes: &[u8],
+    loose: bool,
+    filename: &str,
+    output_stream: &mut T,
+    prune_errors: bool,
+    parent_source_info: Option<quarto_source_map::SourceInfo>,
+) -> Result<
+    (
+        pandoc::Pandoc,
+        ASTContext,
+        Vec<quarto_error_reporting::DiagnosticMessage>,
+    ),
+    Vec<quarto_error_reporting::DiagnosticMessage>,
+> {
+    read_impl(
+        input_bytes,
+        loose,
+        filename,
+        output_stream,
+        prune_errors,
+        parent_source_info,
+        None,
+    )
+}
+
+/// [`read`], with the input registered under `file_id` (a FileId of the
+/// caller's choosing) instead of FileId(0), so every span in the result, and
+/// in its diagnostics, is rooted there. For callers that register the input in
+/// a `SourceContext` of their own under that id, as `pandoc.read` does for its
+/// text (GH #884); the commonmark reader's counterpart is
+/// `commonmark::convert`.
+pub fn read_as_file<T: Write>(
+    input_bytes: &[u8],
+    filename: &str,
+    file_id: quarto_source_map::FileId,
+    output_stream: &mut T,
+    prune_errors: bool,
+) -> Result<
+    (
+        pandoc::Pandoc,
+        ASTContext,
+        Vec<quarto_error_reporting::DiagnosticMessage>,
+    ),
+    Vec<quarto_error_reporting::DiagnosticMessage>,
+> {
+    read_impl(
+        input_bytes,
+        false,
+        filename,
+        output_stream,
+        prune_errors,
+        None,
+        Some(file_id),
+    )
+}
+
+#[allow(clippy::type_complexity)]
+fn read_impl<T: Write>(
+    input_bytes: &[u8],
     _loose: bool,
     filename: &str,
     mut output_stream: &mut T,
     prune_errors: bool,
     parent_source_info: Option<quarto_source_map::SourceInfo>,
+    file_id: Option<quarto_source_map::FileId>,
 ) -> Result<
     (
         pandoc::Pandoc,
@@ -90,13 +149,14 @@ pub fn read<T: Write>(
         let mut input_bytes_with_newline = Vec::with_capacity(input_bytes.len() + 1);
         input_bytes_with_newline.extend_from_slice(input_bytes);
         input_bytes_with_newline.push(b'\n');
-        return read(
+        return read_impl(
             &input_bytes_with_newline,
             _loose,
             filename,
             output_stream,
             prune_errors,
             parent_source_info,
+            file_id,
         );
     }
 
@@ -115,9 +175,19 @@ pub fn read<T: Write>(
     let input_str = String::from_utf8_lossy(input_bytes).to_string();
     let normalized_filename = context.filenames[0].clone();
     context.source_context = quarto_source_map::SourceContext::new();
-    context
-        .source_context
-        .add_file(normalized_filename, Some(input_str));
+    match file_id {
+        Some(file_id) => {
+            let source_context = &mut context.source_context;
+            // lint:allow(add-file-with-id) — id, name and content are this parse's own input (`read_as_file`)
+            source_context.add_file_with_id(file_id, normalized_filename, Some(input_str));
+            context.file_id = file_id;
+        }
+        None => {
+            context
+                .source_context
+                .add_file(normalized_filename, Some(input_str));
+        }
+    }
 
     if tree.had_parse_error() {
         parser.parser.set_logger(Some(Box::new(|log_type, message| {
@@ -158,7 +228,13 @@ pub fn read<T: Write>(
                     prune_diagnostics_by_error_nodes(diagnostics, &error_nodes, &outer_nodes);
             }
 
-            if let Some(parent) = &context.parent_source_info {
+            // These spans are raw offsets against FileId(0) (see
+            // `reroot_diagnostics_into_parent`); a caller-chosen file id
+            // reroots them the same way, through the whole input.
+            let reroot_parent = context.parent_source_info.clone().or_else(|| {
+                file_id.map(|id| quarto_source_map::SourceInfo::original(id, 0, input_bytes.len()))
+            });
+            if let Some(parent) = &reroot_parent {
                 reroot_diagnostics_into_parent(&mut diagnostics, parent);
             }
             return Err(diagnostics);

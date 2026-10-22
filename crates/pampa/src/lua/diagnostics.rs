@@ -317,7 +317,7 @@ fn add_diagnostic(lua: &Lua, quarto: &Table, kind: &str, args: MultiValue) -> Re
 ///
 /// Walks up the stack looking for the first Lua function call (not a C function).
 /// Returns (source_path, line_number).
-fn get_caller_location(lua: &Lua) -> (String, i64) {
+pub(crate) fn get_caller_location(lua: &Lua) -> (String, i64) {
     // Walk up the stack looking for filter code
     // Level 0 is the current function, level 1 is the caller, etc.
     // We start at level 1 to find the actual caller

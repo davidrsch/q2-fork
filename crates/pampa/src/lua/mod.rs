@@ -28,7 +28,7 @@ mod pandoc_doc;
 mod path;
 mod quarto_api;
 pub mod quarto_doc;
-mod readwrite;
+pub(crate) mod readwrite;
 pub mod runtime;
 pub mod shortcode;
 mod show;
@@ -57,6 +57,8 @@ pub use quarto_api::{register_quarto_include, set_module_roots};
 pub use quarto_doc::{
     HtmlDependency, IncludeLocation, TextInclude, extract_html_dependencies, extract_text_includes,
 };
+#[allow(unused_imports)]
+pub use readwrite::{ReadSource, register_read_sources, take_read_sources};
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(unused_imports)]
 pub use runtime::NativeRuntime;

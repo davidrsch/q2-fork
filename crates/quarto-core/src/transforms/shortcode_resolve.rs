@@ -1358,6 +1358,10 @@ impl AstTransform for ShortcodeResolveTransform {
                 ),
             }
 
+            // The text `pandoc.read` parsed in the handlers; registered in
+            // the document by `AstTransformsStage` (GH #884).
+            ctx.read_sources.extend(engine.take_read_sources());
+
             // Surface handler-name shadowing as informational diagnostics
             // (D4). Info level on purpose: overriding a built-in extension
             // is a supported pattern, so this must not trip
@@ -3613,6 +3617,67 @@ mod tests {
                 panic!("Expected Paragraph");
             }
             assert!(ctx.diagnostics.is_empty());
+        }
+
+        /// GH #884: a handler that returns `pandoc.read` output hands the
+        /// text the call parsed to `ctx.read_sources`, for
+        /// `AstTransformsStage` to register. The re-stamp that roots the
+        /// returned nodes at the shortcode invocation leaves nested spans
+        /// alone (here a class's span); those are rooted in that text.
+        #[tokio::test]
+        async fn lua_shortcode_pandoc_read_hands_its_text_to_the_context() {
+            let tmp = TempDir::new().unwrap();
+            let script_path = write_lua_script(
+                tmp.path(),
+                "read.lua",
+                "return { read = function(args)\n  \
+                 return pandoc.read('`x`{.c}', 'markdown').blocks[1].content\n\
+                 end }",
+            );
+
+            let transform = ShortcodeResolveTransform::with_lua_support(
+                vec![script_path],
+                Vec::new(),
+                make_runtime(),
+                "html".to_string(),
+                None,
+                Default::default(),
+                None,
+            );
+            let mut ast = Pandoc {
+                meta: ConfigValue::default(),
+                blocks: vec![Block::Paragraph(Paragraph {
+                    content: vec![Inline::Shortcode(make_shortcode("read", vec![]))],
+                    source_info: dummy_source_info(),
+                })],
+            };
+            let project = make_test_project();
+            let doc = DocumentInfo::from_path("/project/doc.qmd");
+            let format = Format::html();
+            let binaries = BinaryDependencies::new();
+            let mut ctx = RenderContext::new(&project, &doc, &format, &binaries);
+
+            transform.transform(&mut ast, &mut ctx).await.unwrap();
+
+            assert_eq!(ctx.read_sources.len(), 1, "{:?}", ctx.read_sources);
+            let source = &ctx.read_sources[0];
+            assert_eq!(source.content, "`x`{.c}\n");
+            assert!(
+                source.label.ends_with("read.lua[pandoc.read, line 2]"),
+                "label: {}",
+                source.label
+            );
+
+            let Block::Paragraph(para) = &ast.blocks[0] else {
+                panic!("Expected Paragraph");
+            };
+            let Inline::Code(code) = &para.content[0] else {
+                panic!("Expected Code, got {:?}", para.content[0]);
+            };
+            let class_span = code.attr_source.classes[0]
+                .as_ref()
+                .expect("the class carries a span");
+            assert_eq!(class_span.root_file_id(), Some(source.file_id));
         }
 
         #[tokio::test]

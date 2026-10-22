@@ -18,6 +18,97 @@ use crate::options::{
     merge_with_defaults, normalize_reader_format, normalize_writer_format, parse_format_string,
 };
 
+/// The text one `pandoc.read` call parsed, as a virtual file (GH #884).
+///
+/// Every span in the call's result is rooted at `file_id`. The id is a hash
+/// minted at call time (the way `MetadataMergeStage` registers config files
+/// under `quarto_yaml::file_id_for_filename`), so the Lua side needs no
+/// knowledge of the host document's `SourceContext`. A host that drains these
+/// with [`take_read_sources`] and registers them ([`register_read_sources`])
+/// gets diagnostics that show the string itself under `label`. A host that
+/// doesn't leaves the id unknown to its context, so such a diagnostic has no
+/// location, rather than one at the string's offsets in the host document
+/// (which is what a private context's FileId(0) used to produce).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadSource {
+    pub file_id: quarto_source_map::FileId,
+    /// Names the call site, e.g. `doc.qmd[pandoc.read, line 14]` (the same
+    /// shape as a notebook cell's `notebook.ipynb[cell 2, markdown]`).
+    pub label: String,
+    pub content: String,
+}
+
+/// Lua app data: the files `pandoc.read` minted in this state, in call order,
+/// until a host drains them.
+#[derive(Default)]
+struct ReadSources {
+    /// Calls so far, hashed into each id so that two reads of the same text
+    /// from the same line (a loop) still get distinct files.
+    calls: u64,
+    pending: Vec<ReadSource>,
+}
+
+/// Drain the files `pandoc.read` minted in `lua` since the last drain.
+pub fn take_read_sources(lua: &Lua) -> Vec<ReadSource> {
+    lua.app_data_mut::<ReadSources>()
+        .map(|mut sources| std::mem::take(&mut sources.pending))
+        .unwrap_or_default()
+}
+
+/// Register drained `pandoc.read` files in a host context. Ids already
+/// present are skipped: pipeline re-entry, or the astronomically unlikely
+/// collision of a hash id with a sequential one (`add_file_with_id` would
+/// panic on a duplicate).
+pub fn register_read_sources(
+    context: &mut quarto_source_map::SourceContext,
+    sources: &[ReadSource],
+) {
+    for source in sources {
+        if context.get_file(source.file_id).is_none() {
+            // lint:allow(add-file-with-id) — hash-minted id; see `ReadSource`
+            context.add_file_with_id(
+                source.file_id,
+                source.label.clone(),
+                Some(source.content.clone()),
+            );
+        }
+    }
+}
+
+/// Mint the virtual file for one `pandoc.read` call of `content` and
+/// record it in `lua`'s pending sources.
+fn mint_read_source(lua: &Lua, content: String) -> quarto_source_map::FileId {
+    use std::hash::{Hash, Hasher};
+
+    let (chunk, line) = super::diagnostics::get_caller_location(lua);
+    // Lua's chunk-name convention is `@path` for a file and `=name` for a
+    // literal name; lmd names its cells `@<doc>`, while filters pass their
+    // path bare. A multi-line name is an unnamed chunk's own source text.
+    let chunk = match chunk.strip_prefix(['@', '=']) {
+        Some(name) => name.to_string(),
+        None if chunk.contains('\n') => "<string>".to_string(),
+        None => chunk,
+    };
+    let label = format!("{chunk}[pandoc.read, line {line}]");
+
+    if lua.app_data_ref::<ReadSources>().is_none() {
+        lua.set_app_data(ReadSources::default());
+    }
+    let mut sources = lua
+        .app_data_mut::<ReadSources>()
+        .expect("ReadSources was just installed");
+    sources.calls += 1;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    ("pandoc.read", &label, &content, sources.calls).hash(&mut hasher);
+    let file_id = quarto_source_map::FileId(hasher.finish() as usize);
+    sources.pending.push(ReadSource {
+        file_id,
+        label,
+        content,
+    });
+    file_id
+}
+
 /// Register pandoc.read, pandoc.write, and option constructors on the pandoc table.
 pub fn register_pandoc_readwrite(lua: &Lua, pandoc: &Table) -> Result<()> {
     // Register format lists
@@ -268,13 +359,21 @@ fn pandoc_read(lua: &Lua, args: mlua::MultiValue) -> Result<Value> {
             // bd-okfxemnj). The reader's real diagnostics come back as the
             // third tuple element; forwarding those is bd-fwswbxnl.
             let mut trace = crate::utils::output::VerboseOutput::Sink(std::io::sink());
-            match crate::readers::qmd::read(
-                &content,
-                false, // loose
+            // Root every span in this call's own virtual file (GH #884), not
+            // the reader's private FileId(0), which the host document would
+            // read as itself. The reader parses a newline-terminated copy, so
+            // register exactly that text.
+            let mut text = String::from_utf8_lossy(&content).into_owned();
+            if !text.ends_with('\n') {
+                text.push('\n');
+            }
+            let file_id = mint_read_source(lua, text.clone());
+            match crate::readers::qmd::read_as_file(
+                text.as_bytes(),
                 "<pandoc.read>",
+                file_id,
                 &mut trace,
                 true, // prune_errors
-                None, // parent_source_info
             ) {
                 Ok((pandoc, _context, _warnings)) => {
                     // Convert Rust Pandoc to Lua
@@ -1190,5 +1289,127 @@ mod tests {
 
         let parsed = parse_format_spec_from_lua(&lua, Value::Table(format_table)).unwrap();
         assert_eq!(parsed.base_format, "markdown");
+    }
+
+    /// The file ids every `Original` in a `pandoc.read` result is rooted in,
+    /// read off the JSON writer's source-info pool (`t == 0` entries carry
+    /// their file id in `d`), which holds every span the writer emits,
+    /// including the parents of `Substring`s and the pieces of `Concat`s.
+    ///
+    /// The zero-length `Original(FileId(0), 0, 0)` is skipped: it is
+    /// `location::empty_source_info()`, the reader-wide placeholder for a
+    /// node with no source of its own (e.g. a list table's absent caption),
+    /// not a span into this call's text.
+    fn original_file_ids_of_read(lua: &Lua, chunk: &str) -> Vec<u64> {
+        let value: Value = lua.load(chunk).eval().unwrap();
+        let doc = lua_pandoc_to_rust(lua, value).unwrap();
+        let mut buf = Vec::new();
+        crate::writers::json::write_with_config(
+            &doc,
+            &crate::pandoc::ast_context::ASTContext::anonymous(),
+            &mut buf,
+            &crate::writers::json::JsonConfig::default(),
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&buf).unwrap();
+        let pool = json["astContext"]["p"]
+            .as_array()
+            .expect("the writer emits a source-info pool");
+        let mut ids: Vec<u64> = pool
+            .iter()
+            .filter(|entry| entry["t"] == 0)
+            .filter(|entry| !(entry["d"] == 0 && entry["r"] == serde_json::json!([0, 0])))
+            .map(|entry| entry["d"].as_u64().expect("Original carries its file id"))
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
+    /// GH #884: no span in a `pandoc.read` result may be rooted at
+    /// FileId(0), which in the host document is the document itself. Every
+    /// span roots in the one virtual file the call minted. The fixture
+    /// exercises the reader's node kinds broadly, so a reader path that
+    /// stamps a hard-coded FileId(0) instead of rerooting through
+    /// `parent_source_info` shows up here.
+    #[test]
+    fn pandoc_read_spans_root_in_the_call_s_own_file() {
+        let lua = Lua::new();
+        let pandoc = lua.create_table().unwrap();
+        register_pandoc_readwrite(&lua, &pandoc).unwrap();
+        lua.globals().set("pandoc", pandoc).unwrap();
+
+        let ids = original_file_ids_of_read(
+            &lua,
+            r#"return pandoc.read([==[
+# Heading {#hid .cls}
+
+Para with *emph*, **strong**, `code`{.x}, $x^2$, "quoted", a soft
+break, a hard\
+break, [link](http://a.b "title"){.c}, ![img](i.png){width=10},
+[span]{.s key="v"}, ~~del~~, ^sup^, ~sub~, a note^[inline note], and
+a reference note[^1].
+
+[^1]: The note.
+
+- item one
+- item two
+
+1. ordered
+2. list
+
+Term
+: Definition
+
+> quoted block
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+::: {.callout-note}
+Inside a div.
+:::
+
+```python
+print(1)
+```
+
+::: {.list-table}
+* - a
+  - b
+:::
+]==], "markdown")"#,
+        );
+
+        assert!(
+            !ids.is_empty(),
+            "the result should carry Original spans at all"
+        );
+        assert!(
+            !ids.contains(&0),
+            "a span is rooted at FileId(0), the host document's id: {ids:?}"
+        );
+        assert_eq!(
+            ids.len(),
+            1,
+            "every span should root in the one file this call minted: {ids:?}"
+        );
+    }
+
+    /// Two reads (even from the same line) mint distinct files, so their
+    /// spans never alias each other once registered.
+    #[test]
+    fn two_pandoc_reads_mint_distinct_files() {
+        let lua = Lua::new();
+        let pandoc = lua.create_table().unwrap();
+        register_pandoc_readwrite(&lua, &pandoc).unwrap();
+        lua.globals().set("pandoc", pandoc).unwrap();
+
+        let first = original_file_ids_of_read(&lua, r#"return pandoc.read("same", "markdown")"#);
+        let second = original_file_ids_of_read(&lua, r#"return pandoc.read("same", "markdown")"#);
+        assert_eq!(first.len(), 1);
+        assert_eq!(second.len(), 1);
+        assert_ne!(first, second);
     }
 }
