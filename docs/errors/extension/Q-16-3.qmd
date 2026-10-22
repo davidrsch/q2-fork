@@ -52,7 +52,7 @@ warning appeared, fix that — this warning will go with it.
 If the extension is genuinely not installed:
 
 ```bash
-quarto add <owner>/<repo>
+q2 add <owner>/<repo>
 ```
 
 If the name is wrong, check what the extension actually registers. The

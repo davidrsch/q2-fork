@@ -1,0 +1,629 @@
+//! End-to-end CLI tests for `q2 add` (bd-rfz4e3bw).
+//!
+//! Each test spawns the real `q2` binary and asserts on the files it
+//! writes (and the ones it must not), its exit code, and its output.
+//!
+//! Contract under verification (per
+//! `claude-notes/plans/2026-10-22-q2-add-extension.md`):
+//!
+//! - **Sources.** A local folder (containing `_extensions/`, or being
+//!   one), a local `.tar.gz` / `.zip`, and an archive URL all install.
+//!   GitHub shorthand shares the URL path and is covered at the unit
+//!   level with a scripted fetcher; no test talks to github.com.
+//! - **Install root.** The project root when inside a project, cwd
+//!   otherwise, `--dir` over both.
+//! - **Q1's table.** Install / Update / Revert / No Change, with
+//!   `from -> to`. No Change writes nothing.
+//! - **The record.** Every install writes `.quarto-source.yml` with a
+//!   sha256 per file; replacing an extension whose files changed since
+//!   needs `--force`.
+//! - **Trust.** A remote source needs `--trust` when the command cannot
+//!   prompt, and is refused *before any request*.
+//! - **It works.** An installed custom project type renders.
+//!
+//! The key gates were checked against deliberately broken code (no
+//! edit check, no trust gate, merge instead of replace) and fail there.
+
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
+
+use sha2::{Digest, Sha256};
+use tempfile::TempDir;
+
+const Q2_BIN: &str = env!("CARGO_BIN_EXE_q2");
+
+/// Run `q2 add <args...>` from `cwd`, never interactively.
+fn run_q2_add(cwd: &Path, args: &[&str]) -> std::process::Output {
+    let mut cmd = Command::new(Q2_BIN);
+    cmd.current_dir(cwd);
+    cmd.arg("add");
+    cmd.args(args);
+    // Keep the prompt gate closed regardless of how the test runner is
+    // attached; these tests assert non-interactive behavior.
+    cmd.env("CI", "1");
+    cmd.stdin(Stdio::null());
+    cmd.output().expect("spawn q2 binary")
+}
+
+fn stdout_str(out: &std::process::Output) -> String {
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+fn stderr_str(out: &std::process::Output) -> String {
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+fn assert_succeeded(out: &std::process::Output) {
+    assert!(
+        out.status.success(),
+        "expected success.\nstdout: {}\nstderr: {}",
+        stdout_str(out),
+        stderr_str(out)
+    );
+}
+
+fn assert_failed(out: &std::process::Output, expect_in_stderr: &str) {
+    assert!(
+        !out.status.success(),
+        "expected failure, got success.\nstdout: {}\nstderr: {}",
+        stdout_str(out),
+        stderr_str(out)
+    );
+    let stderr = stderr_str(out);
+    assert!(
+        stderr.contains(expect_in_stderr),
+        "stderr should mention {expect_in_stderr:?}; got:\n{stderr}"
+    );
+}
+
+fn write_tree(root: &Path, files: &[(&str, &str)]) {
+    for (name, content) in files {
+        let path = root.join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, content).unwrap();
+    }
+}
+
+fn tree(files: &[(&str, &str)]) -> TempDir {
+    let dir = TempDir::new().unwrap();
+    write_tree(dir.path(), files);
+    dir
+}
+
+fn manifest(version: &str) -> String {
+    format!(
+        "title: Demo Shortcode\nversion: {version}\ncontributes:\n  shortcodes:\n    - demo.lua\n"
+    )
+}
+
+const DEMO_LUA: &str = "return {}\n";
+
+/// A source folder with `_extensions/demo/` at `version`.
+fn demo_source(version: &str) -> TempDir {
+    tree(&[
+        ("_extensions/demo/_extension.yml", &manifest(version)),
+        ("_extensions/demo/demo.lua", DEMO_LUA),
+    ])
+}
+
+fn project() -> TempDir {
+    tree(&[
+        ("_quarto.yml", "project:\n  type: website\n"),
+        ("index.qmd", "# Hi\n"),
+    ])
+}
+
+fn path_arg(p: &Path) -> String {
+    p.to_string_lossy().into_owned()
+}
+
+fn read(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+}
+
+fn record(dir: &Path) -> serde_yaml::Value {
+    serde_yaml::from_str(&read(&dir.join(".quarto-source.yml"))).unwrap()
+}
+
+/// `.tar.gz` bytes for `files`, each under `prefix` (`""` for none).
+fn tar_gz(prefix: &str, files: &[(&str, &str)]) -> Vec<u8> {
+    let mut buf = Vec::new();
+    {
+        let encoder = flate2::write::GzEncoder::new(&mut buf, flate2::Compression::default());
+        let mut builder = tar::Builder::new(encoder);
+        for (name, content) in files {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Regular);
+            header.set_mode(0o644);
+            header.set_size(content.len() as u64);
+            header.set_path(format!("{prefix}{name}")).unwrap();
+            header.set_cksum();
+            builder.append(&header, content.as_bytes()).unwrap();
+        }
+        builder.into_inner().unwrap().finish().unwrap();
+    }
+    buf
+}
+
+fn demo_files(version: &str) -> Vec<(&'static str, String)> {
+    vec![
+        ("_extensions/demo/_extension.yml", manifest(version)),
+        ("_extensions/demo/demo.lua", DEMO_LUA.to_string()),
+    ]
+}
+
+fn as_refs<'a>(files: &'a [(&'static str, String)]) -> Vec<(&'static str, &'a str)> {
+    files.iter().map(|(n, c)| (*n, c.as_str())).collect()
+}
+
+// ====================================================================
+// Sources and placement
+// ====================================================================
+
+#[test]
+fn a_local_folder_installs_at_the_project_root_with_a_record() {
+    let src = demo_source("1.0.0");
+    let proj = project();
+    std::fs::create_dir_all(proj.path().join("posts")).unwrap();
+
+    // Run from a subfolder: the install still lands at the project root.
+    let out = run_q2_add(&proj.path().join("posts"), &[&path_arg(src.path())]);
+    assert_succeeded(&out);
+
+    let installed = proj.path().join("_extensions").join("demo");
+    assert_eq!(read(&installed.join("demo.lua")), DEMO_LUA);
+    assert!(!proj.path().join("posts").join("_extensions").exists());
+
+    let stdout = stdout_str(&out);
+    assert!(stdout.contains("Demo Shortcode"), "{stdout}");
+    assert!(stdout.contains("[Install]"), "{stdout}");
+    assert!(stdout.contains("(shortcode)"), "{stdout}");
+
+    let text = read(&installed.join(".quarto-source.yml"));
+    assert!(
+        text.starts_with("# Generated by `q2 add`. Do not edit."),
+        "{text}"
+    );
+    let rec = record(&installed);
+    assert_eq!(rec["kind"].as_str(), Some("local-dir"));
+    let expected = hex(Sha256::digest(DEMO_LUA.as_bytes()).as_slice());
+    assert_eq!(rec["files"]["demo.lua"].as_str(), Some(expected.as_str()));
+    assert!(rec["files"].get(".quarto-source.yml").is_none());
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[test]
+fn a_path_to_the_extensions_folder_itself_is_accepted() {
+    let src = demo_source("1.0.0");
+    let proj = project();
+    let out = run_q2_add(proj.path(), &[&path_arg(&src.path().join("_extensions"))]);
+    assert_succeeded(&out);
+    assert!(
+        proj.path()
+            .join("_extensions/demo/_extension.yml")
+            .is_file()
+    );
+}
+
+#[test]
+fn local_archives_install_wrapped_or_not() {
+    let files = demo_files("1.0.0");
+    for (label, prefix) in [("wrapped", "repo-main/"), ("unwrapped", "")] {
+        let archives = TempDir::new().unwrap();
+        let tgz = archives.path().join("demo.tar.gz");
+        std::fs::write(&tgz, tar_gz(prefix, &as_refs(&files))).unwrap();
+
+        let proj = project();
+        let out = run_q2_add(proj.path(), &[&path_arg(&tgz)]);
+        assert_succeeded(&out);
+        let installed = proj.path().join("_extensions/demo");
+        assert_eq!(
+            read(&installed.join("demo.lua")),
+            DEMO_LUA,
+            "{label} tar.gz"
+        );
+        assert_eq!(record(&installed)["kind"].as_str(), Some("local-archive"));
+    }
+
+    let archives = TempDir::new().unwrap();
+    let zip_path = archives.path().join("demo.zip");
+    {
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options: zip::write::SimpleFileOptions =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        for (name, content) in &files {
+            zip.start_file(format!("demo-1.0.0/{name}"), options)
+                .unwrap();
+            zip.write_all(content.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+    let proj = project();
+    let out = run_q2_add(proj.path(), &[&path_arg(&zip_path)]);
+    assert_succeeded(&out);
+    assert_eq!(
+        read(&proj.path().join("_extensions/demo/demo.lua")),
+        DEMO_LUA
+    );
+}
+
+#[test]
+fn outside_a_project_it_installs_in_cwd_and_dir_overrides() {
+    let src = demo_source("1.0.0");
+    let cwd = TempDir::new().unwrap();
+    let out = run_q2_add(cwd.path(), &[&path_arg(src.path())]);
+    assert_succeeded(&out);
+    assert!(cwd.path().join("_extensions/demo/_extension.yml").is_file());
+
+    let proj = project();
+    std::fs::create_dir_all(proj.path().join("elsewhere")).unwrap();
+    let out = run_q2_add(proj.path(), &["--dir", "elsewhere", &path_arg(src.path())]);
+    assert_succeeded(&out);
+    assert!(
+        proj.path()
+            .join("elsewhere/_extensions/demo/_extension.yml")
+            .is_file()
+    );
+    assert!(!proj.path().join("_extensions").exists());
+}
+
+// ====================================================================
+// The action table, and what each action writes
+// ====================================================================
+
+#[test]
+fn a_second_identical_add_reports_no_change_and_writes_nothing() {
+    let src = demo_source("1.0.0");
+    let proj = project();
+    assert_succeeded(&run_q2_add(proj.path(), &[&path_arg(src.path())]));
+
+    let installed = proj.path().join("_extensions/demo");
+    let mtime = |p: &Path| std::fs::metadata(p).unwrap().modified().unwrap();
+    let before = (
+        mtime(&installed.join("demo.lua")),
+        mtime(&installed.join(".quarto-source.yml")),
+    );
+
+    let out = run_q2_add(proj.path(), &[&path_arg(src.path())]);
+    assert_succeeded(&out);
+    let stdout = stdout_str(&out);
+    assert!(stdout.contains("No changes required"), "{stdout}");
+    let after = (
+        mtime(&installed.join("demo.lua")),
+        mtime(&installed.join(".quarto-source.yml")),
+    );
+    assert_eq!(
+        before, after,
+        "No Change must not touch the installed files"
+    );
+}
+
+#[test]
+fn a_newer_version_replaces_the_whole_directory() {
+    let proj = project();
+    let v1 = tree(&[
+        ("_extensions/demo/_extension.yml", &manifest("1.0.0")),
+        ("_extensions/demo/demo.lua", DEMO_LUA),
+        ("_extensions/demo/stale.lua", "-- only in 1.0.0\n"),
+    ]);
+    assert_succeeded(&run_q2_add(proj.path(), &[&path_arg(v1.path())]));
+
+    let out = run_q2_add(proj.path(), &[&path_arg(demo_source("1.1.0").path())]);
+    assert_succeeded(&out);
+    let stdout = stdout_str(&out);
+    assert!(stdout.contains("[Update]"), "{stdout}");
+    assert!(stdout.contains("1.0.0  ->  1.1.0"), "{stdout}");
+
+    let installed = proj.path().join("_extensions/demo");
+    assert!(
+        !installed.join("stale.lua").exists(),
+        "an update replaces, not merges"
+    );
+    assert!(read(&installed.join("_extension.yml")).contains("1.1.0"));
+    assert!(record(&installed)["files"].get("stale.lua").is_none());
+}
+
+#[test]
+fn an_older_version_is_a_revert() {
+    let proj = project();
+    assert_succeeded(&run_q2_add(
+        proj.path(),
+        &[&path_arg(demo_source("2.0.0").path())],
+    ));
+    let out = run_q2_add(proj.path(), &[&path_arg(demo_source("1.0.0").path())]);
+    assert_succeeded(&out);
+    let stdout = stdout_str(&out);
+    assert!(
+        stdout.contains("[Revert]") && stdout.contains("2.0.0  ->  1.0.0"),
+        "{stdout}"
+    );
+}
+
+// ====================================================================
+// Local edits and --force
+// ====================================================================
+
+#[test]
+fn local_edits_block_an_update_until_force() {
+    let proj = project();
+    assert_succeeded(&run_q2_add(
+        proj.path(),
+        &[&path_arg(demo_source("1.0.0").path())],
+    ));
+    let installed = proj.path().join("_extensions/demo");
+    std::fs::write(installed.join("demo.lua"), "-- my local tweak\n").unwrap();
+    std::fs::write(installed.join("mine.lua"), "-- added by hand\n").unwrap();
+
+    let v2 = demo_source("1.1.0");
+    let out = run_q2_add(proj.path(), &[&path_arg(v2.path())]);
+    assert_failed(&out, "local changes");
+    let stderr = stderr_str(&out);
+    assert!(stderr.contains("demo.lua (modified)"), "{stderr}");
+    assert!(stderr.contains("mine.lua (added)"), "{stderr}");
+    assert!(stderr.contains("--force"), "{stderr}");
+    assert_eq!(
+        read(&installed.join("demo.lua")),
+        "-- my local tweak\n",
+        "nothing written"
+    );
+
+    let out = run_q2_add(proj.path(), &["--force", &path_arg(v2.path())]);
+    assert_succeeded(&out);
+    assert_eq!(read(&installed.join("demo.lua")), DEMO_LUA);
+    assert!(!installed.join("mine.lua").exists());
+}
+
+#[test]
+fn local_edits_survive_a_no_change_add_and_force_resets_them() {
+    let proj = project();
+    let src = demo_source("1.0.0");
+    assert_succeeded(&run_q2_add(proj.path(), &[&path_arg(src.path())]));
+    let lua = proj.path().join("_extensions/demo/demo.lua");
+    std::fs::write(&lua, "-- my local tweak\n").unwrap();
+
+    assert_succeeded(&run_q2_add(proj.path(), &[&path_arg(src.path())]));
+    assert_eq!(
+        read(&lua),
+        "-- my local tweak\n",
+        "No Change leaves edits alone"
+    );
+
+    assert_succeeded(&run_q2_add(
+        proj.path(),
+        &["--force", &path_arg(src.path())],
+    ));
+    assert_eq!(read(&lua), DEMO_LUA, "--force reinstalls");
+}
+
+#[test]
+fn an_untracked_install_updates_with_a_note() {
+    // As left by Quarto 1, or a hand copy: no `.quarto-source.yml`.
+    let proj = project();
+    write_tree(
+        proj.path(),
+        &[
+            ("_extensions/demo/_extension.yml", &manifest("1.0.0")),
+            ("_extensions/demo/demo.lua", "-- hand-copied\n"),
+        ],
+    );
+    let out = run_q2_add(proj.path(), &[&path_arg(demo_source("1.1.0").path())]);
+    assert_succeeded(&out);
+    let stdout = stdout_str(&out);
+    assert!(stdout.contains("no install record"), "{stdout}");
+    assert!(
+        proj.path()
+            .join("_extensions/demo/.quarto-source.yml")
+            .is_file()
+    );
+}
+
+// ====================================================================
+// --dry-run and --json
+// ====================================================================
+
+#[test]
+fn dry_run_shows_the_table_and_writes_nothing() {
+    let proj = project();
+    let out = run_q2_add(
+        proj.path(),
+        &["--dry-run", &path_arg(demo_source("1.0.0").path())],
+    );
+    assert_succeeded(&out);
+    let stdout = stdout_str(&out);
+    assert!(
+        stdout.contains("[Install]") && stdout.contains("nothing was written"),
+        "{stdout}"
+    );
+    assert!(!proj.path().join("_extensions").exists());
+
+    let out = run_q2_add(proj.path(), &["--dry-run", "--force", "x/y"]);
+    assert_failed(&out, "cannot be combined with --dry-run");
+}
+
+#[test]
+fn json_emits_one_result_object() {
+    let proj = project();
+    let out = run_q2_add(
+        proj.path(),
+        &["--json", &path_arg(demo_source("1.0.0").path())],
+    );
+    assert_succeeded(&out);
+    let stdout = stdout_str(&out);
+    assert_eq!(
+        stdout.lines().count(),
+        1,
+        "exactly one line on stdout: {stdout}"
+    );
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["version"], 1);
+    let ext = &v["extensions"][0];
+    assert_eq!(ext["id"], "demo");
+    assert_eq!(ext["path"], "_extensions/demo");
+    assert_eq!(ext["action"], "install");
+    assert_eq!(ext["to"], "1.0.0");
+    assert_eq!(ext["written"], true);
+}
+
+// ====================================================================
+// Invalid sources
+// ====================================================================
+
+#[test]
+fn invalid_sources_are_refused_and_write_nothing() {
+    let cases: Vec<(&str, TempDir, &str)> = vec![
+        (
+            "no extensions",
+            tree(&[("README.md", "hi")]),
+            "No extensions found",
+        ),
+        (
+            "manifest without contributes",
+            tree(&[("_extensions/bad/_extension.yml", "title: Bad\n")]),
+            "does not load",
+        ),
+        (
+            "hidden extension name",
+            tree(&[("_extensions/.sneaky/_extension.yml", &manifest("1.0.0"))]),
+            "Refusing to install",
+        ),
+    ];
+    for (label, src, expected) in cases {
+        let proj = project();
+        let out = run_q2_add(proj.path(), &[&path_arg(src.path())]);
+        assert_failed(&out, expected);
+        assert!(
+            !proj.path().join("_extensions").exists(),
+            "{label}: nothing written"
+        );
+    }
+}
+
+// ====================================================================
+// Remote sources, against a localhost server
+// ====================================================================
+
+/// Serves `body` at `/archive.tar.gz`, 404 elsewhere, recording paths.
+struct TestServer {
+    base_url: String,
+    requests: Arc<Mutex<Vec<String>>>,
+    _thread: std::thread::JoinHandle<()>,
+}
+
+impl TestServer {
+    fn start(body: Vec<u8>) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind localhost");
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&requests);
+        let thread = std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
+                let mut buf = [0u8; 2048];
+                let Ok(n) = stream.read(&mut buf) else {
+                    continue;
+                };
+                let request = String::from_utf8_lossy(&buf[..n]).into_owned();
+                let path = request
+                    .lines()
+                    .next()
+                    .and_then(|l| l.split_whitespace().nth(1))
+                    .unwrap_or("/")
+                    .to_string();
+                seen.lock().unwrap().push(path.clone());
+                if path == "/archive.tar.gz" {
+                    let header = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/gzip\r\n\
+                         Content-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    let _ = stream.write_all(header.as_bytes());
+                    let _ = stream.write_all(&body);
+                } else {
+                    let _ = stream.write_all(
+                        b"HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\
+                          Connection: close\r\n\r\nnot found",
+                    );
+                }
+                let _ = stream.flush();
+            }
+        });
+        Self {
+            base_url,
+            requests,
+            _thread: thread,
+        }
+    }
+
+    fn url(&self) -> String {
+        format!("{}/archive.tar.gz", self.base_url)
+    }
+}
+
+#[test]
+fn a_remote_source_without_trust_is_refused_before_any_request() {
+    let server = TestServer::start(tar_gz("repo-main/", &as_refs(&demo_files("1.0.0"))));
+    let proj = project();
+    let out = run_q2_add(proj.path(), &["--no-prompt", &server.url()]);
+    assert_failed(&out, "--trust");
+    assert!(
+        server.requests.lock().unwrap().is_empty(),
+        "nothing may be fetched"
+    );
+    assert!(!proj.path().join("_extensions").exists());
+}
+
+#[test]
+fn a_trusted_archive_url_installs() {
+    let server = TestServer::start(tar_gz("repo-main/", &as_refs(&demo_files("1.0.0"))));
+    let proj = project();
+    let out = run_q2_add(proj.path(), &["--trust", &server.url()]);
+    assert_succeeded(&out);
+    let installed = proj.path().join("_extensions/demo");
+    assert_eq!(read(&installed.join("demo.lua")), DEMO_LUA);
+    let rec = record(&installed);
+    assert_eq!(rec["kind"].as_str(), Some("url"));
+    assert_eq!(rec["source"].as_str(), Some(server.url().as_str()));
+    assert_eq!(
+        server.requests.lock().unwrap().as_slice(),
+        ["/archive.tar.gz"]
+    );
+}
+
+// ====================================================================
+// It works: an installed custom project type renders
+// ====================================================================
+
+#[test]
+fn an_installed_custom_project_type_renders() {
+    let src = tree(&[(
+        "_extensions/fancysite/_extension.yml",
+        "title: Fancy Site\ncontributes:\n  project:\n    project:\n      type: website\n    \
+         website:\n      title: \"From The Extension\"\n",
+    )]);
+    let proj = tree(&[
+        ("_quarto.yml", "project:\n  type: fancysite\n"),
+        ("index.qmd", "---\ntitle: Home\n---\n\nHello.\n"),
+    ]);
+    assert_succeeded(&run_q2_add(proj.path(), &[&path_arg(src.path())]));
+
+    let out = Command::new(Q2_BIN)
+        .current_dir(proj.path())
+        .arg("render")
+        .env("CI", "1")
+        .stdin(Stdio::null())
+        .output()
+        .expect("spawn q2 render");
+    assert_succeeded(&out);
+    let html: PathBuf = proj.path().join("_site").join("index.html");
+    assert!(
+        read(&html).contains("From The Extension"),
+        "the extension's website title should reach the page"
+    );
+}

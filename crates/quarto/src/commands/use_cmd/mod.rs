@@ -20,6 +20,9 @@ mod brand;
 mod config;
 mod source;
 
+/// Shared with `q2 add`, which installs into the same project root.
+pub(crate) use config::find_project_config;
+
 use anyhow::{Context, Result};
 use quarto_error_reporting::{DiagnosticMessage, diagnostic_to_json};
 use quarto_source_map::SourceContext;

@@ -128,6 +128,23 @@ pub fn discover_project_extensions(
     (extensions, diagnostics)
 }
 
+/// Read every extension in one `_extensions/` directory.
+///
+/// Counterpart of Quarto 1's `readExtensions(dir)`: both layouts are
+/// recognized (`<dir>/<name>/` and `<dir>/<org>/<name>/`), and a
+/// manifest that fails to load becomes a Q-16-1 diagnostic rather than
+/// an error. `q2 add` uses this on a staged source and on the install
+/// target; render-time discovery goes through [`discover_extensions`].
+pub fn read_extensions_dir(
+    ext_dir: &Path,
+    runtime: &dyn SystemRuntime,
+) -> (Vec<Extension>, Vec<DiagnosticMessage>) {
+    let mut extensions = Vec::new();
+    let mut diagnostics = Vec::new();
+    scan_extensions_dir(ext_dir, runtime, &mut extensions, &mut diagnostics);
+    (extensions, diagnostics)
+}
+
 /// Scan all entries in an extensions directory.
 fn scan_extensions_dir(
     ext_dir: &Path,

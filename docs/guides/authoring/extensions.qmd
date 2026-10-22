@@ -32,7 +32,31 @@ contributes:
   metadata: {...}
 ```
 
-This page covers project types and metadata contributions. Shortcodes and filters have their own pages ([Shortcodes](shortcodes.qmd), [Lua filters](lua-filters.qmd)).
+This page covers installing extensions, project types, and metadata contributions. Shortcodes and filters have their own pages ([Shortcodes](shortcodes.qmd), [Lua filters](lua-filters.qmd)).
+
+## Installing extensions
+
+`q2 add` installs an extension from GitHub, an archive URL, or a local folder or archive:
+
+``` {.bash}
+q2 add quarto-ext/fontawesome          # GitHub: <org>/<repo>
+q2 add quarto-ext/fontawesome@v1.2.0   # a tag or branch
+q2 add org/repo/subdir                 # an extension in a repository subfolder
+q2 add https://example.com/ext.zip     # a .zip or .tar.gz URL
+q2 add ./my-extension                  # a local folder or archive
+```
+
+It prints what it will do (`[Install]`, `[Update] 1.0.0 -> 1.1.0`, `[Revert]`, or `[No Change]`) and asks before continuing. Extensions from GitHub go under the organization's folder, as in `_extensions/quarto-ext/fontawesome/`.
+
+`q2 add` works like Quarto 1's `quarto add`, with these differences:
+
+- **Remote sources must be trusted.** Extensions can run code when documents render, so `q2 add` asks whether you trust the authors, and the default answer is *no*. When it cannot ask (`--no-prompt`, `--json`, CI), a remote source is refused unless you pass `--trust`.
+- **It installs at the project root**, even when you run it from a subfolder. Outside a project it installs in the current folder. `--dir <folder>` overrides both.
+- **It records the install.** Each extension gets a `.quarto-source.yml` next to its `_extension.yml`, with the source and a hash of every file. Don't edit this file. Commit it along with the extension.
+- **It protects your local changes.** If you edited an installed extension's files, `q2 add` refuses to replace them and lists what changed. Pass `--force` to replace them anyway. `--force` also reinstalls an extension that reports `[No Change]`. Extensions installed by Quarto 1 or copied by hand have no record, so their changes can't be detected. `q2 add` updates them and prints a note.
+- **`[No Change]` writes nothing.**
+
+Other options: `--dry-run` shows the table without writing, and `--json` prints a machine-readable result.
 
 ## Custom project types
 
