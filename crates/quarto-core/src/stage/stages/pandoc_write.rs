@@ -768,6 +768,11 @@ impl PandocWriteStage {
         // `title` — coerce to `MetaInlines` before serialization.
         crate::pandoc_filters::meta_coerce::coerce_meta_blocks_to_inlines(&mut doc.ast.meta);
 
+        // bd-ykjwiqcc: respell standalone images' alt text as `fig-alt`,
+        // so the vendored Q1 filters don't read it as an implicit-figure
+        // caption (see the module docs).
+        crate::pandoc_filters::image_alt_encode::encode_standalone_image_alt(&mut doc.ast.blocks);
+
         // pandoc-hybrid-typst Phase 1: `section-numbering`/
         // `shift-heading-level-by` (`format-typst.ts:82-100`) are
         // typst-only and must be resolved right here, immediately before

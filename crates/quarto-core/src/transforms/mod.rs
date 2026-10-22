@@ -103,8 +103,11 @@ mod repo_actions_render;
 mod resource_collector;
 mod responsive_image;
 // Shared mutable walk over body images (bd-3qych45b), used by
-// `responsive_image` and `hephaestus`.
-mod image_walk;
+// `image_alt_normalize`, `responsive_image`, `hephaestus`, and the Pandoc
+// cut's `pandoc_filters::image_alt_encode`.
+pub(crate) mod image_walk;
+// `fig-alt` / `alt` → the image's alt inlines (bd-ykjwiqcc, GH #877).
+pub(crate) mod image_alt_normalize;
 // hephaestus `.hep` → SVG (bd-3qych45b). Native-only: the crate links
 // hephaestus's SVG backend, which the WASM preview replaces with the
 // npm `hephaestus-svg-wasm` client — see the module docs.
@@ -176,6 +179,7 @@ pub(crate) use format_css::user_css_urls;
 pub use heading_id::{HeadingIdTransform, rederive_stale_heading_ids};
 #[cfg(not(target_arch = "wasm32"))]
 pub use hephaestus::HephaestusRenderTransform;
+pub use image_alt_normalize::ImageAltNormalizeTransform;
 pub use link_rewrite::LinkRewriteTransform;
 pub use listing_generate::ListingGenerateTransform;
 pub use listing_render::ListingRenderTransform;

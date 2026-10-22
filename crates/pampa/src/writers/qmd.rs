@@ -1101,13 +1101,17 @@ fn write_horizontalrule(
 }
 
 /// Detect the "implicit figure" shape produced by the qmd reader's
-/// single-image-paragraph desugaring (postprocess.rs:884). Such a Figure
-/// has caption == image alt text, a single `Plain[Image]` content block,
-/// and an attr-split where the figure carries only an id and the image
-/// carries only classes/kvs. When this exact shape holds we can round-
-/// trip by emitting just the bare image syntax with the figure's id
-/// merged into the image's attr.
-fn match_implicit_figure_shape(figure: &Figure) -> Option<&crate::pandoc::Image> {
+/// single-image-paragraph desugaring (postprocess.rs:884): a single
+/// `Plain[Image]` content block, a single-`Plain` long caption, and an
+/// attr-split where the figure carries only an id and the image carries
+/// only classes/kvs. When this shape holds we can round-trip by emitting
+/// just the bare image syntax — with the figure's id merged into the
+/// image's attr, the caption as the bracket text, and, when the image's
+/// alt text is not the caption, that alt text as `fig-alt` (see
+/// [`respell_alt_as_fig_alt`]).
+fn match_implicit_figure_shape(
+    figure: &Figure,
+) -> Option<(&crate::pandoc::Image, &crate::pandoc::Inlines)> {
     let [Block::Plain(plain)] = figure.content.as_slice() else {
         return None;
     };
@@ -1121,7 +1125,8 @@ fn match_implicit_figure_shape(figure: &Figure) -> Option<&crate::pandoc::Image>
     let [Block::Plain(caption_plain)] = long.as_slice() else {
         return None;
     };
-    if caption_plain.content != image.content {
+    // An empty caption reads back as a paragraph, not a figure.
+    if caption_plain.content.is_empty() && !image.content.is_empty() {
         return None;
     }
     let (_fig_id, fig_classes, fig_kvs) = &figure.attr;
@@ -1132,7 +1137,35 @@ fn match_implicit_figure_shape(figure: &Figure) -> Option<&crate::pandoc::Image>
     if !img_id.is_empty() {
         return None;
     }
-    Some(image)
+    Some((image, &caption_plain.content))
+}
+
+/// `image` with `bracket` as its bracket text and its own alt text kept as
+/// `fig-alt` — the spelling the qmd reader turns back into the authored
+/// form, which quarto-core's `image-alt-normalize` folds into the same
+/// alt inlines (bd-ykjwiqcc). Used where the bracket text cannot carry the
+/// alt text: a lone image in a paragraph (the reader would make the alt a
+/// figure caption) and a figure whose alt text is not its caption. An
+/// existing `fig-alt`/`alt` key already beats the alt inlines, so it is
+/// kept as is; the alt text is plain text in every writer, so markup in
+/// the alt inlines is not preserved.
+fn respell_alt_as_fig_alt(
+    image: &crate::pandoc::Image,
+    bracket: &crate::pandoc::Inlines,
+) -> crate::pandoc::Image {
+    let mut out = image.clone();
+    let alt = quarto_pandoc_types::config_value::inlines_to_plain_text(&image.content);
+    let keyed = out.attr.2.contains_key("fig-alt") || out.attr.2.contains_key("alt");
+    let shown = quarto_pandoc_types::config_value::inlines_to_plain_text(bracket);
+    if !keyed && alt != shown {
+        let tracked = out.attr_source.attributes.len() == out.attr.2.len();
+        out.attr.2.insert("fig-alt".to_string(), alt);
+        if tracked {
+            out.attr_source.attributes.push((None, None));
+        }
+    }
+    out.content = bracket.clone();
+    out
 }
 
 fn write_figure(
@@ -1140,8 +1173,12 @@ fn write_figure(
     buf: &mut dyn std::io::Write,
     ctx: &mut QmdWriterContext,
 ) -> std::io::Result<()> {
-    if let Some(image) = match_implicit_figure_shape(figure) {
-        let mut merged = image.clone();
+    if let Some((image, caption)) = match_implicit_figure_shape(figure) {
+        let mut merged = if *caption == image.content {
+            image.clone()
+        } else {
+            respell_alt_as_fig_alt(image, caption)
+        };
         merged.attr.0 = figure.attr.0.clone();
         write_image(&merged, buf, ctx)?;
         // Block-writer contract: every block ends with a trailing newline so
@@ -3227,6 +3264,17 @@ pub fn write_paragraph(
 ) -> std::io::Result<()> {
     // A paragraph's first line begins a line, in a list item or block quote too.
     ctx.at_line_start = true;
+    // A lone image with alt text is not a figure (the reader would already
+    // have made it one), but written as `![alt](src)` it would re-read as
+    // one, captioned by its alt text: spell the alt as `fig-alt` instead.
+    if let [Inline::Image(image)] = para.content.as_slice()
+        && !image.content.is_empty()
+    {
+        let respelled = Inline::Image(respell_alt_as_fig_alt(image, &Vec::new()));
+        write_prose_inlines(std::slice::from_ref(&respelled), buf, ctx)?;
+        writeln!(buf)?;
+        return Ok(());
+    }
     write_prose_inlines(&para.content, buf, ctx)?;
     writeln!(buf)?;
     Ok(())

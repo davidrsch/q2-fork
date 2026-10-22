@@ -563,13 +563,15 @@ book:
         tag.contains("title=\"Minibook\""),
         "the cover img must carry the book title as its title attribute: {tag}"
     );
-    // Pinned as observed: q2's HTML writer data-prefixes custom
-    // attributes (HTML Living Standard policy in the writer), so Q1's
-    // `fig-alt="…"` ships as `data-fig-alt="…"` — a writer-level
-    // deviation applying to every custom attribute, not cover-specific.
+    // `cover-image-alt` is the img's alt text, as in Q1 (bd-ykjwiqcc,
+    // GH #877 — it used to ship as `data-fig-alt`).
     assert!(
-        tag.contains("data-fig-alt=\"Book cover\""),
+        tag.contains(" alt=\"Book cover\""),
         "the cover img must carry the configured alt text: {tag}"
+    );
+    assert!(
+        !tag.contains("data-fig-alt"),
+        "the alt text must not be parked in a data- attribute: {tag}"
     );
 
     // Placement: inside the first content <section>, after its header.

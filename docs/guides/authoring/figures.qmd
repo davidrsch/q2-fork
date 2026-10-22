@@ -77,6 +77,10 @@ Note that the figure caption, title, and alt text can all be different. For exam
 <img src="elephant.png" title="Title: An elephant" alt="A drawing of an elephant.">
 ```
 
+`fig-alt` sets the alt text in every format: the `alt` attribute in HTML, the picture description in Word, and the `alt:` of the image in Typst. A figure with a caption but no `fig-alt` uses its caption as the alt text. In HTML, the `<figcaption>` that repeats it is then marked `aria-hidden="true"`, so screen readers announce the text once.
+
+Filters that run after Quarto's own processing (listed after `quarto` in `filters:`) see `fig-alt` already folded into the image's alt text, which is `image.caption` in Lua.
+
 To directly render the caption as alt text, append a backslash to the line^[This causes an empty additional character
 to be added to the paragraph, which means the image is no longer recognizes as a figure.].
 

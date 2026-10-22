@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 46cee9aaaff6f28ac44dfb82a5318d38dc21a0f97dbe6216570f023ff1e75893 # shrinks to ast = Pandoc { meta: ConfigValue { value: Map([]), source_info: Generated(Generated { by: By { kind: "config-default", data: Null }, from: [] }), merge_op: Concat }, blocks: [Paragraph(Paragraph { content: [Image(Image { attr: ("", [], {}), content: [Str(Str { text: "AA", source_info: Original { file_id: FileId(0), start_offset: 0, end_offset: 0 } })], target: ("https://aaa.example.com", ""), source_info: Original { file_id: FileId(0), start_offset: 0, end_offset: 0 }, attr_source: AttrSourceInfo { id: None, classes: [], attributes: [] }, target_source: TargetSourceInfo { url: None, title: None } })], source_info: Original { file_id: FileId(0), start_offset: 0, end_offset: 0 } })] }

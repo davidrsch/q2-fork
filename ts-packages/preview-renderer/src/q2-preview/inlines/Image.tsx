@@ -21,8 +21,12 @@ import { lookupAssetUrl } from '../utils';
  * value with a unit (`3.83in`, `50%`) goes in `style`, since the HTML
  * attributes accept only unitless pixel counts and would drop the unit.
  *
+ * `fig-alt` needs no handling here: the pipeline's `image-alt-normalize`
+ * transform folds it (and a bare `alt` key-value) into the alt inlines
+ * before the AST reaches the preview (bd-ykjwiqcc).
+ *
  * v1 passes `width` / `height` / `id` / `classes` / `title` only;
- * Quarto-specific Image extensions (`fig-align`, `fig-link`, `fig-alt`,
+ * other Quarto-specific Image extensions (`fig-align`, `fig-link`,
  * `lightbox`, subfigures, `fig-cap-location`) are silently ignored —
  * deferred to a follow-up plan parallel to "q2-preview layout chrome."
  */
