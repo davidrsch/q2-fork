@@ -1,0 +1,7 @@
+::: {.list-table}
+* - ::: {.definition-list}
+    * Cell term
+      - Cell definition.
+    :::
+  - Plain cell
+:::

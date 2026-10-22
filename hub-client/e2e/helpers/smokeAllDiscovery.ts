@@ -99,6 +99,14 @@ export interface DiscoveredTest {
    * its front matter says `format: q2-html-render`.
    */
   documentFormat: string | null;
+  /**
+   * `_quarto: render-project: true` — the fixture asserts on a native
+   * whole-project render (`q2 render` of the project, a reading view).
+   * Hub-client renders one page at a time as an authoring view, where
+   * e.g. a `gone` draft is deliberately shown in full (bd-2hy80x1j), so
+   * the runner skips these. Same rule as `smokeAll.wasm.test.ts`.
+   */
+  renderProject: boolean;
 }
 
 /**
@@ -486,6 +494,8 @@ export function discoverSmokeAllTests(): DiscoveredTest[] {
     );
     if (supportedSpecs.length === 0) continue;
     const documentFormat = documentFormatFromFrontmatter(metadata);
+    const quartoBlock = metadata['_quarto'] as Record<string, unknown> | undefined;
+    const renderProject = quartoBlock?.['render-project'] === true;
 
     const qmdDir = dirname(qmdPath);
     const projectRoot = findProjectRoot(qmdDir);
@@ -506,6 +516,7 @@ export function discoverSmokeAllTests(): DiscoveredTest[] {
       runConfig,
       formatSpecs: supportedSpecs,
       documentFormat,
+      renderProject,
     });
   }
 

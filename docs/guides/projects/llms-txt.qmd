@@ -135,9 +135,10 @@ and cross-referenceable figures inside one are not numbered.
 
 ## Drafts and the 404 page
 
-Pages marked `draft: true` and the site's `404.qmd` still render to
-HTML as usual, but get no markdown companion and never appear in
-`llms.txt` or `llms-full.txt`.
+[Draft](drafts.qmd) pages get no markdown companion and never appear in
+`llms.txt` or `llms-full.txt`, unless their `draft-mode` is `visible`.
+The site's `404.qmd` still renders to HTML as usual, but gets no
+companion either.
 
 ## Quarto never overwrites your files
 

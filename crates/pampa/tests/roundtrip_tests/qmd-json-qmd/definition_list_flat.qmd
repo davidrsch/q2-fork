@@ -1,0 +1,6 @@
+::: {.definition-list}
+* term one
+  - definition one
+* term two
+  - definition two
+:::

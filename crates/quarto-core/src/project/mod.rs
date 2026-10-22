@@ -28,6 +28,7 @@ pub mod book;
 pub mod cache_key;
 pub mod dependency_graph;
 pub mod discovery;
+pub mod drafts;
 pub mod environment;
 pub mod format_paths;
 pub mod index;

@@ -206,6 +206,8 @@ pub fn render_book_download(
         child_deadline: params.child_deadline,
         capture_materialize_dir: Some(params.request_dir.to_path_buf()),
         typst_target: params.typst_target,
+        // A download from the preview is an authoring view.
+        audience: crate::project::drafts::RenderAudience::Authoring,
         ..Default::default()
     };
 

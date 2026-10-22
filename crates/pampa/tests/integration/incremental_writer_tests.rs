@@ -1208,17 +1208,7 @@ fn sugar_roundtrip_list_table_with_header() {
 
 // --- Definition-list sugar/desugar roundtrips ---
 
-// NOTE: Definition-list sugar/desugar roundtrip is LOSSY. The writer produces
-// Pandoc-native definition list syntax ("term\n:   definition\n") but the reader
-// only recognizes the `::: {.definition-list}` div syntax. This means:
-//   - KeepBefore (verbatim copy): works correctly (preserves original div syntax)
-//   - Rewrite: broken — writer output doesn't parse back to DefinitionList
-// This is a pre-existing writer bug, not specific to the incremental writer.
-// These tests are ignored until the writer is fixed to produce div syntax for
-// definition lists (or the reader is extended to parse Pandoc-native syntax).
-
 #[test]
-#[ignore = "definition-list sugar roundtrip is lossy: writer produces Pandoc-native syntax, reader expects div syntax"]
 fn sugar_roundtrip_definition_list_basic() {
     assert_sugar_roundtrip(
         "::: {.definition-list}\n* term one\n  - definition one\n* term two\n  - definition two\n\n:::\n",
@@ -1226,10 +1216,16 @@ fn sugar_roundtrip_definition_list_basic() {
 }
 
 #[test]
-#[ignore = "definition-list sugar roundtrip is lossy: writer produces Pandoc-native syntax, reader expects div syntax"]
 fn sugar_roundtrip_definition_list_multiple_defs() {
     assert_sugar_roundtrip(
         "::: {.definition-list}\n* term\n  - definition a\n  - definition b\n\n:::\n",
+    );
+}
+
+#[test]
+fn sugar_roundtrip_definition_list_nested() {
+    assert_sugar_roundtrip(
+        "::: {.definition-list}\n* Outer\n  - ::: {.definition-list}\n    * Inner\n      - Inner def.\n    :::\n* Table term\n  - ::: {.list-table}\n    * - a\n      - b\n    :::\n:::\n",
     );
 }
 
@@ -1271,6 +1267,24 @@ fn roundtrip_change_paragraph_near_deflist() {
     assert_roundtrip(
         "Before.\n\n::: {.definition-list}\n* term\n  - def\n\n:::\n\nAfter.\n",
         "Before.\n\n::: {.definition-list}\n* term\n  - def\n\n:::\n\nChanged after.\n",
+    );
+}
+
+// An edit inside a definition list rewrites the whole block (it is never
+// spliced), so the rewrite must still be a definition list (bd-byr1oonq).
+#[test]
+fn roundtrip_change_inside_deflist() {
+    assert_roundtrip(
+        "Before.\n\n::: {.definition-list}\n* term\n  - def\n* other\n  - more\n:::\n\nAfter.\n",
+        "Before.\n\n::: {.definition-list}\n* term\n  - def changed\n* other\n  - more\n:::\n\nAfter.\n",
+    );
+}
+
+#[test]
+fn roundtrip_change_inside_nested_deflist() {
+    assert_roundtrip(
+        "::: {.definition-list}\n* Outer\n  - ::: {.definition-list}\n    * Inner\n      - Inner def.\n    :::\n:::\n",
+        "::: {.definition-list}\n* Outer\n  - ::: {.definition-list}\n    * Inner\n      - Inner def, edited.\n    :::\n:::\n",
     );
 }
 

@@ -132,6 +132,13 @@ impl PipelineStage for ApplyTemplateStage {
             ));
         };
 
+        // A `gone` draft (bd-2hy80x1j) is a fixed blank shell: no
+        // template, so no title, navigation, scripts or styles leak.
+        if crate::project::drafts::is_draft_removed(&rendered.metadata) {
+            rendered.content = crate::project::drafts::GONE_PAGE_HTML.to_string();
+            return Ok(PipelineData::RenderedOutput(rendered));
+        }
+
         trace_event!(
             ctx,
             EventLevel::Debug,

@@ -30,8 +30,12 @@ does two kinds of work that the code keeps apart:
    | `Div(.definition-list)` | `DefinitionList` | left as is, silently |
    | `Para([Image])` with non-empty alt text | `Figure` captioned by the alt (pandoc's `implicit_figures`) | — |
 
-   All three apply at any depth (inside divs, blockquotes, list items), as
-   pandoc and the reader both do. The one known reader divergence from pandoc
+   All three apply at any depth (inside divs, blockquotes, list items, and
+   inside the `Table` / `DefinitionList` that the first two produce), as
+   pandoc and the reader both do. The reader rewrites such a div before it
+   visits the div's content, and the rest of its postprocess pass (note
+   references, header ids, warnings, …) then runs on that content as on any
+   other. The one known reader divergence from pandoc
    is a tight list item, which q2 parses straight to `Plain`, so its image is
    never a figure.
 
