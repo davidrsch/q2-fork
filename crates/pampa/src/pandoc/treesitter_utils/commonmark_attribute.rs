@@ -25,14 +25,15 @@ pub fn process_commonmark_attribute(
                 if node == "attribute_id" {
                     attr.0 = text;
                     // Track source location of id
-                    attr_source.id = Some(SourceInfo::from_range(context.current_file_id(), range));
+                    attr_source.id = Some(
+                        crate::pandoc::location::range_to_source_info_with_context(&range, context),
+                    );
                 } else if node == "attribute_class" {
                     attr.1.push(text);
                     // Track source location of this class
-                    attr_source.classes.push(Some(SourceInfo::from_range(
-                        context.current_file_id(),
-                        range,
-                    )));
+                    attr_source.classes.push(Some(
+                        crate::pandoc::location::range_to_source_info_with_context(&range, context),
+                    ));
                 }
                 // Skip other node types
             }
@@ -63,7 +64,9 @@ pub fn process_commonmark_attribute(
                         _ => {
                             attr.2.insert(key, value);
                             let key_source =
-                                Some(SourceInfo::from_range(context.current_file_id(), key_range));
+                                Some(crate::pandoc::location::range_to_source_info_with_context(
+                                    &key_range, context,
+                                ));
                             attr_source
                                 .attributes
                                 .push((key_source, Some(value_content_source)));
