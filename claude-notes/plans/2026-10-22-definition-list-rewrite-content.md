@@ -2,7 +2,7 @@
 title: 'The definition-list and list-table rewrites must process their content (bd-definition-list-rewrite-content-baxb5j8e, GH #895)'
 date: 2026-10-22
 description: 'desugar_div rewrites a .definition-list / .list-table div without visiting what it produced, so nothing inside the new DefinitionList or Table is desugared or post-processed. Assessment, why the issue''s one-line fix is unsafe in the reader, and a plan that keeps the top-down order without re-visiting the new node.'
-status: in-progress  # approved 2026-10-22; implemented on braid/bd-definition-list-rewrite-content-baxb5j8e-pampa-definition-list-list
+status: done  # merged to main in PR #897 (2026-10-22); GH #895 closed
 braid:
   strand: bd-definition-list-rewrite-content-baxb5j8e
 ---
@@ -146,4 +146,5 @@ TDD: write these first and watch them fail on `main`.
 - [x] Change `desugar_div` to return `Block`; switch the reader and `desugar_filter` to `with_block` + `Unchanged`.
 - [x] Update the doc comments (`desugar_div`, module docs) and `dev-docs/syntax-notes.md`.
 - [x] Review any snapshot diffs (none: `cargo nextest run -p pampa` passes all 5197 tests unchanged); run `cargo xtask verify`. Everything is green except 3 typst smoke-all docs (`url-image-mediabag`, `online-logo`, `crossref-grand-finale`), which fail because the local Homebrew pandoc 3.12.1 lacks `+http` and cannot fetch remote images. That is environmental and unrelated to this change; CI installs the official release.
-- [ ] Close bd-9fy9p4zl together with this strand; comment on #895 with the fix and the caption-heuristic caveat behind the deviation from the suggested one-liner.
+- [x] Close bd-9fy9p4zl together with this strand (both closed 2026-10-22; PR #897 closed #895).
+- [ ] Comment on #895 with the fix and the caption-heuristic caveat behind the deviation from the suggested one-liner.

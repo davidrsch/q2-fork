@@ -2,7 +2,7 @@
 title: 'The qmd writer must write DefinitionList in the syntax the qmd reader parses (bd-byr1oonq)'
 date: 2026-10-22
 description: 'write_definitionlist emits pandoc term / colon syntax, which q2 does not parse, so no definition list survives a qmd write; in hub-client, editing inside one silently turns it into paragraphs. Assessment, a spike that confirms the fix, the edge cases it leaves, and a plan.'
-status: in-review  # D1–D3 approved 2026-10-22; PR stacked on #897
+status: done  # merged to main in PR #899 (2026-10-22)
 braid:
   strand: bd-byr1oonq
 ---
@@ -149,4 +149,4 @@ TDD: write these first and watch them fail.
 - [x] D2 (b), as a separate commit (`ecae1e1c1`; `OrderedListContext` got the same change): leave blank lines inside list items unindented in `BulletListContext`; accept the `editorial-divs` snapshot change after reviewing it. Comment on bd-25ezfgs8.
 - [x] Update the coupling table in `postprocess.rs` (definition-list write column: "Div(.definition-list)"; uses indentation boundaries: "Yes (BulletList inside div)"), and the `INCREMENTAL WRITER COUPLING` comments that mention term/definition syntax.
 - [x] `cargo xtask verify`: green. The first full run also caught the docx-import fixture (see [document import](#user-facing-impact-document-import)); one later run hit the known timing flake bd-7kp7kjdq (`head_peek_timeout_closes`, 4.998 s against a 5 s floor), which passed 3/3 when re-run on its own.
-- [ ] Close bd-byr1oonq; open a PR stacked on #897 (retarget it to `main` once #897 merges).
+- [x] Close bd-byr1oonq; open a PR stacked on #897 (PR #899, merged to main 2026-10-22 after #897).
