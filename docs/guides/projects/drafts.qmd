@@ -1,0 +1,142 @@
+---
+title: "Drafts: pages that are not ready yet"
+---
+
+## Overview
+
+Drafts let you keep unfinished pages in a website project without
+publishing them. By default a draft page renders as a blank page, and
+nothing on the site links to it. It is left out of navigation,
+listings, search, the sitemap and `llms.txt`. While you preview the
+site, drafts are shown in full, with a "Draft" banner, so you can keep
+working on them.
+
+## Marking a page as a draft
+
+Add `draft: true` to the page's front matter:
+
+```yaml
+---
+title: "Post with code"
+draft: true
+---
+```
+
+To mark every page in a directory, put `draft: true` in that
+directory's `_metadata.yml`:
+
+```{.yaml filename="posts/_metadata.yml"}
+draft: true
+```
+
+You can also list drafts by path with `drafts`, written either at the
+top level or under `website:`:
+
+```{.yaml filename="_quarto.yml"}
+website:
+  title: "Cool Website"
+  drafts:
+    - posts/post-with-code/index.qmd
+    - "posts/wip-*.qmd"
+    - scratch
+```
+
+Each entry is a path or a glob pattern. A bare directory (`scratch`)
+covers everything beneath it. Like other paths in project metadata,
+each entry is relative to the file it is written in: entries in
+`_quarto.yml` are relative to the project root, and a leading `/`
+always means the project root. A `drafts` list in `posts/_metadata.yml`
+is relative to `posts/` and only applies to pages under `posts/`. An
+entry that is not a path, points outside the project, or is not a
+valid pattern is reported as
+[Q-5-50](../../errors/project/Q-5-50.qmd) and ignored.
+
+::: {.callout-note}
+Quarto 1 also suggests keeping the list in a separate file pulled in
+with `metadata-files:`. Quarto 2 does not support `metadata-files` yet,
+so put the list in `_quarto.yml`, a project profile, or a
+`_metadata.yml`.
+:::
+
+## How drafts appear: `draft-mode`
+
+`draft-mode` controls what a draft looks like in the rendered site:
+
+| `draft-mode`       | The draft page                   | Links to it    |
+| ------------------ | -------------------------------- | -------------- |
+| `gone` (default)   | blank                            | removed        |
+| `unlinked`         | rendered, with a "Draft" banner  | removed        |
+| `visible`          | rendered, with a "Draft" banner  | kept           |
+
+```{.yaml filename="_quarto.yml"}
+website:
+  draft-mode: unlinked
+```
+
+When links to a draft are removed:
+
+- Navbar, sidebar and page-footer entries for the page are dropped. A
+  sidebar section whose heading links to the draft keeps its other
+  entries and just loses the link.
+- A link to the draft in another page's text keeps its text but loses
+  the link.
+- The page is left out of listings and their RSS feeds, site search,
+  `sitemap.xml`, and `llms.txt` / `llms-full.txt`.
+
+A `gone` draft still has a URL: Quarto writes a blank page there, so
+anyone who already has the link sees an empty page instead of a 404.
+The blank page is marked `noindex`, so search engines that find it do
+not index it.
+
+### Setting `draft-mode` for part of a site
+
+`draft-mode` is ordinary metadata, so it can be set anywhere metadata
+can: `_quarto.yml`, a directory's `_metadata.yml`, a page's front
+matter, or `--metadata` on the command line. Each draft follows the
+value that applies to it. For example, to show draft blog posts with a
+banner while every other draft stays `gone`:
+
+```{.yaml filename="posts/_metadata.yml"}
+draft-mode: unlinked
+```
+
+You can write it as `draft-mode` or as `website: draft-mode:`. If you
+use both spellings in different files, the top-level `draft-mode`
+always wins over `website: draft-mode`, even when the `website:` one
+is in a more specific file such as a `_metadata.yml`. Using one
+spelling everywhere avoids surprises. An unrecognized value is
+reported as [Q-5-49](../../errors/project/Q-5-49.qmd), and the draft is
+treated as `gone`.
+
+## Previewing drafts
+
+Whatever `draft-mode` says, drafts are always shown in full when you
+preview: in the browser preview, in `q2 preview --static`, and in
+downloads and exports made from the preview. Draft pages show the
+"Draft" banner, and links and navigation entries pointing at them work
+normally. `draft-mode` applies only to the site you render with
+`q2 render` and publish.
+
+## Drafts and aliases
+
+A draft writes no [alias](aliases.qmd) redirects, whatever its
+`draft-mode`.
+
+## Outside websites
+
+`draft-mode` and blank pages are website features. In other project
+types, and for a single document, a draft renders in full with the
+"Draft" banner. `gone` behaves like `unlinked` there.
+
+## Differences from Quarto 1
+
+- `drafts` entries are glob patterns and resolve relative to the file
+  they are written in. Quarto 1 only matches exact project-relative
+  paths.
+- `draft-mode` can be set per directory or per page. Quarto 1 reads a
+  single site-wide value.
+- Previews always show drafts. In Quarto 1, an explicit
+  `draft-mode: gone` also blanked pages in preview.
+- A `gone` page is marked `noindex`.
+- A sidebar section whose heading links to a draft keeps its other
+  entries. Quarto 1 drops the whole section.

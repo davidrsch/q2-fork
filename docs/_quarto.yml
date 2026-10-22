@@ -42,6 +42,7 @@ website:
             - guides/projects/repo-actions.qmd
             - guides/projects/render-list.qmd
             - guides/projects/aliases.qmd
+            - guides/projects/drafts.qmd
             - guides/projects/llms-txt.qmd
             - guides/projects/website-search.qmd
             - guides/embedded-docs.qmd

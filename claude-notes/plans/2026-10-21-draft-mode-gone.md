@@ -2,12 +2,12 @@
 title: 'Websites: draft-mode (gone default) — Quarto 1 parity (bd-2hy80x1j)'
 date: 2026-10-21
 description: 'Port Quarto 1''s website draft-mode option (gone / unlinked / visible) and website.drafts list to q2: draft-mode resolved per document through ordinary metadata merging, one draft predicate, unlinking across nav/links/listings/sitemap/search/llms, blank noindex pages for gone drafts, and authoring views always visible.'
-status: in-progress
+status: done
 braid:
   strand: bd-2hy80x1j
 ---
 
-**Status:** approved 2026-10-22; in progress on `braid/bd-2hy80x1j-websites-draft-mode-gone`.
+**Status:** implemented 2026-10-22 (phases 1–6), pending review, on `braid/bd-2hy80x1j-websites-draft-mode-gone`.
 
 ## Goal
 
@@ -405,7 +405,7 @@ is one commit or a small group, with tests.
    - Tests: plain path, glob, pattern declared in `_metadata.yml`
      (relative to it), and a pattern via `metadata-files`.
 6. **Docs + changelog (closes bd-98lngao9; closes bd-w0o9 as
-   superseded).**
+   superseded).** *Done 2026-10-22.* Books follow-up filed as bd-4lhtudbo.
    - New `docs/guides/projects/drafts.qmd` covering:
      - `draft:` and `drafts:`
      - `draft-mode` and its per-directory/per-page scoping
