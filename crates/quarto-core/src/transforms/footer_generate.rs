@@ -33,6 +33,7 @@ use crate::Result;
 use crate::render::RenderContext;
 use crate::transform::{AstTransform, TransformPhase};
 use crate::transforms::is_feature_disabled;
+use crate::transforms::navigation_drafts::prune_unlinkable_items;
 use crate::transforms::navigation_enrich::enrich_navigation_items;
 use crate::transforms::navigation_href::resolve_metadata_path;
 
@@ -142,6 +143,8 @@ fn demote_unresolved_bare_items(region: &mut FooterRegion) {
 /// body-content link rewriting is Phase 6's territory.
 fn enrich_footer_region(region: &mut FooterRegion, index: &crate::project::index::ProjectIndex) {
     if let FooterRegion::Items(items) = region {
+        // Drop links to unlinkable drafts first (bd-2hy80x1j).
+        prune_unlinkable_items(items, index);
         enrich_navigation_items(items, index);
     }
 }

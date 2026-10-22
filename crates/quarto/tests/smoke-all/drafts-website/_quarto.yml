@@ -1,0 +1,10 @@
+# Website draft handling (bd-2hy80x1j). `draft-mode` is unset, so drafts
+# are `gone` (Quarto 1's default): blank pages, unlinked everywhere.
+project:
+  type: website
+website:
+  title: Draft site
+  navbar:
+    left:
+      - index.qmd
+      - item2.qmd

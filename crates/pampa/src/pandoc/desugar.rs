@@ -21,8 +21,12 @@
 //! 2. `Div(.definition-list)` → `DefinitionList` (a malformed one is left
 //!    as is, silently, as the reader does);
 //! 3. `Para([Image])` with non-empty alt text → `Figure` captioned by the
-//!    alt text (pandoc's `implicit_figures`), at any depth, as pandoc and
-//!    the reader both do.
+//!    alt text (pandoc's `implicit_figures`).
+//!
+//! All three apply at any depth, as pandoc and the reader both do,
+//! including inside the `Table` / `DefinitionList` that items 1 and 2
+//! produce: a definition-list in a definition, a list-table in a
+//! list-table cell, an image paragraph in a loose definition (GH #895).
 //!
 //! That set is the **structural desugaring contract**: every block list
 //! that enters the render pipeline *other than through the qmd reader* is
@@ -50,8 +54,8 @@ use std::cell::RefCell;
 
 use crate::filter_context::FilterContext;
 use crate::filters::{
-    Filter, FilterReturn, FilterReturn::FilterResult, FilterReturn::Unchanged,
-    topdown_traverse_blocks, topdown_traverse_inlines,
+    Filter, FilterReturn::FilterResult, FilterReturn::Unchanged, topdown_traverse_blocks,
+    topdown_traverse_inlines,
 };
 use crate::pandoc::treesitter_utils::postprocess::{
     ListTableValidation, is_valid_definition_list_div, transform_definition_list_div,
@@ -68,14 +72,18 @@ use quarto_pandoc_types::AttrSourceInfo;
 /// Items 1 and 2 of the set, for one div: a valid list-table becomes a
 /// `Table`, a valid definition-list a `DefinitionList`, an invalid
 /// list-table warns Q-2-35 into `collector` and stays a div, and any other
-/// div is unchanged. Neither rewrite recurses into its result, matching
-/// the reader.
-pub(crate) fn desugar_div(
-    div: Div,
-    collector: &mut DiagnosticCollector,
-) -> FilterReturn<Div, Blocks> {
+/// div is unchanged.
+///
+/// The rewrite runs top-down, before the div's content is visited. The
+/// caller returns the result as `Unchanged` from a `with_block` handler,
+/// so the traversal then descends into the new block's children (the set
+/// applies inside its own output, as in pandoc) without re-applying the
+/// filter to the new block itself. A `FilterResult(_, true)` re-visit
+/// would run the reader's `.with_table` pipe-table caption heuristic on
+/// a list-table and could take its last row as a caption.
+pub(crate) fn desugar_div(div: Div, collector: &mut DiagnosticCollector) -> Block {
     match validate_list_table_div(&div) {
-        ListTableValidation::Valid => FilterResult(vec![transform_list_table_div(div)], false),
+        ListTableValidation::Valid => transform_list_table_div(div),
         ListTableValidation::Invalid { reason, location } => {
             collector.add(
                 DiagnosticMessageBuilder::warning("Invalid List-Table Structure")
@@ -85,13 +93,13 @@ pub(crate) fn desugar_div(
                     .add_hint("Check the list-table documentation for the correct structure?")
                     .build(),
             );
-            Unchanged(div)
+            Block::Div(div)
         }
         ListTableValidation::NotListTable => {
             if is_valid_definition_list_div(&div) {
-                FilterResult(vec![transform_definition_list_div(div)], false)
+                transform_definition_list_div(div)
             } else {
-                Unchanged(div)
+                Block::Div(div)
             }
         }
     }
@@ -152,7 +160,11 @@ pub(crate) fn implicit_figure(para: &Paragraph) -> Option<Figure> {
 /// The set as a filter over `collector`.
 fn desugar_filter<'a>(collector: &'a RefCell<&'a mut DiagnosticCollector>) -> Filter<'a> {
     Filter::new()
-        .with_div(move |div, _ctx| desugar_div(div, &mut collector.borrow_mut()))
+        // See `desugar_div` for why this is `Unchanged`, not a re-visit.
+        .with_block(move |block, _ctx| match block {
+            Block::Div(div) => Unchanged(desugar_div(div, &mut collector.borrow_mut())),
+            other => Unchanged(other),
+        })
         .with_paragraph(|para, _ctx| match implicit_figure(&para) {
             Some(figure) => FilterResult(vec![Block::Figure(figure)], true),
             None => Unchanged(para),
@@ -335,6 +347,94 @@ mod tests {
         );
     }
 
+    /// A definition-list div with one term whose definition is `def`.
+    fn definition_list(term: &str, def: Blocks) -> Block {
+        div(
+            "definition-list",
+            vec![bullets(vec![vec![plain(term), bullets(vec![def])]])],
+        )
+    }
+
+    /// The single definition's blocks of a one-entry `DefinitionList`.
+    fn only_definition(block: &Block) -> &Blocks {
+        let Block::DefinitionList(list) = block else {
+            panic!("expected DefinitionList, got {block:?}");
+        };
+        let [(_, definitions)] = list.content.as_slice() else {
+            panic!("{:?}", list.content);
+        };
+        let [definition] = definitions.as_slice() else {
+            panic!("{definitions:?}");
+        };
+        definition
+    }
+
+    #[test]
+    fn the_set_applies_inside_a_rewritten_definition_list() {
+        let mut collector = DiagnosticCollector::new();
+        let input = definition_list(
+            "outer",
+            vec![
+                definition_list("inner", vec![plain("def")]),
+                list_table(),
+                image_para("alt", ""),
+            ],
+        );
+        let out = desugar_blocks(vec![input], &mut collector);
+        let [outer] = out.as_slice() else {
+            panic!("{out:?}");
+        };
+        let definition = only_definition(outer);
+        assert!(
+            matches!(
+                definition.as_slice(),
+                [Block::DefinitionList(_), Block::Table(_), Block::Figure(_)]
+            ),
+            "{definition:?}"
+        );
+        assert!(collector.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn the_set_applies_inside_a_rewritten_list_table() {
+        let mut collector = DiagnosticCollector::new();
+        let input = div(
+            "list-table",
+            vec![bullets(vec![vec![bullets(vec![
+                vec![definition_list("term", vec![plain("def")])],
+                vec![plain("cell")],
+            ])]])],
+        );
+        let out = desugar_blocks(vec![input], &mut collector);
+        let [Block::Table(table)] = out.as_slice() else {
+            panic!("{out:?}");
+        };
+        // header-rows defaults to 1, so the only row is the head row.
+        let cell = &table.head.rows[0].cells[0];
+        assert!(
+            matches!(cell.content.as_slice(), [Block::DefinitionList(_)]),
+            "{:?}",
+            cell.content
+        );
+    }
+
+    #[test]
+    fn an_invalid_list_table_nested_in_a_definition_warns_once() {
+        let mut collector = DiagnosticCollector::new();
+        let input = definition_list("term", vec![div("list-table", vec![plain("x")])]);
+        let out = desugar_blocks(vec![input], &mut collector);
+        let [outer] = out.as_slice() else {
+            panic!("{out:?}");
+        };
+        assert!(
+            matches!(only_definition(outer).as_slice(), [Block::Div(_)]),
+            "{out:?}"
+        );
+        let diags = collector.diagnostics();
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert_eq!(diags[0].code.as_deref(), Some("Q-2-35"));
+    }
+
     #[test]
     fn inlines_are_desugared_through_a_note() {
         let mut collector = DiagnosticCollector::new();
@@ -356,7 +456,11 @@ mod tests {
     #[test]
     fn the_pass_is_idempotent_on_valid_output() {
         let mut collector = DiagnosticCollector::new();
-        let once = desugar_blocks(vec![list_table(), image_para("alt", "")], &mut collector);
+        let nested = definition_list("term", vec![list_table(), image_para("alt", "")]);
+        let once = desugar_blocks(
+            vec![list_table(), image_para("alt", ""), nested],
+            &mut collector,
+        );
         let twice = desugar_blocks(once.clone(), &mut collector);
         assert_eq!(once, twice);
         assert!(collector.diagnostics().is_empty());

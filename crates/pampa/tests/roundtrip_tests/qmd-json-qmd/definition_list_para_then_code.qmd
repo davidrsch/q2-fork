@@ -1,0 +1,8 @@
+::: {.definition-list}
+* Term
+  - Some text.
+
+    ```python
+    1 + 1
+    ```
+:::

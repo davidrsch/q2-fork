@@ -145,14 +145,18 @@ pub fn companion_href(output_href: &str) -> Option<String> {
         .map(|stem| format!("{stem}.md"))
 }
 
-/// Does this profile get a companion? Non-draft, non-404, `.html`
+/// Does this profile get a companion? Linkable (not a draft hidden by
+/// its `draft-mode`, see [`crate::project::drafts`]), non-404, `.html`
 /// output, **plain html format** (a revealjs deck renders to `.html`
 /// but capture never runs for it — see [`llms_view_active`] — so it
 /// has no companion). The single answer shared by capture (link
 /// retargeting), `link-format` resolution, and post-render (index
 /// assembly) so they can't drift.
-pub fn profile_has_companion(profile: &crate::document_profile::DocumentProfile) -> bool {
-    !profile.draft
+pub fn profile_has_companion(
+    index: &ProjectIndex,
+    profile: &crate::document_profile::DocumentProfile,
+) -> bool {
+    index.is_linkable(profile)
         && profile.output_href != HREF_404
         && profile.output_href.ends_with(".html")
         && crate::format::lua_format_for(&profile.format_id) == "html"
@@ -289,7 +293,7 @@ fn capture_target(index: Option<&ProjectIndex>, ctx: &RenderContext) -> Option<(
     let index = index?;
     let source = page_relative_source(ctx);
     let profile = index.lookup_by_source(Path::new(&source))?;
-    if !profile_has_companion(profile) {
+    if !profile_has_companion(index, profile) {
         return None;
     }
     let md_href = companion_href(&profile.output_href)?;
@@ -928,7 +932,7 @@ fn retarget_href(href: &str, cx: &ViewContext) -> String {
     };
     let eligible = index
         .lookup_by_href(&resolved)
-        .is_some_and(profile_has_companion);
+        .is_some_and(|p| profile_has_companion(index, p));
     if !eligible {
         return href.to_string();
     }
@@ -1374,10 +1378,31 @@ mod tests {
 
     #[test]
     fn profile_has_companion_excludes_drafts_and_404() {
-        assert!(profile_has_companion(&profile("about.html", false)));
-        assert!(!profile_has_companion(&profile("about.html", true)));
-        assert!(!profile_has_companion(&profile("404.html", false)));
-        assert!(!profile_has_companion(&profile("feed.xml", false)));
+        let idx = ProjectIndex::default();
+        assert!(profile_has_companion(&idx, &profile("about.html", false)));
+        assert!(!profile_has_companion(&idx, &profile("about.html", true)));
+        assert!(!profile_has_companion(&idx, &profile("404.html", false)));
+        assert!(!profile_has_companion(&idx, &profile("feed.xml", false)));
+    }
+
+    /// A draft under `draft-mode: visible` is linkable, so it gets a
+    /// companion like any other page; under an authoring view every
+    /// draft does.
+    #[test]
+    fn profile_has_companion_follows_draft_mode() {
+        use crate::project::drafts::{DraftMode, DraftView, RenderAudience};
+        let idx = ProjectIndex::default();
+        let visible = DocumentProfile {
+            draft_mode: DraftMode::Visible,
+            ..profile("about.html", true)
+        };
+        assert!(profile_has_companion(&idx, &visible));
+        let authoring = ProjectIndex::default()
+            .with_draft_view(DraftView::new(RenderAudience::Authoring, true));
+        assert!(profile_has_companion(
+            &authoring,
+            &profile("about.html", true)
+        ));
     }
 
     /// A revealjs page renders to `.html` but capture never runs for
@@ -1386,13 +1411,14 @@ mod tests {
     /// would carry dead `.md` links to slide decks.
     #[test]
     fn profile_has_companion_excludes_non_html_formats() {
-        assert!(!profile_has_companion(&slides_profile("slides.html")));
+        let idx = ProjectIndex::default();
+        assert!(!profile_has_companion(&idx, &slides_profile("slides.html")));
         // The preview pseudo-format maps to html and does get one.
         let preview = DocumentProfile {
             format_id: "q2-preview".to_string(),
             ..profile("about.html", false)
         };
-        assert!(profile_has_companion(&preview));
+        assert!(profile_has_companion(&idx, &preview));
     }
 
     /// Links to a revealjs page keep their `.html` target in the

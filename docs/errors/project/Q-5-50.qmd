@@ -1,0 +1,41 @@
+---
+title: "Invalid drafts Pattern"
+description: "A `drafts` entry is not a path, points outside the project, or is not a valid glob. It marks nothing as a draft."
+code: Q-5-50
+subsystem: project
+status: complete
+since: "99.9.9"
+categories:
+  - project
+---
+
+# `Q-5-50` — Invalid drafts Pattern
+
+> A `drafts` entry is not a path, points outside the project, or is
+> not a valid glob. It marks nothing as a draft.
+
+## What this means
+
+`drafts` (or `website.drafts`) lists pages to treat as drafts, as if
+each said `draft: true`. Every entry is a path or glob pattern,
+resolved relative to the file it is written in (a leading `/` anchors
+it at the project root). This warning means one entry could not be
+used:
+
+```yaml
+# _quarto.yml
+website:
+  drafts:
+    - posts/wip.qmd        # fine
+    - "posts/*.qmd"        # fine: a glob
+    - ../elsewhere.qmd     # Q-5-50: climbs above the project root
+    - "posts/[.qmd"        # Q-5-50: not a valid glob
+    - {path: x.qmd}        # Q-5-50: not a path
+```
+
+The entry is ignored. The other entries still apply.
+
+## How to fix it
+
+Write each entry as a path or glob pattern that stays inside the
+project directory.

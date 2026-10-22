@@ -486,6 +486,7 @@ contributes:
       favicon: assets/favicon.svg
       navbar:
         logo: assets/logo.svg
+        logo-href: assets/logo.svg
     format:
       html:
         theme:
@@ -541,12 +542,27 @@ fn extension_favicon_and_logo_rebased_to_project_root() {
         meta_at(&project, &["website", "navbar", "logo"]).and_then(|v| v.as_str()),
         Some("_extensions/acme/fancysite/assets/logo.svg")
     );
-    // Rebased values carry Path kind so downstream document-dir
-    // rebasing (metadata_merge layer 1) keeps adjusting them.
-    assert!(matches!(
-        meta_at(&project, &["website", "favicon"]).unwrap().value,
-        quarto_pandoc_types::config_value::ConfigValueKind::Path(_)
-    ));
+    assert_eq!(
+        meta_at(&project, &["website", "navbar", "logo-href"]).and_then(|v| v.as_str()),
+        Some("_extensions/acme/fancysite/assets/logo.svg")
+    );
+    // Site-level values stay plain strings, as if written in
+    // `_quarto.yml`: their consumers relativize per page, so a Path
+    // kind (document-dir-adjusted by metadata_merge) would climb one
+    // level too many in subdirectories (bd-74ktvzv7).
+    for key in [
+        &["website", "favicon"][..],
+        &["website", "navbar", "logo"],
+        &["website", "navbar", "logo-href"],
+    ] {
+        assert!(
+            matches!(
+                meta_at(&project, key).unwrap().value,
+                quarto_pandoc_types::config_value::ConfigValueKind::Scalar { .. }
+            ),
+            "{key:?} should stay a plain string scalar"
+        );
+    }
 }
 
 #[test]

@@ -28,6 +28,7 @@ pub mod book;
 pub mod cache_key;
 pub mod dependency_graph;
 pub mod discovery;
+pub mod drafts;
 pub mod environment;
 pub mod format_paths;
 pub mod index;
@@ -800,21 +801,36 @@ const FRAGMENT_PATH_PATTERNS: &[&[&str]] = &[
     &["format", "*", "format-resources"],
     &["format", "*", "template"],
     &["format", "*", "template-partials"],
-    &["website", "favicon"],
-    &["website", "navbar", "logo"],
-    &["website", "sidebar", "logo"],
     &["project", "pre-render"],
     &["project", "post-render"],
     &["project", "resources"],
     &["brand"],
 ];
 
+/// Site-level counterparts of [`FRAGMENT_PATH_PATTERNS`]: `website.*`
+/// keys whose consumers read the value as project-root-relative and
+/// relativize it per page themselves.
+///
+/// Rebased leaves stay plain strings, exactly as if written in
+/// `_quarto.yml`. A [`ConfigValueKind::Path`] would be adjusted to the
+/// document dir by the per-document merge and then relativized again
+/// per page, climbing one level too many for pages in subdirectories
+/// (bd-74ktvzv7).
+const FRAGMENT_SITE_PATH_PATTERNS: &[&[&str]] = &[
+    &["website", "favicon"],
+    &["website", "navbar", "logo"],
+    &["website", "navbar", "logo-href"],
+    &["website", "sidebar", "logo"],
+];
+
 /// Rebase extension-bundled file references in a `contributes.project`
 /// fragment from extension-dir-relative to project-root-relative.
 ///
-/// Rebased values become [`ConfigValueKind::Path`] so the per-document
-/// metadata merge keeps adjusting them (project root → document dir)
-/// for documents in subdirectories.
+/// Rebased [`FRAGMENT_PATH_PATTERNS`] values become
+/// [`ConfigValueKind::Path`] so the per-document metadata merge keeps
+/// adjusting them (project root → document dir) for documents in
+/// subdirectories; rebased [`FRAGMENT_SITE_PATH_PATTERNS`] values stay
+/// project-root-relative strings.
 ///
 /// The pattern walk and the bundled-file existence check are shared
 /// with the `contributes.formats` marking (bd-of20unsb) via
@@ -838,6 +854,20 @@ fn rebase_fragment_paths(
             leaf.value = ConfigValueKind::Path(rebased);
         }
     });
+    crate::extension::paths::walk_pattern_leaves(
+        fragment,
+        FRAGMENT_SITE_PATH_PATTERNS,
+        &mut |leaf| {
+            if let ConfigValueKind::Scalar {
+                yaml: yaml_rust2::Yaml::String(s),
+                ..
+            } = &mut leaf.value
+                && let Some(rebased) = rebase_candidate(s, ext_dir, project_dir, runtime)
+            {
+                *s = rebased;
+            }
+        },
+    );
 }
 
 /// Decide whether `s` names a file bundled with the extension, and if

@@ -337,7 +337,7 @@ pub fn plan_alias_stubs(profiles: &[DocumentProfile]) -> AliasPlan {
     let mut buckets: BTreeMap<String, Vec<Claim>> = BTreeMap::new();
 
     for profile in profiles {
-        if profile.draft {
+        if crate::project::drafts::is_draft(profile) {
             continue;
         }
         for (i, alias) in profile.aliases.iter().enumerate() {

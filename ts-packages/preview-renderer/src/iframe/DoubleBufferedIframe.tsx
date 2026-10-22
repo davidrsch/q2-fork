@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useImperativeHandle } from 'react';
 import type { Ref } from 'react';
 import { postProcessIframe } from '../utils/iframePostProcessor';
+import { jumpToAnchor } from '../utils/jumpToAnchor';
 
 // Methods exposed via ref
 export interface DoubleBufferedIframeHandle {
@@ -143,12 +144,7 @@ function DoubleBufferedIframe({
   const scrollToAnchor = useCallback((anchor: string) => {
     const { active } = getIframeRefs();
     const doc = active.current?.contentDocument;
-    if (!doc) return;
-
-    const element = doc.getElementById(anchor);
-    if (element) {
-      element.scrollIntoView({ behavior: 'instant', block: 'start' });
-    }
+    if (doc) jumpToAnchor(doc, anchor);
   }, [getIframeRefs]);
 
   // Handler for .qmd link clicks and anchor clicks in the preview

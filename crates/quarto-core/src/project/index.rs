@@ -22,6 +22,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::document_profile::DocumentProfile;
+use crate::project::drafts::DraftView;
 
 /// Read-only view of every document profile in a project.
 ///
@@ -36,6 +37,11 @@ pub struct ProjectIndex {
     profiles: Vec<DocumentProfile>,
     by_source_path: HashMap<PathBuf, usize>,
     by_output_href: HashMap<String, usize>,
+    /// The draft policy for the render this index serves: whether it is
+    /// a reading or an authoring view, and whether the project is a
+    /// website. Set by the driver with [`with_draft_view`](Self::with_draft_view);
+    /// the default (reading view of a website) suits most tests.
+    draft_view: DraftView,
 }
 
 impl ProjectIndex {
@@ -57,7 +63,31 @@ impl ProjectIndex {
             profiles,
             by_source_path,
             by_output_href,
+            draft_view: DraftView::default(),
         }
+    }
+
+    /// Set the draft policy this index answers with.
+    pub fn with_draft_view(mut self, draft_view: DraftView) -> Self {
+        self.draft_view = draft_view;
+        self
+    }
+
+    /// The draft policy for this render (see [`crate::project::drafts`]).
+    pub fn draft_view(&self) -> DraftView {
+        self.draft_view
+    }
+
+    /// May pages link to `profile`, and may features enumerate it
+    /// (navigation, listings, search, sitemap, llms)? `false` only for a
+    /// draft whose effective `draft-mode` is not `visible`.
+    pub fn is_linkable(&self, profile: &DocumentProfile) -> bool {
+        self.draft_view.is_linkable(profile)
+    }
+
+    /// Profiles of every linkable page, in insertion order.
+    pub fn linkable_profiles(&self) -> impl Iterator<Item = &DocumentProfile> {
+        self.profiles.iter().filter(|p| self.is_linkable(p))
     }
 
     /// All profiles, in insertion order.
@@ -158,6 +188,27 @@ mod tests {
         let index = ProjectIndex::new(vec![make_profile("a.qmd", "a.html", "A")]);
         assert!(index.lookup_by_source(Path::new("nope.qmd")).is_none());
         assert!(index.lookup_by_href("nope.html").is_none());
+    }
+
+    #[test]
+    fn linkability_follows_the_draft_view() {
+        use crate::project::drafts::{DraftMode, DraftView, RenderAudience};
+        let mut draft = make_profile("d.qmd", "d.html", "D");
+        draft.draft = true;
+        draft.draft_mode = DraftMode::Unlinked;
+        let profiles = vec![make_profile("a.qmd", "a.html", "A"), draft];
+
+        let reading = ProjectIndex::new(profiles.clone());
+        assert!(!reading.is_linkable(reading.lookup_by_href("d.html").unwrap()));
+        let hrefs: Vec<_> = reading
+            .linkable_profiles()
+            .map(|p| p.output_href.as_str())
+            .collect();
+        assert_eq!(hrefs, vec!["a.html"]);
+
+        let authoring = ProjectIndex::new(profiles)
+            .with_draft_view(DraftView::new(RenderAudience::Authoring, true));
+        assert_eq!(authoring.linkable_profiles().count(), 2);
     }
 
     #[test]

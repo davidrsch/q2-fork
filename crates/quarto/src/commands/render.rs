@@ -111,6 +111,11 @@ pub struct RenderArgs {
     /// always uses the default (`All`); `q2 preview --static` narrows
     /// it to the pages being viewed. Not a CLI flag.
     pub execution_policy: quarto_core::engine::ExecutionPolicy,
+    /// Who the render is for (bd-2hy80x1j). `q2 render` uses the
+    /// default (`Reading`, so `draft-mode` applies); `q2 preview
+    /// --static` is an authoring view and shows every draft. Not a CLI
+    /// flag.
+    pub audience: quarto_core::project::drafts::RenderAudience,
     /// `-M/--metadata KEY:VALUE` arguments, unparsed. Parsed by
     /// [`quarto_core::metadata_flag`] into the render's runtime overlay.
     pub metadata: Vec<String>,
@@ -961,6 +966,7 @@ pub fn render_once(
         replay_captures,
         engine_registry_override: None,
         execution_policy: args.execution_policy.clone(),
+        audience: args.audience,
         // Phase 3c: CLI override-only for v1 (YAML reading is deferred
         // until project YAML schema work; the resolver matrix is still
         // exercised end-to-end by Phase 0 test #9b).

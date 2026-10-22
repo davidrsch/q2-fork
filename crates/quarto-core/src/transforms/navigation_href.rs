@@ -766,6 +766,10 @@ pub fn rewrite_config_inlines(
 ///   so the degrade-to-raw path produces the right answer for them.
 /// - The source file's path can't be expressed relative to `project_root`
 ///   (file lives outside the project).
+///
+/// Values authored in an extension manifest (`_extension.yml`) resolve
+/// against the project root, as if written in `_quarto.yml`
+/// (bd-74ktvzv7).
 pub fn resolve_metadata_path(
     raw: &str,
     source: &SourceInfo,
@@ -811,6 +815,20 @@ pub fn resolve_metadata_path(
             return raw.to_string();
         }
     };
+    // Extension manifests inside the project (bd-74ktvzv7): values from
+    // `contributes.project` / `metadata` / `formats` mean what they
+    // would in `_quarto.yml`. Bundled files were already rebased to
+    // `_extensions/<ext>/…` at config time (keeping their manifest
+    // span for diagnostics), so resolving against the manifest's
+    // directory would prepend the extension dir a second time.
+    // TODO(bd-0x1znhgb): carry the resolution base with the value
+    // instead of re-deriving it from the source span.
+    if source_path
+        .file_name()
+        .is_some_and(|name| name == "_extension.yml")
+    {
+        return resolve_to_project_root("_", raw);
+    }
     let rel_dir_str = rel_dir.to_string_lossy().replace('\\', "/");
     // Use the same path-normalizer the body-link helper uses so `..`
     // and leading `/` behaviour stays consistent across navigation
@@ -1140,6 +1158,29 @@ mod tests {
         assert_eq!(
             resolve_metadata_path("introduction.qmd", &src, &ctx, &root),
             "introduction.qmd"
+        );
+    }
+
+    /// bd-74ktvzv7 — values authored in an extension manifest
+    /// (`contributes.project` / `metadata` / `formats`) are
+    /// project-root-relative, not relative to the extension dir:
+    /// bundled files were already rebased to `_extensions/<ext>/…` at
+    /// config time, and other hrefs mean project pages (Q1 parity).
+    #[test]
+    fn metadata_path_extension_manifest_is_project_root_relative() {
+        let root = PathBuf::from("/project");
+        let (ctx, src) = source_for("_extensions/acme/x/_extension.yml", &root);
+        assert_eq!(
+            resolve_metadata_path("_extensions/acme/x/assets/logo.svg", &src, &ctx, &root),
+            "_extensions/acme/x/assets/logo.svg"
+        );
+        assert_eq!(
+            resolve_metadata_path("index.qmd", &src, &ctx, &root),
+            "index.qmd"
+        );
+        assert_eq!(
+            resolve_metadata_path("/docs/../about.qmd", &src, &ctx, &root),
+            "about.qmd"
         );
     }
 

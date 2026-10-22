@@ -216,7 +216,7 @@ fn collect_candidates<'a>(
         AutoSpec::All => {
             let candidates: Vec<&DocumentProfile> = profiles
                 .iter()
-                .filter(|p| !p.draft)
+                .filter(|p| index.is_linkable(p))
                 .filter(|p| !is_top_level_index(p))
                 .collect();
             (candidates, Scope::Grouped)
@@ -225,7 +225,7 @@ fn collect_candidates<'a>(
             let matcher = auto_matcher(std::slice::from_ref(pat));
             let candidates: Vec<&DocumentProfile> = profiles
                 .iter()
-                .filter(|p| !p.draft)
+                .filter(|p| index.is_linkable(p))
                 .filter(|p| matches_spec(p, matcher.as_ref()))
                 .collect();
             // D1 — a bare directory is Q1's "auto-dir": the directory
@@ -243,7 +243,7 @@ fn collect_candidates<'a>(
             let matcher = auto_matcher(pats);
             let candidates: Vec<&DocumentProfile> = profiles
                 .iter()
-                .filter(|p| !p.draft)
+                .filter(|p| index.is_linkable(p))
                 .filter(|p| matches_spec(p, matcher.as_ref()))
                 .collect();
             // A Paths spec is always flat — grouping semantics are
@@ -1088,6 +1088,26 @@ mod tests {
                 _ => panic!("expected Link"),
             }
         }
+    }
+
+    /// Test 24b — a draft whose `draft-mode` is `visible` is linkable,
+    /// so the auto sidebar lists it; so does an authoring view
+    /// (hub-client, `q2 preview --static`) for any draft.
+    #[test]
+    fn auto_keeps_linkable_drafts() {
+        use crate::project::drafts::{DraftMode, DraftView, RenderAudience};
+        let mut visible = make_profile_draft("b.qmd", "B");
+        visible.draft_mode = DraftMode::Visible;
+        let index = ProjectIndex::new(vec![make_profile("a.qmd", "A"), visible]);
+        let mut diags = Vec::new();
+        assert_eq!(expand_spec(&AutoSpec::All, &index, &mut diags).len(), 2);
+
+        let index = ProjectIndex::new(vec![
+            make_profile("a.qmd", "A"),
+            make_profile_draft("b.qmd", "B"),
+        ])
+        .with_draft_view(DraftView::new(RenderAudience::Authoring, true));
+        assert_eq!(expand_spec(&AutoSpec::All, &index, &mut diags).len(), 2);
     }
 
     /// Test 25 — when no index is available, `strip_auto` drops the

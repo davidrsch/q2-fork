@@ -38,6 +38,7 @@ use quarto_core::format_resolution::{
     ScopeRequest, resolve_document_format, resolve_project_format, resolve_render_scope,
 };
 use quarto_core::project::book::format_consolidates_book;
+use quarto_core::project::drafts::RenderAudience;
 use quarto_core::project::orchestrator::RenderMode;
 use quarto_core::project::project_profile::cli_selection;
 use quarto_core::{ProjectContext, metadata_flag};
@@ -96,6 +97,9 @@ impl StaticArgs {
             to: self.to.clone(),
             metadata: self.metadata.clone(),
             profile: self.profile.clone(),
+            // A preview is an authoring view: drafts render and are
+            // linked whatever their `draft-mode` (bd-2hy80x1j).
+            audience: RenderAudience::Authoring,
             ..RenderArgs::default()
         }
     }
@@ -1019,6 +1023,35 @@ mod tests {
         assert_eq!(rerender_action(false, one.clone()), one);
         assert_eq!(rerender_action(false, Action::Full), Action::Full);
         assert_eq!(rerender_action(false, Action::Ignore), Action::Ignore);
+    }
+
+    /// `q2 preview --static` is an authoring view, and every re-render
+    /// (built from the base args) stays one (bd-2hy80x1j).
+    #[test]
+    fn static_preview_renders_are_authoring_views() {
+        let args = StaticArgs {
+            path: None,
+            port: None,
+            host: None,
+            no_browser: true,
+            browser: None,
+            no_watch: true,
+            no_navigate: false,
+            to: None,
+            metadata: Vec::new(),
+            profile: Vec::new(),
+        };
+        let base = args.base_render_args();
+        assert_eq!(base.audience, RenderAudience::Authoring);
+        let rerender = render_args_for(
+            &Action::Full,
+            Path::new("/p"),
+            &base,
+            false,
+            ExecutionPolicy::All,
+        );
+        assert_eq!(rerender.audience, RenderAudience::Authoring);
+        assert_eq!(RenderArgs::default().audience, RenderAudience::Reading);
     }
 
     #[test]
