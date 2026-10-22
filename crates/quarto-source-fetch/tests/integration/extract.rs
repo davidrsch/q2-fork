@@ -226,6 +226,46 @@ fn both_backends_extract_a_normal_archive() {
     }
 }
 
+/// GitHub's `archive/refs/...tar.gz` (produced by `git archive`) starts
+/// with a pax *global* header named `pax_global_header`, carrying the
+/// commit id. Every real GitHub source has one, so refusing it refused
+/// every GitHub archive (found running `q2 add` against GitHub,
+/// bd-rfz4e3bw).
+#[test]
+fn a_pax_global_header_is_skipped_not_refused() {
+    let tmp = TempDir::new().unwrap();
+    let archive = tmp.path().join("github.tar.gz");
+    {
+        let file = std::fs::File::create(&archive).unwrap();
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        let mut builder = tar::Builder::new(encoder);
+
+        let record = b"52 comment=0123456789abcdef0123456789abcdef01234567\n";
+        let mut global = tar::Header::new_ustar();
+        global.set_entry_type(tar::EntryType::XGlobalHeader);
+        global.set_size(record.len() as u64);
+        set_raw_name(&mut global, "pax_global_header");
+        global.set_cksum();
+        builder.append(&global, record.as_slice()).unwrap();
+
+        let content = b"color:\n  primary: red\n";
+        let mut file_header = tar::Header::new_ustar();
+        file_header.set_entry_type(tar::EntryType::Regular);
+        file_header.set_mode(0o644);
+        file_header.set_size(content.len() as u64);
+        set_raw_name(&mut file_header, "repo-main/_brand.yml");
+        file_header.set_cksum();
+        builder.append(&file_header, content.as_slice()).unwrap();
+        builder.into_inner().unwrap().finish().unwrap();
+    }
+
+    let dest = tmp.path().join("dest");
+    std::fs::create_dir_all(&dest).unwrap();
+    extract_into(&archive, &dest, &ExtractLimits::default())
+        .unwrap_or_else(|e| panic!("a GitHub-shaped archive must extract: {e}"));
+    assert_eq!(tree(&dest), ["repo-main", "repo-main/_brand.yml"]);
+}
+
 // ====================================================================
 // Case 13 — the hardening matrix
 // ====================================================================
@@ -304,33 +344,55 @@ fn backslash_traversal_is_refused() {
 }
 
 #[test]
-fn symlink_entries_are_refused() {
-    // A symlink is not merely unnecessary in a brand: it is the setup
-    // move for an escape, since a *later* entry writing through it
-    // lands wherever it points.
+fn symlink_entries_are_skipped_and_never_created() {
+    // A symlink is the setup move for an escape: a *later* entry written
+    // through it lands wherever it points. So links are never created.
+    // They are not refused either — real repositories ship them
+    // (bd-rfz4e3bw) — but skipped and reported, so a caller can refuse
+    // when the part it installs needed one.
     for format in BOTH {
         let entries = [
             Entry::symlink("repo-main/link", "/tmp"),
+            // Written "through" the link: with no link on disk, this is
+            // a plain path inside the destination.
+            Entry::file("repo-main/link/through.txt", "inside"),
             Entry::file("repo-main/_brand.yml", "color:\n"),
         ];
         let (tmp, result) = extract(format, &entries, &ExtractLimits::default());
-        let err = match result {
-            Ok(s) => panic!("{format:?} accepted a symlink entry: {s:?}"),
-            Err(e) => e,
-        };
-        assert!(
-            matches!(err, FetchError::UnsupportedEntryType { .. }),
-            "{format:?} should report an unsupported entry type, got: {err}"
+        let summary = result.unwrap_or_else(|e| panic!("{format:?} should skip the link: {e}"));
+        assert_eq!(
+            summary.skipped_links,
+            [PathBuf::from("repo-main").join("link")],
+            "{format:?}"
         );
+
+        let dest = tmp.path().join("dest");
+        let link = dest.join("repo-main/link");
+        let meta = std::fs::symlink_metadata(&link).unwrap();
         assert!(
-            !tmp.path().join("dest/repo-main/link").exists(),
+            !meta.file_type().is_symlink(),
             "{format:?} created the symlink"
+        );
+        assert_eq!(
+            std::fs::read_to_string(link.join("through.txt")).unwrap(),
+            "inside",
+            "{format:?}: the later entry stays inside the destination"
         );
     }
 }
 
 #[test]
-fn hardlink_entries_are_refused() {
+fn a_link_with_a_hostile_name_is_still_refused() {
+    // Skipping a link does not skip validating its name.
+    assert_refused_in_both(
+        "traversing link name",
+        &[Entry::symlink("../outside", "/tmp")],
+        &ExtractLimits::default(),
+    );
+}
+
+#[test]
+fn hardlink_entries_are_skipped_and_never_created() {
     // tar-only: the zip format has no hardlink entry type.
     let tmp = TempDir::new().unwrap();
     let src = tmp.path().join("src");
@@ -355,11 +417,15 @@ fn hardlink_entries_are_refused() {
         builder.into_inner().unwrap().finish().unwrap();
     }
 
-    let err = extract_into(&archive, &dest, &ExtractLimits::default())
-        .expect_err("a hardlink entry must be refused");
+    let summary = extract_into(&archive, &dest, &ExtractLimits::default())
+        .expect("a hardlink entry is skipped, not refused");
+    assert_eq!(
+        summary.skipped_links,
+        [PathBuf::from("repo-main").join("link")]
+    );
     assert!(
-        matches!(err, FetchError::UnsupportedEntryType { .. }),
-        "got: {err}"
+        !dest.join("repo-main/link").exists(),
+        "nothing is created for it"
     );
 }
 
