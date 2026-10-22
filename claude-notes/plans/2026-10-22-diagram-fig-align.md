@@ -12,7 +12,7 @@ braid:
 
 ## Triage verdict
 
-**Ready to design.** The change is small and the code is easy to find. One premise in the strand does not hold up, though: Quarto 1 does *not* honour `fig-align` on diagram cells in standalone HTML. That leaves a choice between "accept silently" and "actually align", which design question 1 asks.
+**Ready to implement once the remaining question below is answered.** The 2026-10-22 design answers are recorded under § Decisions. One premise in the strand does not hold up: Quarto 1 never honours the **cell option** `fig-align` on a diagram in HTML, whether the cell is labelled or not. Quarto 1 honours only the **document-level** `fig-align`, and only on labelled floats, where it even overrides a conflicting cell option. Fixtures: `q1-cell-option.qmd` and `q1-document-option.qmd`.
 
 **Pre-flight at HEAD** (`cargo xtask verify --skip-hub-build`): all Rust tests passed (17226). Two hub-client wasm tests failed, both outside this area: `importDocument … writer-bugs-docx` (footnote text) and `applyNodeEdit … DefinitionList round-trip`. The likely cause is a stale wasm build under `--skip-hub-build`. This is unconfirmed.
 
@@ -52,19 +52,47 @@ Alignment is always `center`. `crossref_render.rs` gets the alignment from `harv
 | `{mermaid}`, `label` + `fig-cap`, `fig-align: right` | `div.cell[data-layout-align=right]` › `div#fig-m.quarto-float.quarto-figure.quarto-figure-center` |
 | plain ` ```mermaid ` | not a cell; options are ignored and the `%%|` line stays in the source |
 
-The handler turns `fig-align` into `layout-align` on the `.cell` div (`src/core/handlers/base.ts:849`). Only the panel-layout filters (`layout/*.lua`, `panellayout.lua`) read that attribute, and only for cells inside a `layout-ncol`-style layout. Revealjs is the exception: there, `fixupAlignment` applies the alignment to the SVG (`mermaid.ts:242`, `dot.ts:144`). The labelled float stays `quarto-figure-center` even when the cell says `right`. **In standalone HTML, Quarto 1 accepts `fig-align` and does not act on it.**
+The handler turns `fig-align` into `layout-align` on the `.cell` div (`src/core/handlers/base.ts:849`). Only the panel-layout filters (`layout/*.lua`, `panellayout.lua`) read that attribute, and only for cells inside a `layout-ncol`-style layout. Revealjs is the exception: there, `fixupAlignment` applies the alignment to the SVG (`mermaid.ts:242`, `dot.ts:144`).
+
+**Does a `fig-` label change this?** Only for the document-level option. A float picks its class in `get_figure_attributes` (`customnodes/floatreftarget.lua:289`), which calls `figAlignAttribute(float)` (`common/figures.lua:26`). That function reads `fig-align` from the float's own attributes and otherwise falls back to `param("fig-align")`, the document-level option. The cell option never reaches the float's attributes, because it was diverted to `layout-align` on the outer `.cell` div. Q1 HTML output:
+
+| Cell | Cell option only | Document `fig-align: right` |
+|---|---|---|
+| `label: fig-a`, no caption, cell `right` | `quarto-figure-center` | n/a |
+| `label` + `fig-cap`, cell `left` (`fig-b`) | `quarto-figure-center` | n/a |
+| `label` + `fig-cap`, no cell option (`fig-c`) | n/a | `quarto-figure-right` |
+| `label` + `fig-cap`, cell `left` (`fig-d`) | n/a | `quarto-figure-right`: document beats cell |
+| `fig-cap`, no label | bare `figure.figure`, no class | bare `figure.figure`, no class |
+
+**In standalone HTML, Q1 ignores the cell option entirely.** A label matters only because floats are the one place where Q1 consults the document-level `fig-align`.
+
+**q2 has no document-level `fig-align` at all.** The only reader is `harvest_figure_attrs`, which reads an `Image` attribute (`crossref_render.rs:539`). This gap affects images as well as diagrams.
 
 **`dot` is not a q2 diagram language.** `is_diagram_language` matches only `mermaid`, so ` ```dot ` cells get no `%%|` handling and no Q-2-47. That part of the strand's title does not apply today.
+
+## Decisions (2026-10-22, with the user)
+
+1. **Apply, not just accept.** `fig-align: left|center|right` aligns the diagram. This is a deliberate improvement over Q1, which ignores the cell option. Record it in the strand.
+2. **Accept `fig-align` on every mermaid cell, including the bare cell with no label or caption.** Do not emit a "no effect in this position" warning. Q1 users are widely confused here, so q2 is lenient on purpose; we may revisit this.
+3. **Revealjs is in scope** for this strand. Use CSS, since q2 renders mermaid client-side.
+4. **Mermaid only.** Drop `dot` from the strand title and acceptance criteria.
+5. **`default` means `center`.** Any value other than `left`, `center`, `right` or `default` warns.
 
 ## Proposed phases (draft)
 
 - Phase 0: tests first. Add a codeblock_shorthand unit test where `fig-align` on a diagram cell draws no Q-2-47, and keep the existing `echo` test showing that unknown keys still warn. Add a smoke-all fixture that asserts the wrapper class for left, center and right on the caption and float paths.
 - Phase 1: accept the key. Add `fig-align` to `DIAGRAM_OPTION_KEYS` and consume it. Fix the hint text, which lists the accepted keys.
 - Phase 2 (if Q1 = apply it): carry the value to `crossref_render`. One option is a `fig-align` attribute on the wrapper (`Wrapper::Float` attributes / `Figure` attr), which `render_float_ref_target` and `wrap_standalone_figure` read when no image supplied one. Check that `.quarto-figure-left > figure > div` gives a `pre.mermaid` SVG the expected `text-align`.
-- Phase 3: the bare-cell case (Q2) and revealjs (Q3), depending on the answers.
+- Phase 3: the bare cell (decision 2). `fig-align` alone wraps the diagram in an uncaptioned `quarto-figure-<align>` div, or puts a class on the `pre.mermaid`. Choose whichever stays closer to the existing wrapper shapes.
+- Phase 3b: revealjs (decision 3). Add CSS so the client-rendered SVG follows the wrapper class.
+- Phase 3c: validate the value (decision 5). `default` becomes `center`; any other value warns.
 - Phase 4: docs. Mention `fig-align` wherever the diagram cell options are documented.
 
 ## Open design questions for the user
+
+6. **Document-level `fig-align`.** Q1 honours the document-level `fig-align` on labelled floats, including diagram floats, and lets it override a cell option. q2 does not read the document-level option for any figure, image or diagram. Should this strand add it for diagrams? If so, what precedence applies: does the cell option win, unlike Q1? Or should it be a separate strand covering images and diagrams together?
+
+### Answered (kept for the record; see § Decisions)
 
 1. **Accept or apply?** Quarto 1 accepts `fig-align` on diagram cells but ignores it in HTML; the labelled float stays centered even for `right`. Options:
    (a) consume it silently, matching Q1. That is a one-line change, and it fixes product-doc-theme, which only uses `center`.
