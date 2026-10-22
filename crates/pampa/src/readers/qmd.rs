@@ -368,6 +368,118 @@ fn reroot_diagnostics_into_parent(
 
 #[cfg(test)]
 mod tests {
+    /// The file ids every `Original` in `pandoc` is rooted in, off the JSON
+    /// writer's source-info pool (`t == 0` entries carry their file id in
+    /// `d`), skipping the zero-length `empty_source_info()` placeholder,
+    /// which marks "no source" rather than a position.
+    fn original_file_ids(pandoc: &crate::pandoc::Pandoc) -> Vec<u64> {
+        let mut buf = Vec::new();
+        crate::writers::json::write_with_config(
+            pandoc,
+            &crate::pandoc::ast_context::ASTContext::anonymous(),
+            &mut buf,
+            &crate::writers::json::JsonConfig::default(),
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&buf).unwrap();
+        let mut ids: Vec<u64> = json["astContext"]["p"]
+            .as_array()
+            .expect("the writer emits a source-info pool")
+            .iter()
+            .filter(|entry| entry["t"] == 0)
+            .filter(|entry| !(entry["d"] == 0 && entry["r"] == serde_json::json!([0, 0])))
+            .map(|entry| entry["d"].as_u64().expect("Original carries its file id"))
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
+    /// Ok-path spans of a reparse into a parent are all rooted in the
+    /// parent's file (bd-qmd-reader-parent-aware-spans-mq5u2001): none may
+    /// be an `Original` in the reparse's own throwaway FileId(0). The
+    /// fixture exercises the node kinds that built spans without consulting
+    /// the parent.
+    #[test]
+    fn ok_path_spans_root_in_the_parent_file() {
+        use quarto_source_map::FileId;
+        let text = r#"# Heading {#hid .cls}
+
+Para with *emph*, **strong**, `code`{.x}, $x^2$, "quoted", a soft
+break, a hard\
+break, [link](http://a.b "title"){.c}, ![img](i.png){width=10},
+[span]{.s key="v"}, ~~del~~, ^sup^, ~sub~, <https://auto.link>, a
+note^[inline note], {{< meta title >}}, and a reference note[^1].
+
+[^1]: The note.
+
+- [ ] task
+- item two
+
+Term
+: Definition
+
+> quoted block
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+::: {.callout-note}
+Inside a div.
+:::
+
+::: {.list-table}
+* - a
+  - b
+:::
+"#;
+        let parent = quarto_source_map::SourceInfo::original(FileId(7), 1000, 1000 + text.len());
+        let mut sink = std::io::sink();
+        let (pandoc, _ctx, _warnings) = super::read(
+            text.as_bytes(),
+            false,
+            "<metadata>",
+            &mut sink,
+            true,
+            Some(parent),
+        )
+        .expect("fixture parses");
+
+        assert_eq!(original_file_ids(&pandoc), vec![7]);
+
+        // Offsets compose through the parent, not just the file id.
+        let crate::pandoc::Block::Paragraph(para) = &pandoc.blocks[1] else {
+            panic!("expected the paragraph, got {:?}", pandoc.blocks[1]);
+        };
+        let emph = para
+            .content
+            .iter()
+            .find(|i| matches!(i, crate::pandoc::Inline::Emph(_)))
+            .expect("Emph");
+        let start = text.find("*emph*").unwrap();
+        assert_eq!(
+            emph.source_info().resolve_byte_range(),
+            Some((7, 1000 + start, 1000 + start + "*emph*".len()))
+        );
+        let crate::pandoc::Inline::Code(code) = para
+            .content
+            .iter()
+            .find(|i| matches!(i, crate::pandoc::Inline::Code(_)))
+            .expect("Code")
+        else {
+            unreachable!()
+        };
+        let class = text.find("{.x}").unwrap() + 1;
+        assert_eq!(
+            code.attr_source.classes[0]
+                .as_ref()
+                .expect("class span")
+                .resolve_byte_range(),
+            Some((7, 1000 + class, 1000 + class + ".x".len()))
+        );
+    }
+
     /// Err-path diagnostics must reroot through `parent_source_info`
     /// exactly like Ok-path spans do
     /// (bd-q120-masks-config-md-diagnostic-a039r80t): a recursive
