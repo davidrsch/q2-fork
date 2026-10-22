@@ -2,13 +2,13 @@
 title: 'Implement q2 add: install an extension from GitHub, URL, or local path (bd-rfz4e3bw)'
 date: 2026-10-22
 description: 'q2 add is a stub; implement Quarto 1''s extension install on top of the quarto-source-fetch machinery that q2 use brand already ships.'
-status: planned  # Design settled 2026-10-22; awaiting go-ahead to implement
+status: implemented  # 2026-10-22, on braid/bd-rfz4e3bw-q2-add-extension
 braid:
   strand: bd-rfz4e3bw
 ---
 
 **Branch:** `braid/bd-rfz4e3bw-q2-add-extension` (topic branch in the main checkout, based on `main` @ `47337c56b`)
-**Design settled with the user on 2026-10-22. Implementation waits on an explicit go-ahead.**
+**Design settled with the user on 2026-10-22; implemented the same day. See § Implementation notes.**
 
 ## Triage verdict
 
@@ -114,7 +114,6 @@ deviations to be stated.
    source: posit-dev/product-doc-theme   # what the user typed
    kind: github             # github | url | local-archive | local-dir
    ref: null                # the @ref, when given
-   installed: 2026-10-22T20:00:00Z
    files:                   # path relative to the extension dir -> sha256
      _extension.yml: 9f2c…
      assets/images/logo.svg: 41ab…
@@ -158,30 +157,30 @@ deviations to be stated.
 
 ## Phases
 
-### Phase 0: Tests first (all failing at the start)
+### Phase 0: Tests
 
 `crates/quarto/tests/integration/add.rs`, registered in `tests/integration/main.rs`, spawning
 the real binary like `use_brand.rs` does:
 
-- [ ] local dir with `_extensions/<name>/` installs into `<project>/_extensions/<name>/`, and
+- [x] local dir with `_extensions/<name>/` installs into `<project>/_extensions/<name>/`, and
       `.quarto-source.yml` lists every file with a correct sha256
-- [ ] local dir that *is* an `_extensions/` folder is accepted
-- [ ] local `.zip` and `.tar.gz` (wrapped in one top-level directory, and unwrapped)
-- [ ] cwd in a project subdirectory installs at the project root; outside a project it installs
+- [x] local dir that *is* an `_extensions/` folder is accepted
+- [x] local `.zip` and `.tar.gz` (wrapped in one top-level directory, and unwrapped)
+- [x] cwd in a project subdirectory installs at the project root; outside a project it installs
       in cwd; `--dir` overrides both
-- [ ] a second identical add reports `[No Change]` and writes nothing (check mtimes)
-- [ ] a higher version reports `[Update] 1.0.0 -> 1.1.0` and replaces the directory, so stale
+- [x] a second identical add reports `[No Change]` and writes nothing (check mtimes)
+- [x] a higher version reports `[Update] 1.0.0 -> 1.1.0` and replaces the directory, so stale
       files from the old version are gone
-- [ ] a lower version reports `[Revert]`
-- [ ] a locally edited installed copy refuses without `--force` and names the file; with
+- [x] a lower version reports `[Revert]`
+- [x] a locally edited installed copy refuses without `--force` and names the file; with
       `--force` it is replaced; an extra file counts as an edit
-- [ ] an installed copy with no `.quarto-source.yml` updates with the "cannot detect" note
-- [ ] `--dry-run` prints the table and writes nothing; `--dry-run --force` is refused
-- [ ] `--json` emits one result object on stdout and never prompts
-- [ ] a remote source without `--trust` under `--no-prompt` is refused before any request
-- [ ] invalid sources leave nothing written: no `_extensions/`, no readable extension, or a
+- [x] an installed copy with no `.quarto-source.yml` updates with the "cannot detect" note
+- [x] `--dry-run` prints the table and writes nothing; `--dry-run --force` is refused
+- [x] `--json` emits one result object on stdout and never prompts
+- [x] a remote source without `--trust` under `--no-prompt` is refused before any request
+- [x] invalid sources leave nothing written: no `_extensions/`, no readable extension, or a
       hostile directory name
-- [ ] end to end: install a fixture custom project type into a website, set
+- [x] end to end: install a fixture custom project type into a website, set
       `project.type: <it>`, and `q2 render` succeeds
 
 Unit tests: the `coerce` cases, the action matrix (every Q1 branch), the type-column strings,
@@ -193,49 +192,90 @@ real github.com traffic.
 
 ### Phase 1: quarto-source-fetch
 
-- [ ] Add `owner: Option<String>` to `RemoteTarget`, set from the org for GitHub shorthand and
+- [x] Add `owner: Option<String>` to `RemoteTarget`, set from the org for GitHub shorthand and
       `None` for URLs. Update the existing constructors and tests.
-- [ ] Add an `_extensions` locator (Q1 `install.ts:283-300, 609-621`): the root `_extensions/`,
+- [x] Add an `_extensions` locator (Q1 `install.ts:283-300, 609-621`): the root `_extensions/`,
       one level down, or the path itself when it is named `_extensions`.
 
 ### Phase 2: Staging, comparison, records (`crates/quarto/src/commands/add/`)
 
-- [ ] Add `semver` to `[workspace.dependencies]`, plus the `coerce` helper.
-- [ ] Read staged extensions with `read_extension_with_org`, and installed ones from the target
+- [x] Add `semver` to `[workspace.dependencies]`, plus the `coerce` helper.
+- [x] Read staged extensions with `read_extension_with_org`, and installed ones from the target
       `_extensions/`.
-- [ ] Action rows plus the type column.
-- [ ] `.quarto-source.yml` read/write (serde struct; the generated-file comment is written as a
+- [x] Action rows plus the type column.
+- [x] `.quarto-source.yml` read/write (serde struct; the generated-file comment is written as a
       literal header) and the sha256 tree walk via `sha2`.
-- [ ] Edit detection against the record.
+- [x] Edit detection against the record.
 
 ### Phase 3: Install writer
 
-- [ ] A dedicated replace-directory primitive, kept separate from `common/writer.rs` so the
+- [x] A dedicated replace-directory primitive, kept separate from `common/writer.rs` so the
       shared writer keeps its "never overwrites" promise. For each extension: copy into
       `<root>/_extensions/.q2-staging-<rand>/`, write `.quarto-source.yml` into the staged copy,
       remove the old directory (after the path-safety asserts), then rename the staged copy
       into place. Clean up staging on every exit path.
-- [ ] Windows: remove before rename (rename over a non-empty directory fails there), and clear
+- [x] Windows: remove before rename (rename over a non-empty directory fails there), and clear
       read-only attributes before removal.
 
 ### Phase 4: CLI
 
-- [ ] Replace `Commands::Add { extension }` with the full flag set and dispatch to
+- [x] Replace `Commands::Add { extension }` with the full flag set and dispatch to
       `commands::add::execute(AddArgs)`.
-- [ ] Order: resolve target, then trust gate, then fetch, then stage and validate, then compute
+- [x] Order: resolve target, then trust gate, then fetch, then stage and validate, then compute
       rows and edit detection, then print the table, then confirm (default **yes**, as in Q1;
       skipped under `--no-prompt`/`--json`), then install.
-- [ ] Human output (Q1-shaped table) and `--json` (versioned result object with per-extension
+- [x] Human output (Q1-shaped table) and `--json` (versioned result object with per-extension
       action/from/to/path), sharing the `fail`/`emit_warning` shape from `use_cmd`.
 
 ### Phase 5: Docs and parity
 
-- [ ] User docs page for `q2 add`, stating the deviations from Q1 (trust, root, provenance,
+- [x] User docs page for `q2 add`, stating the deviations from Q1 (trust, root, provenance,
       `--force`).
-- [ ] Run the product-doc-theme fixture with `q2 add posit-dev/product-doc-theme --trust`
+- [x] Run the product-doc-theme fixture with `q2 add posit-dev/product-doc-theme --trust`
       (real network, manual), then render with `type: posit-docs`. Record the result in the
       strand.
-- [ ] `cargo xtask verify`.
+- [x] `cargo xtask verify --skip-hub-build`: 17244 Rust tests pass. Only `quarto-hub-mcp`'s vitest
+      failed: 1–4 random tests hit the 5 s timeout, a different set each run, and all 575 pass
+      with `--testTimeout=30000`. Its WASM bundle predates this branch, so the failures are
+      unrelated.
+
+## Implementation notes (2026-10-22)
+
+Where the implementation differs from the phases above, or goes beyond them:
+
+- **Tests were written alongside the code, not before it.** To make up for that, the three key
+  gates were checked by mutation: disabling the edit check, the trust gate, or the replace
+  (merging instead) each turns its integration test red.
+- **No `installed:` timestamp in the record.** It churned on every reinstall for projects that
+  commit `_extensions/`, and nothing reads it. This was already flagged as an easy cut under
+  Risks.
+- **Owner from a GitHub archive URL**, matching Q1's `kGithubArchiveUrlSource`:
+  `https://github.com/<org>/<repo>/archive/...` installs under `<org>/`. Other URLs have no
+  owner.
+- **Type column** lists `project` and `engine(s)` after Q1's format/shortcode/filter. These
+  are things q2 extensions contribute, and they matter when deciding whether to trust an
+  extension.
+- **`quarto_core::extension::read_extensions_dir`** is new and public: Q1's
+  `readExtensions(dir)`, which wraps the existing private scanner.
+- **Two real-GitHub bugs in `quarto-source-fetch`**, found by the Phase 5 run. They also
+  affected `q2 use brand`:
+  1. *pax global header.* Every `git archive` tarball starts with a `pax_global_header` entry,
+     and the extractor refused it as a "metadata record". So **no** GitHub source could be
+     fetched. It is now skipped and charged to the entry and byte budgets. Regression test:
+     `a_pax_global_header_is_skipped_not_refused`.
+  2. *Symlinks.* product-doc-theme ships `example/_extensions -> ../_extensions`, and the
+     extractor refused any archive containing a link. **User decision (2026-10-22):** links are
+     never created. They are skipped (their names are still validated and counted) and reported
+     in `ExtractSummary::skipped_links` / `FetchedSource::skipped_links`. `q2 add` refuses
+     only when a skipped link is inside an extension it would install. `q2 use brand` warns
+     when one is inside the brand directory. Escape safety is unchanged: with no link on disk,
+     a later entry "through" it is a plain path inside the destination.
+- **Phase 5 parity run, done against GitHub.** `q2 add posit-dev/product-doc-theme --trust`
+  installs `_extensions/posit-dev/posit-docs` (8.1.4, `(project)`). The example site renders
+  with `type: posit-docs` (5 of 6 pages; `grid.qmd` is the known extension-side F5 parse
+  error). A second add reports No Change.
+- **Docs:** an "Installing extensions" section in `docs/guides/authoring/extensions.qmd`;
+  Q-16-1, Q-16-3, and Q-5-17 now suggest `q2 add` instead of `quarto add`.
 
 ## Risks / tradeoffs
 

@@ -156,13 +156,14 @@ pub fn resolve(req: &AddRequest, ctx: &mut ResolveContext) -> Result<AddPlan, Co
         validate_segment(owner, "owner")?;
     }
 
-    let source_dir = fetch_into(&target, ctx.work_dir, ctx.fetcher, &ctx.limits).map_err(|e| {
+    let fetched = fetch_into(&target, ctx.work_dir, ctx.fetcher, &ctx.limits).map_err(|e| {
         CommandFailure::new(
             format!("Could not get an extension from {target_input}"),
             e.to_string(),
         )
     })?;
-    let staged = read_staged(&locate_extensions_dir(&source_dir), target_input)?;
+    let staged = read_staged(&locate_extensions_dir(&fetched.root), target_input)?;
+    refuse_skipped_links(&staged, &fetched.skipped_links, target_input)?;
 
     let mut extensions: Vec<PlannedExtension> = Vec::with_capacity(staged.len());
     for ext in &staged {
@@ -265,6 +266,41 @@ fn installed_version(dir: &Path) -> Option<Option<String>> {
             .ok()
             .and_then(|ext| ext.version),
     )
+}
+
+/// Refuse a source whose extensions needed an archive link.
+///
+/// Extraction never creates links (`quarto-source-fetch`'s
+/// `ExtractSink::link`). A link elsewhere in the archive is harmless —
+/// product-doc-theme's `example/_extensions` link is the motivating
+/// case — but one inside an extension means that extension would
+/// install with files missing, and fail later in a way that never
+/// mentions a link.
+fn refuse_skipped_links(
+    staged: &[quarto_core::extension::Extension],
+    skipped: &[PathBuf],
+    target_label: &str,
+) -> Result<(), CommandFailure> {
+    let mut inside: Vec<String> = Vec::new();
+    for ext in staged {
+        for link in skipped {
+            if let Ok(rel) = link.strip_prefix(&ext.path) {
+                inside.push(format!("{}: {}", ext.id, rel.display()));
+            }
+        }
+    }
+    if inside.is_empty() {
+        return Ok(());
+    }
+    Err(CommandFailure::new(
+        format!("{target_label} contains an extension that uses symbolic links"),
+        format!(
+            "Links are never copied out of a downloaded archive, so these would be missing \
+             from the installed extension:\n\n  {}\n\nNothing was written. Replace the links \
+             with real files in the extension's source.",
+            inside.join("\n  ")
+        ),
+    ))
 }
 
 /// Refuse to replace locally edited extensions without `--force`.

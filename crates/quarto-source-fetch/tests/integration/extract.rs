@@ -344,33 +344,55 @@ fn backslash_traversal_is_refused() {
 }
 
 #[test]
-fn symlink_entries_are_refused() {
-    // A symlink is not merely unnecessary in a brand: it is the setup
-    // move for an escape, since a *later* entry writing through it
-    // lands wherever it points.
+fn symlink_entries_are_skipped_and_never_created() {
+    // A symlink is the setup move for an escape: a *later* entry written
+    // through it lands wherever it points. So links are never created.
+    // They are not refused either — real repositories ship them
+    // (bd-rfz4e3bw) — but skipped and reported, so a caller can refuse
+    // when the part it installs needed one.
     for format in BOTH {
         let entries = [
             Entry::symlink("repo-main/link", "/tmp"),
+            // Written "through" the link: with no link on disk, this is
+            // a plain path inside the destination.
+            Entry::file("repo-main/link/through.txt", "inside"),
             Entry::file("repo-main/_brand.yml", "color:\n"),
         ];
         let (tmp, result) = extract(format, &entries, &ExtractLimits::default());
-        let err = match result {
-            Ok(s) => panic!("{format:?} accepted a symlink entry: {s:?}"),
-            Err(e) => e,
-        };
-        assert!(
-            matches!(err, FetchError::UnsupportedEntryType { .. }),
-            "{format:?} should report an unsupported entry type, got: {err}"
+        let summary = result.unwrap_or_else(|e| panic!("{format:?} should skip the link: {e}"));
+        assert_eq!(
+            summary.skipped_links,
+            [PathBuf::from("repo-main").join("link")],
+            "{format:?}"
         );
+
+        let dest = tmp.path().join("dest");
+        let link = dest.join("repo-main/link");
+        let meta = std::fs::symlink_metadata(&link).unwrap();
         assert!(
-            !tmp.path().join("dest/repo-main/link").exists(),
+            !meta.file_type().is_symlink(),
             "{format:?} created the symlink"
+        );
+        assert_eq!(
+            std::fs::read_to_string(link.join("through.txt")).unwrap(),
+            "inside",
+            "{format:?}: the later entry stays inside the destination"
         );
     }
 }
 
 #[test]
-fn hardlink_entries_are_refused() {
+fn a_link_with_a_hostile_name_is_still_refused() {
+    // Skipping a link does not skip validating its name.
+    assert_refused_in_both(
+        "traversing link name",
+        &[Entry::symlink("../outside", "/tmp")],
+        &ExtractLimits::default(),
+    );
+}
+
+#[test]
+fn hardlink_entries_are_skipped_and_never_created() {
     // tar-only: the zip format has no hardlink entry type.
     let tmp = TempDir::new().unwrap();
     let src = tmp.path().join("src");
@@ -395,11 +417,15 @@ fn hardlink_entries_are_refused() {
         builder.into_inner().unwrap().finish().unwrap();
     }
 
-    let err = extract_into(&archive, &dest, &ExtractLimits::default())
-        .expect_err("a hardlink entry must be refused");
+    let summary = extract_into(&archive, &dest, &ExtractLimits::default())
+        .expect("a hardlink entry is skipped, not refused");
+    assert_eq!(
+        summary.skipped_links,
+        [PathBuf::from("repo-main").join("link")]
+    );
     assert!(
-        matches!(err, FetchError::UnsupportedEntryType { .. }),
-        "got: {err}"
+        !dest.join("repo-main/link").exists(),
+        "nothing is created for it"
     );
 }
 

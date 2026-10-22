@@ -19,6 +19,7 @@
 
 use std::path::{Path, PathBuf};
 
+use quarto_error_reporting::{DiagnosticMessage, DiagnosticMessageBuilder};
 use quarto_source_fetch::{ExtractLimits, RemoteTarget, SourceFetch, Target, fetch_into};
 
 use crate::commands::common::plan::{
@@ -131,7 +132,7 @@ pub fn resolve(
     }
 
     // ── Only now: fetch, which may prompt for trust ─────────────────
-    let (files, destination) = resolve_brand_files(req, ctx)?;
+    let (files, destination, warnings) = resolve_brand_files(req, ctx)?;
 
     let declaration_edit = build_declaration_edit(
         &config,
@@ -173,7 +174,7 @@ pub fn resolve(
         plan: FilePlan::new(root.clone(), root.display().to_string(), files, req.dry_run)
             .with_preconditions(preconditions)
             .with_edits(vec![declaration_edit]),
-        warnings: Vec::new(),
+        warnings,
     })
 }
 
@@ -253,11 +254,12 @@ fn build_declaration_edit(
     ))
 }
 
-/// Produce the brand file(s) to write, and where they go.
+/// Produce the brand file(s) to write, where they go, and any warnings
+/// about the source.
 fn resolve_brand_files(
     req: &BrandRequest,
     ctx: &mut ResolveContext,
-) -> Result<(Vec<PlannedFile>, Destination), CommandFailure> {
+) -> Result<(Vec<PlannedFile>, Destination, Vec<DiagnosticMessage>), CommandFailure> {
     let Some(target_input) = &req.target else {
         return Ok((
             vec![PlannedFile {
@@ -265,6 +267,7 @@ fn resolve_brand_files(
                 content: FileContent::Text(quarto_project_create::starter_brand_yml().to_string()),
             }],
             Destination::ProjectRoot,
+            Vec::new(),
         ));
     };
 
@@ -283,16 +286,50 @@ fn resolve_brand_files(
         confirm_trust(remote, req, ctx)?;
     }
 
-    let source_dir = fetch_into(&target, ctx.work_dir, ctx.fetcher, &ctx.limits).map_err(|e| {
+    let fetched = fetch_into(&target, ctx.work_dir, ctx.fetcher, &ctx.limits).map_err(|e| {
         CommandFailure::new(
             format!("Could not get a brand from {target_input}"),
             e.to_string(),
         )
     })?;
+    let source_dir = fetched.root;
+    let warnings = skipped_links_warning(&fetched.skipped_links, &source_dir, target_input)
+        .into_iter()
+        .collect();
 
     let brand = read_source_brand(&source_dir, target_input)?;
     let destination = brand.destination();
-    Ok((planned_files(&brand, destination), destination))
+    Ok((planned_files(&brand, destination), destination, warnings))
+}
+
+/// Warn about archive links inside the brand's directory.
+///
+/// Extraction never creates links (`quarto-source-fetch`'s
+/// `ExtractSink::link`), so a brand asset reached through one is simply
+/// absent, and asset collection skips absent files. Without this
+/// warning a brand would install with a logo or font quietly missing.
+fn skipped_links_warning(
+    skipped: &[PathBuf],
+    source_dir: &Path,
+    target_label: &str,
+) -> Option<DiagnosticMessage> {
+    let inside: Vec<String> = skipped
+        .iter()
+        .filter_map(|link| link.strip_prefix(source_dir).ok())
+        .map(|rel| rel.display().to_string())
+        .collect();
+    if inside.is_empty() {
+        return None;
+    }
+    Some(
+        DiagnosticMessageBuilder::warning(format!("{target_label} contains symbolic links"))
+            .problem(format!(
+                "Links are never copied out of a downloaded archive, so anything the brand \
+                 reaches through them is missing: {}",
+                inside.join(", ")
+            ))
+            .build(),
+    )
 }
 
 /// Map a validated source brand onto project-relative planned files.
@@ -731,5 +768,21 @@ mod tests {
         let text = err.0.to_text(None);
         assert!(text.contains("local path"), "got: {text}");
         assert!(text.contains("<org>/<repo>"), "got: {text}");
+    }
+
+    #[test]
+    fn skipped_links_inside_the_brand_warn_and_others_do_not() {
+        let root = Path::new("/work/extracted/repo-main");
+        let skipped = [
+            root.join("fonts").join("brand.woff2"),
+            PathBuf::from("/work/extracted/elsewhere/link"),
+        ];
+        let warning = skipped_links_warning(&skipped, root, "org/repo")
+            .expect("a link inside the brand directory warns");
+        let text = warning.to_text(None);
+        assert!(text.contains("brand.woff2"), "{text}");
+        assert!(!text.contains("elsewhere"), "{text}");
+
+        assert!(skipped_links_warning(&skipped[1..], root, "org/repo").is_none());
     }
 }

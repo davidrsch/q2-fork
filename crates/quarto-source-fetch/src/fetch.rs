@@ -115,10 +115,23 @@ fn stream_to_file(
     Ok(())
 }
 
+/// A source materialized as a directory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FetchedSource {
+    /// The directory holding the source's files.
+    pub root: PathBuf,
+    /// Absolute paths, inside the extracted tree, of symlink and
+    /// hardlink entries the archive contained and extraction skipped
+    /// ([`crate::ExtractSummary::skipped_links`]). Nothing exists at
+    /// these paths. Always empty for a local directory, which is used
+    /// in place.
+    pub skipped_links: Vec<PathBuf>,
+}
+
 /// Materialize `target` as a directory containing its source files.
 ///
 /// `work_dir` is caller-owned scratch space; everything this function
-/// writes goes under it, and the returned path points inside it (except
+/// writes goes under it, and the returned root points inside it (except
 /// for a local-directory target, which is returned as-is and never
 /// copied). The caller inspects the result and decides what, if
 /// anything, to copy into the user's project.
@@ -127,27 +140,34 @@ pub fn fetch_into(
     work_dir: &Path,
     fetcher: &dyn SourceFetch,
     limits: &ExtractLimits,
-) -> Result<PathBuf, FetchError> {
-    match target {
-        Target::Local(path) if path.is_dir() => Ok(path.clone()),
-        Target::Local(path) => {
-            let extracted = work_dir.join("extracted");
-            std::fs::create_dir_all(&extracted)
-                .map_err(|e| FetchError::io(format!("create {}", extracted.display()), e))?;
-            extract_into(path, &extracted, limits)?;
-            derive_archive_root(&extracted, None)
+) -> Result<FetchedSource, FetchError> {
+    let (archive, subdir) = match target {
+        Target::Local(path) if path.is_dir() => {
+            return Ok(FetchedSource {
+                root: path.clone(),
+                skipped_links: Vec::new(),
+            });
         }
+        Target::Local(path) => (path.clone(), None),
         Target::Remote(remote) => {
             let download = work_dir.join("download");
             fetch_first_available(remote, &download, fetcher, limits)?;
-
-            let extracted = work_dir.join("extracted");
-            std::fs::create_dir_all(&extracted)
-                .map_err(|e| FetchError::io(format!("create {}", extracted.display()), e))?;
-            extract_into(&download, &extracted, limits)?;
-            derive_archive_root(&extracted, remote.subdir.as_deref())
+            (download, remote.subdir.as_deref())
         }
-    }
+    };
+
+    let extracted = work_dir.join("extracted");
+    std::fs::create_dir_all(&extracted)
+        .map_err(|e| FetchError::io(format!("create {}", extracted.display()), e))?;
+    let summary = extract_into(&archive, &extracted, limits)?;
+    Ok(FetchedSource {
+        root: derive_archive_root(&extracted, subdir)?,
+        skipped_links: summary
+            .skipped_links
+            .iter()
+            .map(|rel| extracted.join(rel))
+            .collect(),
+    })
 }
 
 /// Try each candidate URL in order; the first 2xx wins.

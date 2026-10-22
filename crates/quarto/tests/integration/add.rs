@@ -505,6 +505,82 @@ fn invalid_sources_are_refused_and_write_nothing() {
     }
 }
 
+/// `.tar.gz` bytes for `files` plus one symlink entry `link -> target`.
+fn tar_gz_with_symlink(files: &[(&str, &str)], link: &str, target: &str) -> Vec<u8> {
+    let mut buf = Vec::new();
+    {
+        let encoder = flate2::write::GzEncoder::new(&mut buf, flate2::Compression::default());
+        let mut builder = tar::Builder::new(encoder);
+        for (name, content) in files {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Regular);
+            header.set_mode(0o644);
+            header.set_size(content.len() as u64);
+            header.set_path(name).unwrap();
+            header.set_cksum();
+            builder.append(&header, content.as_bytes()).unwrap();
+        }
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Symlink);
+        header.set_mode(0o777);
+        header.set_size(0);
+        header.set_path(link).unwrap();
+        header.set_link_name(target).unwrap();
+        header.set_cksum();
+        builder.append(&header, std::io::empty()).unwrap();
+        builder.into_inner().unwrap().finish().unwrap();
+    }
+    buf
+}
+
+#[test]
+fn a_symlink_outside_the_extension_does_not_block_the_install() {
+    // The posit-dev/product-doc-theme shape: `example/_extensions` links
+    // back to the real `_extensions/`.
+    let files = demo_files("1.0.0");
+    let archives = TempDir::new().unwrap();
+    let tgz = archives.path().join("repo.tar.gz");
+    std::fs::write(
+        &tgz,
+        tar_gz_with_symlink(&as_refs(&files), "example/_extensions", "../_extensions"),
+    )
+    .unwrap();
+
+    let proj = project();
+    let out = run_q2_add(proj.path(), &[&path_arg(&tgz)]);
+    assert_succeeded(&out);
+    assert_eq!(
+        read(&proj.path().join("_extensions/demo/demo.lua")),
+        DEMO_LUA
+    );
+}
+
+#[test]
+fn a_symlink_inside_the_extension_is_refused() {
+    let files = demo_files("1.0.0");
+    let archives = TempDir::new().unwrap();
+    let tgz = archives.path().join("repo.tar.gz");
+    std::fs::write(
+        &tgz,
+        tar_gz_with_symlink(
+            &as_refs(&files),
+            "_extensions/demo/shared.lua",
+            "../../shared.lua",
+        ),
+    )
+    .unwrap();
+
+    let proj = project();
+    let out = run_q2_add(proj.path(), &[&path_arg(&tgz)]);
+    assert_failed(&out, "uses symbolic links");
+    assert!(
+        stderr_str(&out).contains("shared.lua"),
+        "{}",
+        stderr_str(&out)
+    );
+    assert!(!proj.path().join("_extensions").exists(), "nothing written");
+}
+
 // ====================================================================
 // Remote sources, against a localhost server
 // ====================================================================
