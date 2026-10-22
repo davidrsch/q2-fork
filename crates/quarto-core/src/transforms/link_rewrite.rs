@@ -440,10 +440,16 @@ impl<'a> LinkRewriter<'a> {
                     "`{raw}` is not a project source path in the render set, \
                      so it has no markdown companion to target."
                 )),
-                Some(profile) if !profile_has_companion(profile) => Some(format!(
-                    "`{raw}` resolves to a page with no markdown companion \
+                Some(profile)
+                    if self
+                        .index
+                        .is_some_and(|idx| !profile_has_companion(idx, profile)) =>
+                {
+                    Some(format!(
+                        "`{raw}` resolves to a page with no markdown companion \
                      (drafts and the 404 page are excluded)."
-                )),
+                    ))
+                }
                 Some(profile) => {
                     // Satisfied: point the link at the companion,
                     // page-relative, keeping any ?query/#fragment

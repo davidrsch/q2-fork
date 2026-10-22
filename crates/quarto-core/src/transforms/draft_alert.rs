@@ -82,6 +82,7 @@ use quarto_pandoc_types::pandoc::Pandoc;
 use crate::Result;
 use crate::format::{Format, is_revealjs_target};
 use crate::language::LanguageTerms;
+use crate::project::drafts::{meta_is_draft, resolve_draft_mode};
 use crate::render::RenderContext;
 use crate::template::escape_html_text;
 use crate::transform::{AstTransform, TransformPhase};
@@ -124,6 +125,16 @@ impl AstTransform for DraftAlertTransform {
     }
 
     async fn transform(&self, ast: &mut Pandoc, ctx: &mut RenderContext) -> Result<()> {
+        // An invalid `draft-mode` only matters on a draft page, so warn
+        // there — once per affected page, not once per page of the site.
+        // Reported here rather than at profile extraction because this
+        // runs on every render; profile-time diagnostics do not survive
+        // profile caching.
+        if meta_is_draft(&ast.meta)
+            && let Some(diagnostic) = resolve_draft_mode(&ast.meta).diagnostic
+        {
+            ctx.diagnostics.push(diagnostic);
+        }
         if !format_supports_draft_alert(ctx.format) {
             return Ok(());
         }
@@ -150,7 +161,7 @@ fn format_supports_draft_alert(format: &Format) -> bool {
 fn apply_draft_alert(meta: &mut ConfigValue) {
     // `as_bool`, not a truthiness check: `draft: false` must behave
     // exactly like an absent key.
-    if meta.get("draft").and_then(|v| v.as_bool()) != Some(true) {
+    if !meta_is_draft(meta) {
         return;
     }
 
