@@ -709,6 +709,11 @@ describe('DefinitionList round-trip', () => {
         );
         expect(editResult.qmd).toContain('edited definition');
         expect(editResult.qmd).not.toContain('definition body');
+        // The rewrite is still a definition list, not pandoc's `term` /
+        // `:   definition` syntax, which the qmd reader reads as paragraphs
+        // (bd-byr1oonq).
+        expect(editResult.qmd).toContain('::: {.definition-list}');
+        expect(editResult.qmd).not.toMatch(/^: {3}/m);
         expect(editResult.qmd).toContain('First para.\n\n');
         expect(editResult.qmd).toContain('\n\nSecond para.\n');
     });

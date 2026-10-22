@@ -1,0 +1,9 @@
+::: {.definition-list}
+* Table term
+  - ::: {.list-table}
+    * - a
+      - b
+    * - 1
+      - 2
+    :::
+:::

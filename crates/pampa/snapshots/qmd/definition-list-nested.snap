@@ -1,0 +1,20 @@
+---
+source: crates/pampa/tests/integration/test.rs
+expression: output
+---
+::: {.definition-list}
+
+* Outer term
+  - Its definition.
+
+    ::: {.definition-list}
+
+    * Inner term
+      - Inner definition.
+
+    :::
+* Second term
+  - First definition.
+  - Second definition.
+
+:::
