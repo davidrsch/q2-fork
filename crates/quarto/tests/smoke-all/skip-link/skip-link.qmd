@@ -8,13 +8,15 @@ _quarto:
       noErrors: true
       ensureHtmlElements:
         -
-          # skip link is the first element of the body
-          - 'body > a#quarto-skip-link.visually-hidden-focusable:first-child[href="#quarto-document-content"]'
+          # Not anchored to `body >`: the hub preview renders the link
+          # inside React's `#root` (bd-21n09dwj). That it is the first
+          # element of the rendered body is checked by the regex below.
+          - 'a#quarto-skip-link.visually-hidden-focusable[href="#quarto-document-content"]'
           # target is focusable via the link
           - 'main#quarto-document-content[tabindex="-1"]'
         - []
       ensureFileRegexMatches:
-        - [">Skip to main content</a>"]
+        - [">Skip to main content</a>", '<body[^>]*>\s*<a id="quarto-skip-link"']
         - []
 ---
 
