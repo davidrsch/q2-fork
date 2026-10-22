@@ -347,9 +347,8 @@ fn process_list_item(
                 blocks.push(Block::RawBlock(RawBlock {
                     format: "quarto_minus_metadata".to_string(),
                     text,
-                    source_info: quarto_source_map::SourceInfo::from_range(
-                        context.current_file_id(),
-                        range,
+                    source_info: crate::pandoc::location::range_to_source_info_with_context(
+                        &range, context,
                     ),
                 }));
             }
@@ -369,7 +368,6 @@ fn process_list_item(
     // includes its required trailing whitespace char; split it so the Str
     // covers exactly the 3 bracket bytes and the Space covers the rest.
     if let Some((checked, range)) = task_marker {
-        let file_id = context.current_file_id();
         let bracket_end = quarto_source_map::Location {
             offset: range.start.offset + 3,
             row: range.start.row,
@@ -377,21 +375,21 @@ fn process_list_item(
         };
         let marker_str = Inline::Str(Str {
             text: if checked { "☒" } else { "☐" }.to_string(),
-            source_info: quarto_source_map::SourceInfo::from_range(
-                file_id,
-                quarto_source_map::Range {
+            source_info: crate::pandoc::location::range_to_source_info_with_context(
+                &quarto_source_map::Range {
                     start: range.start,
                     end: bracket_end,
                 },
+                context,
             ),
         });
         let marker_space = Inline::Space(Space {
-            source_info: quarto_source_map::SourceInfo::from_range(
-                file_id,
-                quarto_source_map::Range {
+            source_info: crate::pandoc::location::range_to_source_info_with_context(
+                &quarto_source_map::Range {
                     start: bracket_end,
                     end: range.end,
                 },
+                context,
             ),
         });
         match blocks.first_mut() {
@@ -669,17 +667,15 @@ fn process_native_inline<T: Write>(
         PandocNativeIntermediate::IntermediateBaseText(text, range) => {
             if whitespace_re.find(&text).is_some() {
                 Inline::Space(Space {
-                    source_info: quarto_source_map::SourceInfo::from_range(
-                        context.current_file_id(),
-                        range,
+                    source_info: crate::pandoc::location::range_to_source_info_with_context(
+                        &range, context,
                     ),
                 })
             } else {
                 Inline::Str(Str {
                     text: apply_smart_typography(text),
-                    source_info: quarto_source_map::SourceInfo::from_range(
-                        context.current_file_id(),
-                        range,
+                    source_info: crate::pandoc::location::range_to_source_info_with_context(
+                        &range, context,
                     ),
                 })
             }
@@ -910,9 +906,9 @@ fn native_visitor<T: Write>(
                     },
                 };
                 result.push(Inline::Space(Space {
-                    source_info: quarto_source_map::SourceInfo::from_range(
-                        context.current_file_id(),
-                        space_range,
+                    source_info: crate::pandoc::location::range_to_source_info_with_context(
+                        &space_range,
+                        context,
                     ),
                 }));
 
@@ -929,9 +925,8 @@ fn native_visitor<T: Write>(
                     };
                     result.push(Inline::Str(Str {
                         text: apply_smart_typography(text),
-                        source_info: quarto_source_map::SourceInfo::from_range(
-                            context.current_file_id(),
-                            str_range,
+                        source_info: crate::pandoc::location::range_to_source_info_with_context(
+                            &str_range, context,
                         ),
                     }));
                 }
@@ -1202,9 +1197,9 @@ fn native_visitor<T: Write>(
 
                 let note_ref = Inline::NoteReference(NoteReference {
                     id,
-                    source_info: quarto_source_map::SourceInfo::from_range(
-                        context.current_file_id(),
-                        note_ref_range,
+                    source_info: crate::pandoc::location::range_to_source_info_with_context(
+                        &note_ref_range,
+                        context,
                     ),
                 });
 
@@ -1226,9 +1221,9 @@ fn native_visitor<T: Write>(
                     };
                     PandocNativeIntermediate::IntermediateInlines(vec![
                         Inline::Space(Space {
-                            source_info: quarto_source_map::SourceInfo::from_range(
-                                context.current_file_id(),
-                                space_range,
+                            source_info: crate::pandoc::location::range_to_source_info_with_context(
+                                &space_range,
+                                context,
                             ),
                         }),
                         note_ref,
@@ -1318,7 +1313,7 @@ fn native_visitor<T: Write>(
             // collapsed escape).
             let text = node.utf8_text(input_bytes).unwrap();
             let (value, content_source) =
-                extract_quoted_text(text, context.current_file_id(), node.start_byte());
+                extract_quoted_text_with_context(text, context, node.start_byte());
             PandocNativeIntermediate::IntermediateDecodedText(value, content_source)
         }
         "key_value_specifier" => {
@@ -1327,12 +1322,11 @@ fn native_visitor<T: Write>(
             let mut value = String::new();
             let mut key_range = node_location(node);
             // Fallback for a specifier with no `key_value_value` child:
-            // the whole specifier node, in the same coordinate space
-            // `process_commonmark_attribute` used before this carried a
-            // `SourceInfo` (`from_range(current_file_id, ..)`).
-            let mut value_source = quarto_source_map::SourceInfo::from_range(
-                context.current_file_id(),
-                node_location(node),
+            // the whole specifier node, rooted like every other span of this
+            // parse (under `parent_source_info` when there is one).
+            let mut value_source = crate::pandoc::location::range_to_source_info_with_context(
+                &node_location(node),
+                context,
             );
 
             for (node_name, child) in children {
@@ -1423,7 +1417,7 @@ fn native_visitor<T: Write>(
             // not the quote-inclusive raw node range.
             let text = node.utf8_text(input_bytes).unwrap();
             let (title, content_source) =
-                extract_quoted_text(text, context.current_file_id(), node.start_byte());
+                extract_quoted_text_with_context(text, context, node.start_byte());
             PandocNativeIntermediate::IntermediateDecodedText(title, content_source)
         }
         "target" => process_target(children),
@@ -1533,7 +1527,6 @@ fn native_visitor<T: Write>(
 
             let raw_text = node.utf8_text(input_bytes).unwrap();
             let input_str = std::str::from_utf8(input_bytes).unwrap_or("");
-            let file_id = context.current_file_id();
 
             // Layered Ariadne rendering:
             //   1. Multi-line main label spans the whole grid table to
@@ -1587,13 +1580,15 @@ fn native_visitor<T: Write>(
                             quarto_source_map::utils::offset_to_location(input_str, prefix_end),
                         )
                     {
-                        faded_prefixes.push(quarto_source_map::SourceInfo::from_range(
-                            file_id,
-                            quarto_source_map::Range {
-                                start: start_loc,
-                                end: end_loc,
-                            },
-                        ));
+                        faded_prefixes.push(
+                            crate::pandoc::location::range_to_source_info_with_context(
+                                &quarto_source_map::Range {
+                                    start: start_loc,
+                                    end: end_loc,
+                                },
+                                context,
+                            ),
+                        );
                     }
                 }
 
@@ -1608,13 +1603,15 @@ fn native_visitor<T: Write>(
                         quarto_source_map::utils::offset_to_location(input_str, content_start),
                         quarto_source_map::utils::offset_to_location(input_str, content_end),
                     ) {
-                        interior_contents.push(quarto_source_map::SourceInfo::from_range(
-                            file_id,
-                            quarto_source_map::Range {
-                                start: start_loc,
-                                end: end_loc,
-                            },
-                        ));
+                        interior_contents.push(
+                            crate::pandoc::location::range_to_source_info_with_context(
+                                &quarto_source_map::Range {
+                                    start: start_loc,
+                                    end: end_loc,
+                                },
+                                context,
+                            ),
+                        );
                     }
                 }
             }
@@ -1688,9 +1685,9 @@ fn native_visitor<T: Write>(
                         },
                     };
                     result.push(Inline::Space(Space {
-                        source_info: quarto_source_map::SourceInfo::from_range(
-                            context.current_file_id(),
-                            space_range,
+                        source_info: crate::pandoc::location::range_to_source_info_with_context(
+                            &space_range,
+                            context,
                         ),
                     }));
                 }
@@ -1707,9 +1704,9 @@ fn native_visitor<T: Write>(
                         column: node_range.end.column - trailing_ws,
                     },
                 };
-                let source_info = quarto_source_map::SourceInfo::from_range(
-                    context.current_file_id(),
-                    link_range,
+                let source_info = crate::pandoc::location::range_to_source_info_with_context(
+                    &link_range,
+                    context,
                 );
 
                 result.push(Inline::Link(Link {
@@ -1738,9 +1735,9 @@ fn native_visitor<T: Write>(
                         end: node_range.end,
                     };
                     result.push(Inline::Space(Space {
-                        source_info: quarto_source_map::SourceInfo::from_range(
-                            context.current_file_id(),
-                            space_range,
+                        source_info: crate::pandoc::location::range_to_source_info_with_context(
+                            &space_range,
+                            context,
                         ),
                     }));
                 }
@@ -1805,9 +1802,9 @@ fn native_visitor<T: Write>(
                         },
                     };
                     result.push(Inline::Space(Space {
-                        source_info: quarto_source_map::SourceInfo::from_range(
-                            context.current_file_id(),
-                            space_range,
+                        source_info: crate::pandoc::location::range_to_source_info_with_context(
+                            &space_range,
+                            context,
                         ),
                     }));
                 }
@@ -1828,9 +1825,9 @@ fn native_visitor<T: Write>(
                         end: node_range.end,
                     };
                     result.push(Inline::Space(Space {
-                        source_info: quarto_source_map::SourceInfo::from_range(
-                            context.current_file_id(),
-                            space_range,
+                        source_info: crate::pandoc::location::range_to_source_info_with_context(
+                            &space_range,
+                            context,
                         ),
                     }));
                 }

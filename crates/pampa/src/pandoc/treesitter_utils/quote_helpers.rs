@@ -109,9 +109,9 @@ pub fn process_quoted(
 
     if let Some(space_range) = leading_space_range {
         result.push(Inline::Space(Space {
-            source_info: quarto_source_map::SourceInfo::from_range(
-                context.current_file_id(),
-                space_range,
+            source_info: crate::pandoc::location::range_to_source_info_with_context(
+                &space_range,
+                context,
             ),
         }));
     }
@@ -120,9 +120,9 @@ pub fn process_quoted(
 
     if let Some(space_range) = trailing_space_range {
         result.push(Inline::Space(Space {
-            source_info: quarto_source_map::SourceInfo::from_range(
-                context.current_file_id(),
-                space_range,
+            source_info: crate::pandoc::location::range_to_source_info_with_context(
+                &space_range,
+                context,
             ),
         }));
     }

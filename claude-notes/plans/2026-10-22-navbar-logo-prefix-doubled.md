@@ -2,7 +2,7 @@
 title: 'Custom project type: extension-fragment navbar logo doubled `_extensions/` prefix (bd-74ktvzv7)'
 date: 2026-10-22
 description: 'Paths and hrefs that a `contributes.project` fragment sets in `website.*` get mis-resolved: the navbar logo picks up a doubled `_extensions/<ext>/` prefix, hrefs resolve against the extension dir, and the favicon is wrong in subdirectories. This plan sketches a fix that treats fragment values as project-root-relative.'
-status: in-progress
+status: done  # PR #903 merged 2026-10-22; follow-up bd-0x1znhgb (open)
 braid:
   strand: bd-74ktvzv7
 ---

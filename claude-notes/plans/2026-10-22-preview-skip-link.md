@@ -2,7 +2,7 @@
 title: 'Preview: render the skip-to-content link in hub-client preview (bd-21n09dwj)'
 date: 2026-10-22
 description: 'Decide whether the q2-preview iframe renders the skip-to-content link that render emits since bd-rbd3jq4n, and turn the red hub smoke-all E2E job green either way.'
-status: in-progress
+status: done  # PR #902 merged 2026-10-22
 braid:
   strand: bd-21n09dwj
 ---

@@ -25,6 +25,10 @@ pub struct ASTContext {
     /// as Substrings of this parent, enabling correct location tracking through
     /// nested parse operations.
     pub parent_source_info: Option<quarto_source_map::SourceInfo>,
+    /// The FileId this parse's own input is registered under, and that spans
+    /// built without a parent are stamped with. FileId(0) unless a caller
+    /// registered the input under an id of its own (`qmd::read_as_file`).
+    pub file_id: FileId,
 }
 
 impl ASTContext {
@@ -38,6 +42,7 @@ impl ASTContext {
             example_list_counter: Cell::new(1),
             source_context,
             parent_source_info: None,
+            file_id: FileId(0),
         }
     }
 
@@ -52,6 +57,7 @@ impl ASTContext {
             example_list_counter: Cell::new(1),
             source_context,
             parent_source_info: None,
+            file_id: FileId(0),
         }
     }
 
@@ -65,6 +71,7 @@ impl ASTContext {
             example_list_counter: Cell::new(1),
             source_context,
             parent_source_info: None,
+            file_id: FileId(0),
         }
     }
 
@@ -80,24 +87,21 @@ impl ASTContext {
         self.filenames.first()
     }
 
-    /// Get the primary file ID (FileId(0)), if any file exists in the source context
+    /// Get the primary file ID ([`Self::file_id`]), if that file exists in
+    /// the source context
     pub fn primary_file_id(&self) -> Option<FileId> {
-        if self.source_context.get_file(FileId(0)).is_some() {
-            Some(FileId(0))
+        if self.source_context.get_file(self.file_id).is_some() {
+            Some(self.file_id)
         } else {
             None
         }
     }
 
-    /// Get the FileId to use for new SourceInfo instances.
-    /// Since ASTContext constructors now ensure FileId(0) always exists,
-    /// this always returns FileId(0).
-    ///
-    /// This method exists for:
-    /// 1. Code clarity - makes it obvious we're getting a file ID from context
-    /// 2. Future flexibility - if we need to track current file differently
+    /// Get the FileId to use for new SourceInfo instances: [`Self::file_id`],
+    /// which is FileId(0) unless the input was registered under an id of the
+    /// caller's choosing.
     pub fn current_file_id(&self) -> FileId {
-        FileId(0)
+        self.file_id
     }
 }
 

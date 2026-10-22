@@ -1564,6 +1564,7 @@ fn read_ast_context(value: &Value) -> Result<ASTContext> {
         example_list_counter: std::cell::Cell::new(example_list_counter),
         source_context,
         parent_source_info: None,
+        file_id: quarto_source_map::FileId(0),
     })
 }
 

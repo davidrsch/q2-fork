@@ -2085,6 +2085,7 @@ pub async fn render_qmd_to_preview_ast(
         example_list_counter: std::cell::Cell::new(1),
         source_context: source_context.clone(),
         parent_source_info: None,
+        file_id: quarto_source_map::FileId(0),
     };
     // When `AttributionRenderTransform` ran (i.e. a provider was
     // installed on `ctx.attribution_provider`), forward
@@ -2135,6 +2136,7 @@ fn capture_untransformed_ast_json(content: &[u8], source_name: &str) -> Option<S
         example_list_counter: std::cell::Cell::new(1),
         source_context: context.source_context.clone(),
         parent_source_info: None,
+        file_id: quarto_source_map::FileId(0),
     };
     let json_config = pampa::writers::json::JsonConfig {
         include_inline_locations: true,

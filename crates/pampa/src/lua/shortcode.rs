@@ -313,6 +313,12 @@ impl LuaShortcodeEngine {
         std::mem::take(&mut self.shadow_events)
     }
 
+    /// Drain the virtual files `pandoc.read` minted in the handlers
+    /// (GH #884).
+    pub fn take_read_sources(&self) -> Vec<super::ReadSource> {
+        super::take_read_sources(&self.lua)
+    }
+
     /// Extract diagnostics collected during shortcode execution.
     pub fn extract_diagnostics(
         &self,

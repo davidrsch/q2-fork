@@ -55,12 +55,12 @@ macro_rules! process_editorial_mark {
                         PandocNativeIntermediate::IntermediateBaseText(text, range) => {
                             if let Some(_) = whitespace_re.find(&text) {
                                 content.push(Inline::Space(Space {
-                                    source_info: quarto_source_map::SourceInfo::from_range(context.current_file_id(), range),
+                                    source_info: crate::pandoc::location::range_to_source_info_with_context(&range, context),
                                 }))
                             } else {
                                 content.push(Inline::Str(Str {
                                     text: apply_smart_typography(text),
-                                    source_info: quarto_source_map::SourceInfo::from_range(context.current_file_id(), range),
+                                    source_info: crate::pandoc::location::range_to_source_info_with_context(&range, context),
                                 }))
                             }
                         }
@@ -74,10 +74,7 @@ macro_rules! process_editorial_mark {
                 }
 
                 // Create the editorial mark inline element with adjusted source info
-                let adjusted_source_info = quarto_source_map::SourceInfo::from_range(
-                    context.current_file_id(),
-                    space_info.adjusted_range.clone(),
-                );
+                let adjusted_source_info = crate::pandoc::location::range_to_source_info_with_context(&space_info.adjusted_range, context);
                 let inline = Inline::$struct_name($struct_name {
                     attr,
                     content,
