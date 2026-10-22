@@ -35,10 +35,14 @@ Paragraph text that starts with a number:
 
 \- not a list either
 
-Term
-:   Definition para one.
+::: {.definition-list}
+
+* Term
+  - Definition para one.
 
     Definition para two continues here.
+
+:::
 
 | H1  | H2  |
 | --- | --- |

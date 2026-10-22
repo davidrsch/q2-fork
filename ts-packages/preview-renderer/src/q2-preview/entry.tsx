@@ -100,6 +100,7 @@ import {
     buildCustomRegistry,
     type ComponentExports,
 } from '../utils/customRegistry';
+import { jumpToAnchor } from '../utils/jumpToAnchor';
 import { PreviewRoot } from './PreviewRoot';
 
 // Set the renderer-surface global at module top. Importing this module
@@ -328,13 +329,10 @@ function reconcileThemeLink(): void {
 
 /**
  * Phase F.1 (bd-kw93.14): scroll the iframe document to the element
- * with the given id.
+ * with the given id (and focus it when it can take focus, bd-21n09dwj).
  */
 function scrollToAnchorInDocument(anchor: string): boolean {
-    const el = document.getElementById(anchor);
-    if (!el) return false;
-    el.scrollIntoView({ behavior: 'instant', block: 'start' });
-    return true;
+    return jumpToAnchor(document, anchor);
 }
 
 async function loadCustomComponents(componentsCode: Record<string, string>) {

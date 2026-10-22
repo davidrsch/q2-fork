@@ -1,0 +1,12 @@
+::: {.definition-list}
+* Outer term
+  - Its definition.
+
+    ::: {.definition-list}
+    * Inner term
+      - Inner definition.
+    :::
+* Second term
+  - First definition.
+  - Second definition.
+:::

@@ -1,0 +1,8 @@
+::: {.definition-list}
+* Figure term
+
+  - Some text.
+
+    ![An alt text](img.png)
+
+:::

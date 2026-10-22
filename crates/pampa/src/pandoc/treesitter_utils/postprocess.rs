@@ -28,8 +28,8 @@
 // list-table         | Div(.list-table) → Table            | Table → Div(.list-table) or pipe     | Yes (BulletList inside div)
 //                    | transform_list_table_div()          | write_table() / write_list_table()   |
 // -------------------|-------------------------------------|--------------------------------------|------------------------
-// definition-list    | Div(.definition-list) →             | DefinitionList → term/definition     | No (but always fully
-//                    | DefinitionList                      | syntax                               | rewritten regardless)
+// definition-list    | Div(.definition-list) →             | DefinitionList →                     | Yes (BulletList inside div)
+//                    | DefinitionList                      | Div(.definition-list)                |
 //                    | transform_definition_list_div()     | write_definitionlist()               |
 // -------------------|-------------------------------------|--------------------------------------|------------------------
 //
@@ -903,11 +903,19 @@ pub(crate) fn transform_definition_list_div(div: Div) -> Block {
 
     for mut item_blocks in bullet_list.content {
         // Extract term from first block (Plain or Paragraph)
-        let term_inlines = match item_blocks.remove(0) {
+        let mut term_inlines = match item_blocks.remove(0) {
             Block::Plain(plain) => plain.content,
             Block::Paragraph(para) => para.content,
             _ => panic!("Plain or Paragraph expected after validation"),
         };
+        // `* []` is the empty-term placeholder the qmd writer emits, as for
+        // an empty bullet item: a lone empty, attribute-free span.
+        if let [Inline::Span(span)] = term_inlines.as_slice()
+            && span.content.is_empty()
+            && is_empty_attr(&span.attr)
+        {
+            term_inlines.clear();
+        }
 
         // Extract definitions from second block (BulletList)
         let Block::BulletList(definitions_list) = item_blocks.remove(0) else {

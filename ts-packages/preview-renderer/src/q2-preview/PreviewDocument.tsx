@@ -11,6 +11,7 @@ import {
 import type { BlockNode, PandocAST } from '../framework';
 import * as Custom from './custom';
 import {
+    SkipLinkSlot,
     DraftAlertSlot,
     NavbarSlot,
     SecondaryNavSlot,
@@ -98,6 +99,12 @@ export const PreviewDocument = ({
     const draftAlertText = extractMetaString(
         getMetaPath(meta, ['rendered', 'draft-alert-text']),
     );
+    // Skip-link label: the `skip-to-content` term from the language table
+    // `LanguageResolveStage` resolves into `meta.quarto.language` (render
+    // reads the same table in template.rs, with the same English fallback).
+    const skipToContentText =
+        extractMetaString(getMetaPath(meta, ['quarto', 'language', 'skip-to-content'])) ??
+        'Skip to main content';
 
     // Mirror Rust `render_with_compiled_template`'s body-class
     // compose (the accumulating list, bd-ersobfbt). Precedence for the
@@ -318,6 +325,10 @@ export const PreviewDocument = ({
 
     return (
         <>
+            {/* Skip-to-content link: the first element of the page,
+                as in FULL_HTML_TEMPLATE (bd-21n09dwj). */}
+            <SkipLinkSlot text={skipToContentText} />
+
             {/* Attribution stylesheet — inert (renders nothing) when
                 attribution context is empty. Lives next to header-
                 includes since both are document-head-adjacent. */}
@@ -399,10 +410,9 @@ export const PreviewDocument = ({
                 <main
                     className={`content${mainColumn ? ` ${mainColumn}` : ''}${bannerTitleBlock ? ' quarto-banner-title-block' : ''}`}
                     id="quarto-document-content"
-                    // Render's skip-to-content target (template.rs
-                    // `SKIP_LINK_PARTIAL`). The link itself is
-                    // render-only (bd-21n09dwj); the attribute keeps
-                    // `<main>` — the DOM-parity root — identical.
+                    // The skip link's target (`SkipLinkSlot`, template.rs
+                    // `SKIP_LINK_PARTIAL`): focusable so activating the
+                    // link moves focus here.
                     tabIndex={-1}
                 >
                     {!bannerTitleBlock ? (
