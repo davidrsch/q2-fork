@@ -2,17 +2,16 @@
 title: 'Table caption classes → Bootstrap table-* classes (bd-hfghrqvh)'
 date: 2026-10-22
 description: 'Map Q1''s Bootstrap table shorthands (.striped .hover .sm .responsive-md …) written in a table caption''s attribute block to table-* classes on the <table>, for unlabelled, #tbl-labelled and ::: {#tbl-} div-form tables.'
-status: draft  # Investigation — pending design alignment with user; do not implement before the go-ahead
+status: planned  # Design aligned with user 2026-10-22; ready to implement
 braid:
   strand: bd-hfghrqvh
 ---
 
 **Branch:** `braid/bd-hfghrqvh-table-caption-bootstrap-classes` (topic branch in the main checkout, based on `main` @ `c68647049`)
-**Do not start implementation until the user gives the go-ahead.**
 
 ## Triage verdict
 
-**Ready to design.** The gap reproduces at HEAD, Q1's behaviour is small and
+**Ready to design** (design questions answered 2026-10-22; see Decisions). The gap reproduces at HEAD, Q1's behaviour is small and
 fully specified by two Lua filters, and the natural home
 (`table_bootstrap_class.rs`) already exists. The strand's framing needs one
 correction (below): the classes are **not** lost at parse time. A handful of
@@ -40,6 +39,9 @@ labelled and unlabelled captions; smoke-all fixture.*
   `{.striped .hover}` on its tables, so this is one of eight per-finding strands
   filed from it (F1 bd-74ktvzv7 has already merged as #903).
 - No `blocks` edges and no children. Nothing waits on this.
+- **Follow-ups filed (discovered-from this strand, 2026-10-22):**
+  - bd-7zw93czl: all-format class normalization, as Q1 does (P4).
+  - bd-44t9rqtp: crossref table caption is placed at the bottom instead of the top (P3).
 
 ## What the code looks like today
 
@@ -96,69 +98,152 @@ Incidental observation, not in scope: for crossref tables, q2 emits
 `quarto-float-caption-bottom` and Q1 emits `quarto-float-caption-top`. See
 Design question 6.
 
-## Proposed phases (draft)
+### Where floats live in the pipeline
+
+The pipeline facts below are what decide the design:
+
+- **`crossref-render` runs before `table-bootstrap-class`** (`pipeline.rs`:
+  line 2624 vs. 2699, both in the Finalization phase of the HTML-only
+  pipeline).
+  - Until `crossref-render` runs, a `tbl` float is a
+    `CustomNode("FloatRefTarget")`. Its `node.attr` holds *only* the
+    author's classes (`bordered sm`, `my-class`).
+  - `render_float_ref_target` then mixes those classes into the outer
+    `Div(.quarto-float .quarto-figure …)`. By the time
+    `table-bootstrap-class` runs, the author's classes can no longer be told
+    apart from Quarto's own.
+- **Floats render children-first.** `render_block` recurses into the custom
+  node's slots before converting the node itself. So a parent float's
+  content already holds its sub-floats as rendered `Div.quarto-float`
+  blocks, and that class is the marker for "skip sub-floats".
+- **`crossref-render` is in `Q2_PREVIEW_TRANSFORM_EXCLUDED`.**
+  - In q2-preview, `FloatRefTarget` reaches React
+    (`ts-packages/preview-renderer/src/q2-preview/custom/FloatRefTarget.tsx`)
+    as a custom node.
+  - `table-bootstrap-class` is *not* excluded. But `apply_to_block` has no
+    `Block::Custom` arm, so it never reaches tables inside a float in the
+    preview. They likely get no `table`/`caption-top` classes today, a
+    pre-existing preview gap to confirm in Phase 4.
+- **`crossref-render`'s table logic only looks at bare top-level tables.**
+  - It drops the table's own caption (bd-4m2n6qf1) only for a
+    `Block::Table` sitting directly in the float content.
+  - It skips image-attribute harvesting only when `content.first()` is a
+    `Block::Table`.
+
+  If the responsive `Div` wrapper went in *before* `crossref-render`, the
+  caption would render twice. So the wrapper has to stay late, as in Q1,
+  where `responsive_table()` is a post filter.
+
+## Decisions (user, 2026-10-22)
+
+1. **HTML only**, in the HTML pipeline, as a reviewed divergence (needed for
+   Posit's product docs). Q1's all-format normalization is filed as
+   **bd-7zw93czl** (P4).
+2. **Duplicate classes on labelled floats, as Q1 does.** The float `<div>`
+   keeps the author's unprefixed classes, and the `<table>` gets normalized
+   copies. Existing Q1 CSS that targets the div keeps working.
+3. **Forward every float class verbatim**, not just recognized shorthands.
+   Only shorthands are prefixed.
+4. **The responsive wrapper is in scope:** `Div(.table-responsive*)` around
+   the table, built from the first `responsive*`/`table-responsive*` class,
+   which is removed from the table.
+5. **Floats that are not a single table:** apply the classes to every nested
+   table, and skip sub-floats.
+6. **Caption location** (`-bottom` vs. Q1 `-top`) is filed separately as
+   **bd-44t9rqtp** (P3).
+
+## Design
+
+There are two steps, because the float's own classes are only visible early,
+while the wrapper has to go in late:
+
+- **A. `table-float-class-forward`** is a new, small transform placed
+  immediately **before** `crossref-render` in the Finalization phase (after
+  `cross-chapter-crossref-resolve`). It could live as a second struct in
+  `table_bootstrap_class.rs`, since it is the same feature. It runs in both
+  render and preview.
+  1. It walks the AST. For each `FloatRefTarget` with
+     `plain_data.ref_type == "tbl"`, it appends `node.attr.1` (the author's
+     classes, unnormalized) to every `Block::Table` in the `content` slot.
+  2. It recurses through Div, Figure, list, and table-cell structure, but
+     never into a nested `FloatRefTarget`.
+  3. It deduplicates, so it is idempotent.
+  4. It leaves `node.attr` alone, so the float div keeps its copies
+     (Decision 2).
+- **B. Extend `TableBootstrapClassTransform`**, which stays where it is (late,
+  Finalization). For every `Block::Table` it:
+  1. maps each class in Q1's shorthand list to `table-<x>`;
+  2. adds `small` if `table-sm` is present, otherwise adds `table-sm` if
+     `small` is present (Q1's `elseif`);
+  3. adds `caption-top` and `table` as today;
+  4. in `apply_to_blocks`, takes the first
+     `responsive*`/`table-responsive*` class off the table and replaces the
+     table with `Div(.table-responsive*) > Table`. Q1 matches the
+     *unprefixed* `responsive-md` or an explicit `table-responsive-md`. By
+     the time responsive.lua runs, table-classes.lua has already prefixed
+     the class, so after mapping we match on `table-responsive*`;
+  5. adds a `Block::Custom` arm that recurses into slots, so tables inside
+     preview `FloatRefTarget` nodes are reached.
+
+Q1 forwards the float classes *and then* runs its Table handler again on the
+same tables. Its double normalization is harmless because `table-x` is not in
+the shorthand list, and our single late pass gives the same result.
+
+## Phases
 
 - **Phase 0: tests first.**
-  - Unit tests in `table_bootstrap_class.rs`: prefix mapping, `sm`↔`small`
-    pairing, passthrough of non-shorthand classes, idempotence, responsive wrap.
-  - A smoke-all fixture (e.g. `crates/quarto/tests/smoke-all/markdown/table-caption-bootstrap-classes.qmd`)
-    covering the five rows of the table above, using
-    `ensureFileRegexMatches`.
-- **Phase 1: normalize classes already on `Table.attr`.** This fixes the
-  unlabelled form, `.small`, and the colour and state shorthands.
-- **Phase 2: forward float classes to the inner table(s)** for labelled and
-  div-form `tbl` floats. The float keeps its own copies, as in Q1. Where this
-  runs depends on Design question 1.
-- **Phase 3: responsive wrapper.** Wrap the table in
-  `Div(.table-responsive*)`, HTML only.
-- **Phase 4: q2-preview check, docs, braid comment.**
-  - Confirm the preview path picks this up. The transform is not in
-    `Q2_PREVIEW_TRANSFORM_EXCLUDED`.
-  - Update the module doc.
-  - Note any deliberate divergence on the strand.
+  - [ ] Unit tests in `table_bootstrap_class.rs`:
+    - every shorthand maps, and a non-shorthand class (`my-class`) passes
+      through;
+    - `.sm` gives `table-sm small`, and `.small` gives `small table-sm`;
+    - the transform is idempotent, including the wrapper: a second run does
+      not double-wrap;
+    - `.responsive-md` wraps and leaves `table-responsive-md` off the table;
+    - a table inside a `Block::Custom` slot is reached.
+  - [ ] Unit tests for the forward pass:
+    - a single table in a tbl float gets the float's classes;
+    - a layout of two tables in a tbl float: both get them;
+    - a nested tbl sub-float: its table gets *only* the sub-float's classes;
+    - a `fig` float: untouched;
+    - idempotent.
+  - [ ] Smoke-all fixture
+    `crates/quarto/tests/smoke-all/markdown/table-caption-bootstrap-classes.qmd`
+    with the five forms from `html-comparison.txt`, plus a multi-table tbl
+    float. Use `ensureFileRegexMatches` anchored on `<table class="…"` and on
+    the float `<div id="tbl-…" class="…"`. Assert that the float div still
+    has `bordered sm`.
+  - [ ] Confirm the tests fail at HEAD.
+- **Phase 1: normalization and `sm`/`small` in `TableBootstrapClassTransform`**
+  (fixes unlabelled captions).
+- **Phase 2: the responsive wrapper**, late, in the same transform.
+- **Phase 3: the forward pass**, registered before `crossref-render`.
+  - [ ] Add the name to whatever exact-list drift validator `pipeline.rs`
+    keeps (the "exclude-list superset trap" tests around line 4415).
+  - [ ] It must not be in `Q2_PREVIEW_TRANSFORM_EXCLUDED` or
+    `PANDOC_TRANSFORM_EXCLUDED` unless the validator demands it. Decide by
+    reading the lists.
+- **Phase 4: preview and wrap-up.**
+  - [ ] Add the `Block::Custom` recursion.
+  - [ ] Check in q2-preview (`/run` or the preview-render-parity skill) that
+    float tables get `table caption-top table-striped …`.
+  - [ ] Update the module doc and the pipeline comment (cite bd-hfghrqvh).
+  - [ ] Re-render the product-doc-theme example and check its tables.
+  - [ ] `cargo xtask verify`.
+  - [ ] Add a braid comment on bd-hfghrqvh recording the HTML-only
+    divergence (bd-7zw93czl).
 
-## Open design questions for the user
+## Risks / tradeoffs
 
-1. **Placement and formats.** Q1 normalizes in the *pre* stage for *all*
-   formats, so LaTeX and Typst also see `table-striped`, and Q1's own later
-   filters see the mapped names.
-   - Recommendation: do it in the existing HTML-only Finalization transform.
-     It is the smallest change, and `table-*` classes mean nothing outside
-     Bootstrap.
-   - Alternative: add an all-format normalization transform early in the
-     pipeline, which is exact Q1 parity.
-   - Is HTML-only acceptable as a reviewed divergence?
-2. **Float classes: duplicate or move?** For `#tbl-` tables Q1 leaves the
-   unprefixed `bordered sm` on the float `<div>` *and* puts the prefixed
-   copies on the `<table>`. Should we mirror that duplication exactly
-   (recommended for parity, since CSS and JS that target the div keep
-   working), or move the classes onto the table only?
-3. **Non-shorthand float classes.** Q1 also copies arbitrary classes, such as
-   a user `.my-class` on `::: {#tbl-x .my-class}`, onto the inner table. Do we
-   want that too, or only the recognized shorthands? Q1-faithful is
-   recommended, and the acceptance criteria say "forwarded verbatim".
-4. **Responsive wrapper in scope?** The acceptance criteria say "all
-   shorthands mapped", but in Q1 `.responsive*` is a *wrapper div*, not a
-   table class. Should the wrapper be in this strand (recommended: it is about
-   15 lines, and the class is useless without it), or a follow-up strand?
-5. **Non-table floats.** For a `tbl` float whose content is not a single
-   table (e.g. a layout of several tables), Q1 applies the classes to every
-   nested table and skips subfloats. Mirror that now, or limit to the
-   single-table case and file a follow-up?
-6. **Incidental: caption location.** For crossref tables q2 renders
-   `quarto-float-caption-bottom` and Q1 renders `-top`. Should I file this as
-   its own parity strand?
-
-## Risks / tradeoffs (draft)
-
-- Phase 2 needs to know what a `tbl` float looks like at Finalization: whether
-  it is still a `Div(#tbl-…)` carrying classes, or already rendered into
-  figure markup. If the float classes are gone by then, forwarding has to
-  happen earlier. One option is in `maybe_wrap_bare_table_into_div` /
-  `convert_div`, which would also cover the `::: {#tbl-}` form. This is the
-  main unknown, and it bears on Design question 1.
-- Q1's float `<div>` and `<table>` both carry the classes, so naïve
-  `ensureFileRegexMatches` patterns can match the wrong element. Anchor
-  fixture regexes on `<table class="…"`.
-- Idempotence is required: the existing transform is idempotent and is tested
-  for it.
+- **The wrapper changes the AST shape for late transforms.** Anything after
+  `table-bootstrap-class` that pattern-matches a float's content as a bare
+  `Table` would now see a `Div`. Grep the transforms registered after it in
+  Phase 2.
+- **The preview `Custom` arm widens the existing transform's reach**, which
+  could change preview snapshots for float tables. That is intended, but
+  review the diffs.
+- **Fixture regexes:** the float `<div>` and the `<table>` both carry
+  classes, so anchor every pattern on the element name.
+- **Verify environment:** the pre-flight run failed one test because the
+  local `hub-client/dist-preview-embed/` is stale. It has no `pdfjs/` folder
+  (built on Sep 9, before `7b9ac798b`), so `editor_ui_serves_pdfjs_from_the_viewer_bundle`
+  gets a 404. Rebuild the embed before the final verify.
