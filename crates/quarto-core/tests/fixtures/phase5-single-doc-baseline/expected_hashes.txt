@@ -444,5 +444,15 @@
 # gains `#quarto-skip-link:focus { … }` and the `#quarto-document-content:focus,
 # #quarto-content:focus { outline: none }` rule; verified those two rules are
 # the only CSS delta (rendered with and without the SCSS change, diffed on `}`).
+#
+# Re-captured 2026-10-22 (bd-t3n1nghb): doc_files/styles.css hash updated
+# because a new built-in SCSS layer `link-external.scss`
+# (`load_link_external_layer`, bundled at every HTML compile site and in
+# `assemble_reveal_scss`, unconditionally) ships the external-link rules:
+# `a.external:after` (data-URI box-arrow icon), its `div.sourceCode code`
+# and `:hover` variants, and `.quarto-ext-icon`. Verified the only delta is
+# those four rules: removing them from the new styles.css reproduces the
+# previous hash (07c6ce19…) exactly. doc.html hash unchanged: the fixture
+# has no links and sets no `link-external-*` option.
 doc.html 8bc5f1b52f07aa842a9420d2d08a24243e851ca7f18e3d55a089e5d1ffe84f59
-doc_files/styles.css 07c6ce19cafb14de60b29b5d47c7b3dab02cd788bf1bdce52cdcb3b568deeedc
+doc_files/styles.css c10bc9fa1b1e4f5ad60f438444338134c54b31aabf39092455a33dab65875e72

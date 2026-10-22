@@ -2,13 +2,12 @@
 title: 'link-external-icon / -newwindow / -filter for HTML output (bd-t3n1nghb)'
 date: 2026-10-22
 description: 'The three link-external options are accepted into the merged config but nothing consumes them; this plan scopes a render-time AST transform plus a gated SCSS layer to match Quarto 1.'
-status: draft  # Investigation — pending design alignment with user; do not implement before the go-ahead
+status: done
 braid:
   strand: bd-t3n1nghb
 ---
 
 **Branch:** `braid/bd-t3n1nghb-link-external-icon-newwindow` (topic branch in the main checkout, based on `main` @ `03da98869`)
-**Do not start implementation until the user gives the go-ahead.**
 
 ## Triage verdict
 
@@ -16,9 +15,9 @@ braid:
 repro below), the Quarto 1 behaviour is small and fully understood, and
 q2 has a clear home for each piece (a finalization-phase AST transform
 next to `ResponsiveImageTransform`, and a gated SCSS layer modelled on
-`title_block_layer`). The user answered the five initial design
-questions on 2026-10-22 (see § Decisions); two small follow-up
-questions remain before implementation.
+`title_block_layer`). The user answered all design questions on
+2026-10-22 (see § Decisions), and the work is implemented (see
+§ Implementation).
 
 ## Issue context
 
@@ -183,74 +182,85 @@ From the quarto-cli checkout at `~/repos/github/quarto-dev/quarto-cli`:
    no legitimate reason (see above). The default filter is built with
    `regex::escape(site_url)`.
 
-## Proposed phases (draft)
+6. **(Follow-up A) Bootstrap Icons gate: the narrow option.** Ship the
+   icons for websites, or when `link-external-icon` is a string. Do not
+   ship them for every Bootstrap HTML page.
+7. **(Follow-up B) The `.external` styling is unconditional.** The
+   layer is compiled for all HTML output, so a hand-written or
+   filter-set `.external` always draws its icon. No `ThemeConfig` flag.
 
-- **Phase 0: Tests first.**
-  - Unit tests for the classifier: relative, absolute other-host,
-    filter-matched, the default `site-url` filter, localhost, mailto, a
-    link carrying `.no-external`, and a link with an existing `rel`.
-  - An invalid-regex diagnostic test.
-  - Idempotence of the sibling icon insertion.
-  - Smoke-all fixtures: a single doc with `icon: true` plus `newwindow`,
-    a single doc with `icon: <name>` (asserting that the icons CSS
-    ships), and a website with only `site-url`. Also a revealjs doc.
-  - A quarto-sass test that the layer is present when the flag is on and
-    absent when it is off.
-- **Phase 1: SCSS layer.** Port `_quarto-rules-link-external.scss` into
-  `resources/scss/html/templates/`. Add the `ThemeConfig` flag, set from
-  `link-external-icon` being truthy, and include it in the cache key.
-- **Phase 2: AST transform.** Add a `LinkExternalTransform` that runs in
-  the finalization phase after `LinkRewriteTransform` and is gated to
-  the HTML family. It walks `Inline::Link`, classifies each link, then
-  adds class `external` (for `icon: true`), sets `target="_blank"` and
-  sets `rel="noopener"` only when `rel` is absent (for `newwindow`). For
-  `icon: <name>` it splices an icon inline after the link: a raw HTML
-  `<i class="bi-<name> quarto-ext-icon">` or a `Span`, decided at
-  implementation time. It skips `.no-external` links and leaves
-  `.external` links that already carry the class untouched.
-- **Phase 3: Icon shipping.** Widen the `WebsiteBootstrapIconsTransform`
-  gate, scoped as decided in open question A.
-- **Phase 4: Schema + docs.**
-  - Add schema entries: `link-external-icon` as `boolean | string`
-    (a deliberate departure from Quarto 1's boolean-only schema, which
-    goes in the strand), `link-external-newwindow` as `boolean`,
-    `link-external-filter` as `string`.
-  - Add a docs page or section under `docs/guides/formats/html/` that
-    covers the Rust regex dialect, the string icon form, body-only
-    scope, the no-`site-url` divergence, the manual
-    `{.external target="_blank"}` escape hatch and `.no-external`.
-  - Record the deviations in the strand.
+## Implementation (2026-10-22)
 
-## Open design questions for the user
+All phases are done on this branch. What landed, and where it departs
+from the draft:
 
-A. **How wide should the Bootstrap Icons gate be?** Option (i) ships the
-   icons when the project is a website *or* `link-external-icon` is a
-   string. That is minimal, and it is the only new consumer today.
-   Option (ii) ships them for every Bootstrap HTML render, as Quarto 1
-   does. That is simpler to reason about and helps future `bi-*`
-   consumers in single docs, but every standalone page then carries about
-   100 KB of CSS plus a 180 KB woff more.
-   Recommendation: (i) now, and (ii) as its own decision if a second
-   consumer appears.
-B. **Should a manual `.external` link get the icon without the option?**
-   Quarto 1 compiles the `a.external::after` rule only when
-   `link-external-icon` is on, so `[x](…){.external}` in a document
-   without the option gets no icon, even though the quarto-web docs
-   present the class as a per-link alternative. Should q2 compile the
-   small layer unconditionally for HTML so that the per-link class
-   always works? That would also drop the `ThemeConfig` flag and the
-   cache-key change. Recommendation: unconditional; the layer is about
-   1.6 KB of SCSS.
+- **Transform.** `crates/quarto-core/src/transforms/link_external.rs`
+  (`LinkExternalTransform`, name `link-external`). It runs in the
+  finalization phase **after `llms-capture`**, not next to
+  `responsive-image` as drafted, so the `llms.txt` markdown companion
+  keeps clean links. It is classified B4, is listed in
+  `PANDOC_TRANSFORM_EXCLUDED`, and is not in the preview exclusion list.
+  It walks with `ast_walk::for_each_inline_list_mut` so the named icon
+  can be spliced in as a sibling.
+  - The named icon is an empty `Span` (`bi bi-<name> quarto-ext-icon`,
+    `aria-hidden="true"`) rather than a raw `<i>`, so filters and the
+    React preview see a real node. A leading `bi-` on the name is
+    dropped.
+  - Only `http(s)` and `//host` URLs can be external. An author's
+    existing `target` and `rel` are kept; Quarto 1 overwrote `target`.
+  - The default filter is `^` plus `regex::escape(site-url)`. It is
+    anchored, where Quarto 1's was not.
+- **Front-matter regex bug.** In document front matter q2 parsed
+  `link-external-filter` as markdown, which consumed its backslash
+  escapes: `\/\/www\.quarto\.org` came back as `//www.quarto.org`. The
+  key is now listed in `ANNOTATIONS`
+  (`crates/pampa/src/pandoc/meta_annotations.rs`) as `PlainString`,
+  both at top level and as `format.*.link-external-filter`.
+- **Diagnostic.** A new catalog code, `Q-13-14` "Invalid
+  link-external-filter" (navigation subsystem, alongside the other
+  link diagnostics), with a page at
+  `docs/errors/navigation/Q-13-14.qmd` and an entry in the error
+  sidebar. When the filter does not compile, the code falls back to the
+  `site-url` default.
+- **SCSS.** `resources/scss/html/templates/link-external.scss` is
+  bundled unconditionally in all five HTML compile paths and in
+  `assemble_reveal_scss`, and registered in `resources/vendored.toml`
+  as `native-scss`. The SVG fill uses inline
+  `rgb(#{red()}…)` because `colorToRGB()` is undefined on the HTML
+  path. That gap is a pre-existing bug, filed as bd-na72nf6u.
+- **Icons.** `WebsiteBootstrapIconsTransform` gates on
+  `needs_bootstrap_icons`: the project is a website, or the icon
+  option names an icon.
+- **Schema (dropped).** q2 has no document schema for format options
+  yet, so there was nothing to add. The string form is accepted by the
+  transform.
+- **Docs.** `docs/guides/formats/html/external-links.qmd`, listed in
+  the Guides sidebar. It covers the Rust regex dialect, body-only
+  scope, `.no-external`, manual `.external`, and the differences from
+  Quarto 1.
+- **Tests.**
+  - 18 unit tests in `link_external.rs`.
+  - A gate test in `website_bootstrap_icons.rs` and an `ANNOTATIONS`
+    test.
+  - Two quarto-sass compile tests (HTML and reveal).
+  - Updated exact-name lists in `pipeline.rs`.
+  - Smoke-all fixtures under `crates/quarto/tests/smoke-all/link-external/`
+    (icon class, named icon, newwindow only, manual class, invalid
+    filter, revealjs) and `link-external-website/`, which covers the
+    `site-url` default.
 
-## Risks / tradeoffs (draft)
+## Follow-ups filed
 
-- If B resolves to "gated", adding a flag to `ThemeConfig` changes the
-  SCSS cache key. That is harmless, but cache-key tests may need
-  updating. If B resolves to "unconditional", every HTML stylesheet
-  changes once, which may churn CSS snapshot tests.
-- Inserting the string-icon `<i>` as a sibling means splicing into the
-  parent inline list. That is easy in the walker, but it has to avoid
-  double-insertion if the transform runs twice. (Neighbouring
-  transforms are idempotent by convention.)
-- Behavioural risk is low: both booleans default to `false`, so
-  existing renders do not change unless a document opts in.
+- bd-na72nf6u: HTML theme CSS emits a literal `colorToRGB(...)` in SVG
+  fills, so the code-tools icons get an invalid fill. This predates the
+  branch.
+- bd-oq6tbfr3: in the q2-preview, a named `link-external-icon` likely
+  renders as an empty span, because the preview iframe loads only the
+  theme CSS and not Bootstrap Icons. The boolean form is unaffected.
+
+## Risks / tradeoffs
+
+- Every HTML and reveal stylesheet grows by the roughly 1.6 KB layer.
+  No existing CSS assertion broke.
+- The divergence from Quarto 1 described in decision 1 is documented
+  in the user guide.
