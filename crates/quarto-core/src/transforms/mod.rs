@@ -209,7 +209,7 @@ pub use shortcode_resolve::{ShortcodeResolveTransform, extract_shortcode_paths};
 pub(crate) use shortcode_text::{TextSegment, parse_text_shortcodes};
 pub use sidebar_generate::SidebarGenerateTransform;
 pub use sidebar_render::SidebarRenderTransform;
-pub use table_bootstrap_class::TableBootstrapClassTransform;
+pub use table_bootstrap_class::{TableBootstrapClassTransform, TableFloatClassForwardTransform};
 pub use theorem::TheoremSugarTransform;
 pub use title_banner::TitleBannerTransform;
 pub use title_block::TitleBlockTransform;

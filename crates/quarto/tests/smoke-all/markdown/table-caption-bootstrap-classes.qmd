@@ -1,0 +1,110 @@
+---
+title: "Bootstrap table shorthand classes on table captions"
+# bd-hfghrqvh: Q1 (quarto-pre/table-classes.lua + quarto-post/responsive.lua)
+# maps Bootstrap shorthands written in a table caption's attribute block
+# (`.striped .hover .sm .responsive-md …`) to `table-*` classes on the
+# <table>, pairs `table-sm` with `small`, wraps `.responsive*` tables in a
+# `div.table-responsive*`, and forwards a `tbl` float's classes onto every
+# table it holds (the float div keeps its own unprefixed copies). The
+# expected class lists below are Q1's output for the same source.
+_quarto:
+  tests:
+    html:
+      noErrors: true
+      ensureFileRegexMatches:
+        - [
+            # Unlabelled caption: prefixed in place, user class kept.
+            '<table class="table-striped table-hover my-class caption-top table">',
+            # `#tbl-` caption: float div keeps the unprefixed copies...
+            '<div id="tbl-one" class="bordered sm quarto-float',
+            # ...and the inner table gets the normalized ones + `small`.
+            '<table class="table-bordered table-sm small caption-top table">',
+            # `::: {#tbl-}` div form forwards too.
+            '<div id="tbl-div" class="striped quarto-float',
+            '<table class="table-striped caption-top table">',
+            # `.small` pulls in `table-sm`.
+            '<table class="small table-sm caption-top table">',
+            # product-doc-theme's spelling: caption directly under the table,
+            # no space after the colon.
+            '<table class="table-success table-hover caption-top table">\s*<caption>\s*Adjacent caption\s*</caption>',
+            # `.responsive-md` becomes a wrapper div.
+            '<div class="table-responsive-md">\s*<table class="table-primary caption-top table">',
+            # Multi-table float: both tables get the float's classes; the
+            # nested sub-float's table gets only its own. (Not anchored on
+            # the inner `<caption>Left` / `Right`: q2 currently drops those,
+            # bd-ymyeef2e.)
+            '<div id="tbl-multi" class="hover quarto-float[\s\S]*<table class="table-hover caption-top table">[\s\S]*<table class="table-hover caption-top table">[\s\S]*<div id="tbl-sub"',
+            '<div id="tbl-sub" class="dark quarto-float[\s\S]*<table class="table-dark caption-top table">',
+          ]
+        - [
+            # Shorthands are never left unprefixed on a table.
+            '<table class="(?:[^"]* )?(striped|hover|bordered|primary)[ "]',
+            '<table class="[^"]*responsive',
+            # The sub-float's table does not inherit the parent's class.
+            '<table class="[^"]*table-dark[^"]*table-hover',
+          ]
+---
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+: Plain caption {.striped .hover .my-class}
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+: Labelled caption {#tbl-one .bordered .sm}
+
+::: {#tbl-div .striped}
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+Div caption
+:::
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+: Small {.small}
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+: Responsive {.responsive-md .primary}
+
+| a | b |
+|---|---|
+| 1 | 2 |
+:Adjacent caption {.success .hover}
+
+::: {#tbl-multi .hover}
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+: Left
+
+| c | d |
+|---|---|
+| 3 | 4 |
+
+: Right
+
+::: {#tbl-sub .dark}
+
+| e | f |
+|---|---|
+| 5 | 6 |
+
+Sub caption
+:::
+
+Multi caption
+:::
