@@ -48,4 +48,7 @@ length-prefixed framing (`framing.ts`), so chunk boundaries don't matter.
 - [x] Local: file passes 5/5 runs.
 - [x] Full `@quarto/engine-host-node` suite passes locally (161/161).
 - [x] Commit plan and fix on the PR #865 branch; push.
-- [ ] Monitor PR #865 CI; merge if green (user-authorized 2026-10-20).
+- [x] Monitor PR #865 CI: all checks green on `d07a58d5` (2026-10-20).
+- [x] Merged (`9758c3a2`). `gh pr merge 865 --merge` from the CLI was refused
+  ("base branch policy prohibits the merge"; mergeStateStatus BLOCKED, no
+  reviews, cause unclear), so the user merged from the GitHub UI.
