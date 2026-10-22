@@ -168,3 +168,34 @@ fn lua_filter_pandoc_read_diagnostic_is_located_in_the_string() {
     let text = run_q2_render(dir, &["doc.qmd", "--to", "html"]);
     assert_text_frames_the_string(&combined(&text), "f.lua[pandoc.read, line 2]");
 }
+
+/// bd-fwswbxnl: a warning the reader itself raises while parsing the
+/// `pandoc.read` text (Q-2-54, a Pandoc definition list) reaches the render,
+/// shown in that text.
+#[test]
+fn pandoc_read_reader_warnings_reach_the_render() {
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path();
+    std::fs::write(
+        dir.join("dl.qmd"),
+        "---\ntitle: reader warnings\n---\n\n```{lmd}\nreturn pandoc.read('Term\\n: Definition', 'markdown').blocks\n```\n",
+    )
+    .unwrap();
+
+    let text = run_q2_render(dir, &["dl.qmd", "--to", "html"]);
+    assert!(
+        text.status.success(),
+        "render must succeed:\n{}",
+        combined(&text)
+    );
+    let out = combined(&text);
+    assert!(out.contains("Q-2-54"), "expected Q-2-54:\n{out}");
+    assert!(
+        out.contains("dl.qmd[pandoc.read, line 6]"),
+        "expected the call-site label:\n{out}"
+    );
+    assert!(
+        out.contains(": Definition"),
+        "expected the string as snippet:\n{out}"
+    );
+}
