@@ -33,7 +33,7 @@ pub enum FetchError {
     /// needs neither, nor a device node or fifo — so every non-plain
     /// entry is refused rather than skipped. Skipping would let an
     /// archive quietly differ from what was extracted.
-    #[error("archive entry {name:?} is a {kind}, which is not allowed in a brand source")]
+    #[error("archive entry {name:?} is a {kind}, which is not allowed in a source archive")]
     UnsupportedEntryType { name: String, kind: &'static str },
 
     #[error("archive has more than {limit} entries")]

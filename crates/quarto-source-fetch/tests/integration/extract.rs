@@ -226,6 +226,46 @@ fn both_backends_extract_a_normal_archive() {
     }
 }
 
+/// GitHub's `archive/refs/...tar.gz` (produced by `git archive`) starts
+/// with a pax *global* header named `pax_global_header`, carrying the
+/// commit id. Every real GitHub source has one, so refusing it refused
+/// every GitHub archive (found running `q2 add` against GitHub,
+/// bd-rfz4e3bw).
+#[test]
+fn a_pax_global_header_is_skipped_not_refused() {
+    let tmp = TempDir::new().unwrap();
+    let archive = tmp.path().join("github.tar.gz");
+    {
+        let file = std::fs::File::create(&archive).unwrap();
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        let mut builder = tar::Builder::new(encoder);
+
+        let record = b"52 comment=0123456789abcdef0123456789abcdef01234567\n";
+        let mut global = tar::Header::new_ustar();
+        global.set_entry_type(tar::EntryType::XGlobalHeader);
+        global.set_size(record.len() as u64);
+        set_raw_name(&mut global, "pax_global_header");
+        global.set_cksum();
+        builder.append(&global, record.as_slice()).unwrap();
+
+        let content = b"color:\n  primary: red\n";
+        let mut file_header = tar::Header::new_ustar();
+        file_header.set_entry_type(tar::EntryType::Regular);
+        file_header.set_mode(0o644);
+        file_header.set_size(content.len() as u64);
+        set_raw_name(&mut file_header, "repo-main/_brand.yml");
+        file_header.set_cksum();
+        builder.append(&file_header, content.as_slice()).unwrap();
+        builder.into_inner().unwrap().finish().unwrap();
+    }
+
+    let dest = tmp.path().join("dest");
+    std::fs::create_dir_all(&dest).unwrap();
+    extract_into(&archive, &dest, &ExtractLimits::default())
+        .unwrap_or_else(|e| panic!("a GitHub-shaped archive must extract: {e}"));
+    assert_eq!(tree(&dest), ["repo-main", "repo-main/_brand.yml"]);
+}
+
 // ====================================================================
 // Case 13 — the hardening matrix
 // ====================================================================

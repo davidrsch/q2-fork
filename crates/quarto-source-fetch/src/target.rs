@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::FetchError;
 
-/// Where a brand source is coming from.
+/// Where a source (a brand, or an extension for `q2 add`) is coming from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
     /// A path on disk: either a directory, or an archive file.
@@ -37,6 +37,13 @@ pub struct RemoteTarget {
     pub description: String,
     /// A page the user can read before trusting it, when we know one.
     pub learn_more: Option<String>,
+    /// The GitHub organization the source belongs to, when known.
+    ///
+    /// `q2 add` installs into `_extensions/<owner>/<name>/`, matching
+    /// Quarto 1's `ExtensionSource.owner` (`extension-host.ts`): set
+    /// for `org/repo` shorthand and for a GitHub archive URL, absent
+    /// for any other URL.
+    pub owner: Option<String>,
 }
 
 /// GitHub serves `.tar.gz` for every ref on every platform.
@@ -89,6 +96,7 @@ pub fn resolve_target(input: &str) -> Result<Target, FetchError> {
             subdir: None,
             description: trimmed.to_string(),
             learn_more: None,
+            owner: github_archive_url_owner(trimmed),
         }));
     }
 
@@ -174,7 +182,25 @@ fn parse_github(input: &str) -> Result<RemoteTarget, FetchError> {
         subdir,
         description,
         learn_more: Some(format!("https://github.com/{org}/{repo}")),
+        owner: Some(org.to_string()),
     })
+}
+
+/// The organization in a `https://github.com/<org>/<repo>/archive/...`
+/// URL, mirroring Quarto 1's `kGithubArchiveUrlSource`. Any other URL
+/// has no owner. The organization is validated with the same character
+/// rule as shorthand, since it becomes a directory name.
+fn github_archive_url_owner(url: &str) -> Option<String> {
+    let rest = url
+        .strip_prefix("https://github.com/")
+        .or_else(|| url.strip_prefix("https://www.github.com/"))?;
+    let mut segments = rest.split('/');
+    let org = segments.next()?;
+    let repo = segments.next()?;
+    let archive = segments.next()?;
+    let valid =
+        |s: &str| !s.is_empty() && s.chars().all(is_github_name_char) && s != "." && s != "..";
+    (archive == "archive" && valid(org) && valid(repo)).then(|| org.to_string())
 }
 
 fn is_github_name_char(c: char) -> bool {
@@ -223,6 +249,38 @@ mod tests {
         let r = remote("https://example.com/brand.zip");
         assert_eq!(r.candidates, ["https://example.com/brand.zip"]);
         assert!(r.subdir.is_none());
+        assert!(r.owner.is_none(), "a non-GitHub URL has no owner");
+    }
+
+    #[test]
+    fn shorthand_records_the_organization_as_owner() {
+        assert_eq!(
+            remote("posit-dev/brand").owner.as_deref(),
+            Some("posit-dev")
+        );
+        assert_eq!(
+            remote("org/repo/sub@v1").owner.as_deref(),
+            Some("org"),
+            "subdir and ref do not change the owner"
+        );
+    }
+
+    #[test]
+    fn a_github_archive_url_records_its_organization() {
+        let r = remote("https://github.com/quarto-ext/fontawesome/archive/refs/tags/v1.0.0.zip");
+        assert_eq!(r.owner.as_deref(), Some("quarto-ext"));
+        // Not an archive URL: a repository page is not something we
+        // can tell the owner of an installed archive from.
+        assert!(
+            remote("https://github.com/quarto-ext/fontawesome")
+                .owner
+                .is_none()
+        );
+        assert!(
+            remote("https://github.com/../x/archive/a.zip")
+                .owner
+                .is_none()
+        );
     }
 
     #[test]
