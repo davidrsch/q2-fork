@@ -332,6 +332,86 @@ fn frontmatter_sidebar_missing_document_diagnostic_carries_location() {
     );
 }
 
+// === Extension-contributed project types (bd-74ktvzv7) ====================
+
+/// A custom project type whose `contributes.project` fragment sets the
+/// favicon, navbar logo and logo-href to a bundled file, plus a navbar
+/// item pointing at a project page. Pages at the root and in `sub/`.
+fn extension_fragment_fixture(project_dir: &std::path::Path) {
+    write(
+        &project_dir.join("_extensions/x/_extension.yml"),
+        "title: X\nauthor: Test\nversion: 1.0.0\ncontributes:\n  project:\n    project:\n      type: website\n      output-dir: _site\n    website:\n      title: Repro\n      favicon: assets/logo.svg\n      navbar:\n        logo: assets/logo.svg\n        logo-href: assets/logo.svg\n        left:\n          - href: index.qmd\n            text: Home\n",
+    );
+    write(
+        &project_dir.join("_extensions/x/assets/logo.svg"),
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n",
+    );
+    write(&project_dir.join("_quarto.yml"), "project:\n  type: x\n");
+    write(
+        &project_dir.join("index.qmd"),
+        "---\ntitle: Home\n---\n\nH.\n",
+    );
+    write(
+        &project_dir.join("sub/page.qmd"),
+        "---\ntitle: Sub\n---\n\nS.\n",
+    );
+}
+
+/// Bundled files referenced from an extension fragment are rebased to
+/// `_extensions/x/…` once, at config time. Render-time resolution must
+/// not prepend the extension dir a second time, and pages in
+/// subdirectories must climb exactly one level.
+#[test]
+fn extension_fragment_logo_favicon_and_logo_href_single_prefix() {
+    let (_dir, outputs, _diags) = render_project(extension_fragment_fixture);
+
+    for (page, prefix) in [("index.html", ""), ("sub/page.html", "../")] {
+        let html = find_html(&outputs, page);
+        let logo = format!("{prefix}_extensions/x/assets/logo.svg");
+        assert!(
+            html.contains(&format!("<img src=\"{logo}\"")),
+            "{page}: navbar logo src should be `{logo}`; got: {}",
+            snippet(html, "navbar-logo")
+        );
+        assert!(
+            html.contains(&format!("<link rel=\"icon\" href=\"{logo}\"")),
+            "{page}: favicon href should be `{logo}`; got: {}",
+            snippet(html, "rel=\"icon\"")
+        );
+        assert!(
+            html.contains(&format!(
+                "<a href=\"{logo}\" class=\"navbar-brand navbar-brand-logo\">"
+            )),
+            "{page}: logo-href should be `{logo}`; got: {}",
+            snippet(html, "navbar-brand-logo")
+        );
+    }
+}
+
+/// Non-file hrefs in an extension fragment are project-root-relative
+/// (Quarto 1 parity), not relative to the extension dir.
+#[test]
+fn extension_fragment_navbar_href_resolves_against_project_root() {
+    let (_dir, outputs, diags) = render_project(extension_fragment_fixture);
+
+    for (page, href) in [
+        ("index.html", "index.html"),
+        ("sub/page.html", "../index.html"),
+    ] {
+        let html = find_html(&outputs, page);
+        assert!(
+            html.contains(&format!("<a href=\"{href}\" class=\"nav-link")),
+            "{page}: navbar Home link should be `{href}`; got: {}",
+            snippet(html, "nav-link")
+        );
+    }
+    let missing: Vec<_> = diags
+        .iter()
+        .filter(|d| d.code.as_deref() == Some("Q-13-2"))
+        .collect();
+    assert!(missing.is_empty(), "unexpected Q-13-2: {missing:?}");
+}
+
 // ----- helpers ------------------------------------------------------------
 
 fn snippet<'a>(html: &'a str, needle: &str) -> &'a str {
