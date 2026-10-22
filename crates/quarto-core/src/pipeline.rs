@@ -94,10 +94,10 @@ use crate::transforms::{
     PageNavRenderTransform, ProofSugarTransform, ReferenceLinkDiagnosticsTransform,
     RepoActionsRenderTransform, ResourceCollectorTransform, ResponsiveImageTransform,
     SectionizeTransform, ShortcodeResolveTransform, SidebarGenerateTransform,
-    SidebarRenderTransform, TableBootstrapClassTransform, TheoremSugarTransform,
-    TitleBannerTransform, TitleBlockTransform, TocGenerateTransform, TocLocationTransform,
-    TocRenderTransform, WebsiteBootstrapIconsTransform, WebsiteCanonicalUrlTransform,
-    WebsiteFaviconTransform, WebsiteTitlePrefixTransform,
+    SidebarRenderTransform, TableBootstrapClassTransform, TableFloatClassForwardTransform,
+    TheoremSugarTransform, TitleBannerTransform, TitleBlockTransform, TocGenerateTransform,
+    TocLocationTransform, TocRenderTransform, WebsiteBootstrapIconsTransform,
+    WebsiteCanonicalUrlTransform, WebsiteFaviconTransform, WebsiteTitlePrefixTransform,
 };
 
 /// Well-known path for the default CSS artifact in WASM context.
@@ -2621,6 +2621,12 @@ pub fn build_transform_pipeline(
     pipeline.push(Box::new(
         crate::transforms::cross_chapter_crossref_resolve::CrossChapterCrossrefResolveTransform::new(),
     ));
+    // bd-hfghrqvh: copy each `tbl` float's classes onto the tables it
+    // holds (Q1 `table-classes.lua`). Must run *before*
+    // `CrossrefRenderTransform`, which folds the float's own classes into
+    // the `quarto-float` wrapper Div; `table-bootstrap-class` (below)
+    // normalizes the forwarded copies.
+    pipeline.push(Box::new(TableFloatClassForwardTransform::new()));
     pipeline.push(Box::new(CrossrefRenderTransform::new()));
     // Example-embed render (bd-t3cert81). Runs right after
     // `CrossrefRenderTransform` so the per-`demo` `order` the index assigned
@@ -2692,7 +2698,10 @@ pub fn build_transform_pipeline(
     // bd-2c8rg: tag every <table> with Bootstrap's `caption-top` and
     // `table` classes so the rendered HTML picks up the project's
     // Bootstrap stylesheet (matches Quarto 1's
-    // `quarto-bootstrap-table.lua`). Runs late: by this point every
+    // `quarto-bootstrap-table.lua`). bd-hfghrqvh: also prefix the
+    // Bootstrap shorthands (`.striped` → `table-striped`) and wrap
+    // `.responsive*` tables in `div.table-responsive*`; the wrapper must not
+    // exist yet when `crossref-render` looks for a float's bare `Table`. Runs late: by this point every
     // upstream transform has finished mutating tables, and any future
     // user-filter slot inserted before AttributionRender still sees the
     // un-enriched class list. Idempotent.
@@ -2888,6 +2897,7 @@ const Q2_PREVIEW_TRANSFORM_EXCLUDED: &[&str] = &[
 const PANDOC_TRANSFORM_EXCLUDED: &[&str] = &[
     // B4: format-specific presentation that consumes rendered/semantic
     // shapes — HTML-only rendering of custom nodes and HTML decoration.
+    "table-float-class-forward",
     "crossref-render",
     "mermaid-render",
     "code-block-render",
@@ -3134,6 +3144,9 @@ pub const BUCKETS: &[(&str, Bucket)] = &[
     // the load-bearing member: it destroys every numbered `CustomNode` into
     // raw HTML `Figure`/`Div` structure, so if it ran before the cut P5's
     // shim would have nothing left to route.
+    // Copies `tbl` float classes onto the inner tables for
+    // `table-bootstrap-class` to normalize (bd-hfghrqvh).
+    ("table-float-class-forward", Bucket::B4),
     ("crossref-render", Bucket::B4),
     ("mermaid-render", Bucket::B4),
     ("code-block-render", Bucket::B4),
@@ -6593,6 +6606,7 @@ mod tests {
                 "link-rewrite",
                 "appendix-structure",
                 "cross-chapter-crossref-resolve",
+                "table-float-class-forward",
                 "crossref-render",
                 "example-embed-render",
                 "mermaid-render",
@@ -6687,6 +6701,7 @@ mod tests {
                 "link-rewrite",
                 "appendix-structure",
                 "cross-chapter-crossref-resolve",
+                "table-float-class-forward",
                 "crossref-render",
                 "example-embed-render",
                 "reveal-auto-stretch",
@@ -7065,6 +7080,7 @@ mod tests {
                 "link-rewrite",
                 "appendix-structure",
                 "cross-chapter-crossref-resolve",
+                "table-float-class-forward",
                 "example-embed-render",
                 "code-block-render",
                 "editorial-marks-ooxml",
