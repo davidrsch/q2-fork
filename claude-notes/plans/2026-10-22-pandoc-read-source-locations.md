@@ -25,7 +25,7 @@ All three are the same question: *where does text passed to `pandoc.read` live i
 
 ### The bug (#884), confirmed by reading the code
 
-1. `pandoc_read`'s qmd arm (`crates/pampa/src/lua/readwrite.rs:260`) calls `readers::qmd::read(…, "<pandoc.read>", …, None)`. The fresh context's FileId(0) is the string, and every node comes back as `Original { FileId(0), offset-into-string }`.
+1. `pandoc_read`\'s qmd arm (`crates/pampa/src/lua/readwrite.rs:260`) calls `readers::qmd::read(…, "<pandoc.read>", …, None)`. The fresh context's FileId(0) is the string, and every node comes back as `Original { FileId(0), offset-into-string }`.
 2. The nodes cross into Lua and come back out with that `SourceInfo` intact.
 3. In the host document, FileId(0) is the document. Any later pass that maps a node span (e.g. Q-2-49 in `transforms/reference_link_diagnostics.rs`) lands at the string's offsets in the document, usually inside the front matter.
 
@@ -45,7 +45,7 @@ Scratch files: `/private/tmp/claude-501/-Users-cscheid-rooms-room-3-q2/ece4cad0-
 ### Facts the design rests on
 
 - **Hash-based FileIds are an established pattern in the document context.** `MetadataMergeStage` registers `_quarto.yml` and friends under `quarto_yaml::file_id_for_filename(path)` via `add_file_with_id`, into **both** `doc.ast_context.source_context` and `doc.source_context` "in the same order" (`metadata_merge.rs:222`). A hash id needs no knowledge of the host context's current length, which matters because quarto-source-map 0.3.0 has no `len()` and is an external crate (`posit-dev/quarto-source-map`).
-- **An id the context doesn't know resolves to nothing, not to something wrong.** `map_offset` → `ctx.get_file(id)?` → `None`, and the renderer then has no snippet. `--json-errors`' `json_source_file` drops to its fallback when the file doesn't map, or when its path doesn't exist on disk (`quarto/src/commands/render.rs:2062`).
+- **An id the context doesn't know resolves to nothing, not to something wrong.** `map_offset` → `ctx.get_file(id)?` → `None`, and the renderer then has no snippet. `--json-errors`\' `json_source_file` drops to its fallback when the file doesn't map, or when its path doesn't exist on disk (`quarto/src/commands/render.rs:2062`).
 - **The qmd reader can parse "into" a parent.** With `parent_source_info: Some(p)`, Ok-path spans become `Substring(p, …)` and Err-path diagnostics are rerooted (`reroot_diagnostics_into_parent`). **But coverage has stragglers:** `create_line_break_inline` (`treesitter_utils/text_helpers.rs:385`) stamps `SoftBreak`/`LineBreak` with a hard-coded `FileId(0)`, ignoring the parent. There are ~20 `FileId(0)` literals across `pandoc/treesitter_utils/*` and `pandoc/location.rs`. Some are tests or legitimate, but each needs checking. Any straggler would keep #884 alive for that node type, so Phase 0 includes a property test that catches all of them.
 - **lmd chunks are named `@<doc path>` with line padding** (`lmd_execute.rs:239`), so `filter_source_info(lua)` inside a cell yields `By::filter("<doc path>", <document line>)`. That's the call-site frame the issue asks for, at no extra cost. In a filter it yields the `.lua` path and line.
 - **Host drain points already exist** for Lua-side state: `extract_lua_diagnostics` in `apply_lua_filter_with`, and `LmdRuntime::take_diagnostics`. `UserFiltersStage` adopts `output.context` into `doc.ast_context` only (`user_filters.rs:286`), so it must also register into `doc.source_context`. `doc.source_context` is what final diagnostics render against (e.g. `pipeline.rs:1230`, `render_html.rs:161`).
@@ -54,7 +54,7 @@ Scratch files: `/private/tmp/claude-501/-Users-cscheid-rooms-room-3-q2/ece4cad0-
 
 **Each `pandoc.read` call mints its own virtual file.** At call time the binding:
 
-1. Builds a label for the file from the call site: `{chunk}[pandoc.read, line {line}]` (e.g. `loc.qmd[pandoc.read, line 14]`), using `filter_source_info(lua)`'s `By::filter(path, line)`, with the path shown relative where possible. The form follows the existing notebook-cell label (`notebook.ipynb[cell 2, markdown]`). The label is the only provenance for now; a structured origin is deferred to a design session (see the appendix).
+1. Builds a label for the file from the call site: `{chunk}[pandoc.read, line {line}]` (e.g. `loc.qmd[pandoc.read, line 14]`), using `filter_source_info(lua)`\'s `By::filter(path, line)`, with the path shown relative where possible. The form follows the existing notebook-cell label (`notebook.ipynb[cell 2, markdown]`). The label is the only provenance for now; a structured origin is deferred to a design session (see the appendix).
 2. Mints `FileId = hash(label, content, per-Lua-state counter)`. Same recipe family as `file_id_for_filename`. The counter keeps two reads from the same line, such as a loop, apart.
 3. Parses so that every span is rooted at that FileId:
    - qmd arm: `parent_source_info = Some(SourceInfo::original(fid, 0, len))`, where `len` covers the newline-terminated text the reader actually parses.
@@ -89,7 +89,7 @@ Why not the alternatives:
 
 ### Phase 2 — hosts register the files (fixes #884 properly)
 
-- `lua/filter.rs`: drain into `FilterOutput` (new field, e.g. `read_sources: Vec<VirtualSource>`), threaded through `apply_lua_filters_with` and `unified_filter.rs`'s `FilterOutput`. Also register into `output.context.source_context` so pampa-CLI filter runs get locations too.
+- `lua/filter.rs`: drain into `FilterOutput` (new field, e.g. `read_sources: Vec<VirtualSource>`), threaded through `apply_lua_filters_with` and `unified_filter.rs`\'s `FilterOutput`. Also register into `output.context.source_context` so pampa-CLI filter runs get locations too.
 - `UserFiltersStage`: register into `doc.source_context` (lockstep with the adopted `ast_context`). Use one helper, `register_virtual_sources(doc, &sources)`, rather than inlining a third copy of the both-contexts loop.
 - `LmdRuntime::take_read_sources()` next to `take_diagnostics()`; `LmdExecuteStage` registers via the same helper.
 - Shortcode engine: drain and register too, for the nested attr/target spans `stamp_shortcode_anchors` leaves alone. **A drive-by, per review (2026-10-22): do it if it stays simple, otherwise drop it.** The intended route follows an existing pattern. `AstTransformsStage` already copies `render_ctx.artifacts` / `render_ctx.resource_copies` back to the stage context after the transforms run (`ast_transforms.rs`, just after the `render_ctx` setup at `:251`). So: add a `read_sources` field to `RenderContext`, have the shortcode transform (`shortcode_resolve.rs:1220`) push `lua_engine.take_read_sources()` into it when it finishes, then have `AstTransformsStage` copy it back and call `register_virtual_sources(doc, …)` once its `&doc.ast_context.source_context` borrow ends. **Bail-out:** if this needs more than those touch points (e.g. the borrow can't end before registration, or the engine is created in more than one place), leave shortcodes on the Phase 1 "no location" behavior for nested spans, note that in the PR, and file a strand.
@@ -177,7 +177,7 @@ These are candidates to evaluate, not decisions.
 ### Questions any option has to answer
 
 - **JSON coordinates.** For notebooks, `source_file` is the notebook but `start_line`/`start_column` are relative to the cell, so consumers must read `origin` to interpret them. For script strings the options are: (a) `source_file: null` with only the in-string coordinates (this plan's behavior); (b) `script_path` with the coordinates rewritten to the call line; (c) the notebook convention. Nothing in hub-client or ts-packages reads `origin` today.
-- **Hyperlink line.** `quarto-error-reporting`'s `hyperlink_target` (`diagnostic.rs:1021`) returns only a path. The hyperlink line comes from the mapped location, which for virtual content is a line *inside* the virtual file. Pointing at the host's line needs a line override in that function's return value. This is a private change, but it's in the published crate.
+- **Hyperlink line.** `quarto-error-reporting`\'s `hyperlink_target` (`diagnostic.rs:1021`) returns only a path. The hyperlink line comes from the mapped location, which for virtual content is a line *inside* the virtual file. Pointing at the host's line needs a line override in that function's return value. This is a private change, but it's in the published crate.
 
 ### Release cost (same for A and B)
 
