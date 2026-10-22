@@ -1,0 +1,21 @@
+---
+title: caption forms
+---
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+: Plain caption {.striped .hover .my-class}
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+: Labelled caption {#tbl-one .bordered .sm}
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+: Responsive {.responsive-md .primary}
