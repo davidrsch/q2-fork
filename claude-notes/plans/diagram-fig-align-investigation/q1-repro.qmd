@@ -1,0 +1,23 @@
+---
+title: t
+---
+
+```{mermaid}
+%%| fig-align: left
+flowchart LR
+  A --> B
+```
+
+```{mermaid}
+%%| label: fig-m
+%%| fig-cap: Cap
+%%| fig-align: right
+flowchart LR
+  A --> B
+```
+
+```mermaid
+%%| fig-align: left
+flowchart LR
+  A --> B
+```
