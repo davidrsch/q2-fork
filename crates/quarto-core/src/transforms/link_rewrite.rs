@@ -31,6 +31,10 @@
 //!   normalization, a deliberate side effect).
 //! - Query strings and fragment anchors are preserved across both
 //!   rewrites (`other.qmd?x=1#sec` → `other.html?x=1#sec`).
+//! - A link to a draft that the draft policy says may not be linked
+//!   ([`crate::project::drafts`]: `draft-mode` `gone` / `unlinked` in a
+//!   reading view) is replaced by its content — the text stays, the
+//!   link goes (Q1's `resolveProjectInputLinks`; bd-2hy80x1j).
 //!
 //! ## What it leaves alone
 //!
@@ -292,9 +296,37 @@ impl<'a> LinkRewriter<'a> {
     }
 
     fn visit_inlines(&mut self, inlines: &mut Inlines) {
-        for inline in inlines.iter_mut() {
-            self.visit_inline(inline);
+        let mut i = 0;
+        while i < inlines.len() {
+            if self.links_to_unlinkable(&inlines[i]) {
+                // Q1's `resolveProjectInputLinks`: a link to a draft
+                // that may not be linked is replaced by its content
+                // (bd-2hy80x1j, bd-p4sc). The content is walked like
+                // any other inlines, then spliced in place.
+                let Inline::Link(link) = inlines.remove(i) else {
+                    unreachable!("links_to_unlinkable only matches links");
+                };
+                let mut content = link.content;
+                self.visit_inlines(&mut content);
+                let n = content.len();
+                inlines.splice(i..i, content);
+                i += n;
+                continue;
+            }
+            self.visit_inline(&mut inlines[i]);
+            i += 1;
         }
+    }
+
+    /// Is `inline` a link to a project page the draft policy says may
+    /// not be linked (see [`crate::project::drafts`])?
+    fn links_to_unlinkable(&self, inline: &Inline) -> bool {
+        let (Inline::Link(link), Some(index)) = (inline, self.index) else {
+            return false;
+        };
+        resolve_doc_relative_target(&link.target.0, self.source)
+            .and_then(|path| index.lookup_by_source(&path))
+            .is_some_and(|profile| !index.is_linkable(profile))
     }
 
     fn visit_inline(&mut self, inline: &mut Inline) {
@@ -1390,10 +1422,12 @@ mod tests {
         assert_q13_9(&diags, "llms pin with llms-txt disabled");
     }
 
-    /// `link-format="llms"` targeting a draft (no companion): Q-13-9
-    /// warning, fallback to the `.html` output.
+    /// `link-format="llms"` targeting a hidden draft (bd-2hy80x1j): the
+    /// link to the draft is removed before any `link-format` handling,
+    /// keeping its text — there is no page to point at in either
+    /// format, so no Q-13-9 either.
     #[tokio::test]
-    async fn link_format_llms_draft_target_warns() {
+    async fn link_format_llms_hidden_draft_target_is_unwrapped() {
         let draft = DocumentProfile {
             draft: true,
             ..make_profile("about.qmd", "about.html")
@@ -1405,10 +1439,69 @@ mod tests {
         )])];
         let (out, diags) =
             run_cfg(blocks, "index.qmd", "index.html", vec![draft], true, true).await;
-        let link = first_link(&out);
-        assert_eq!(link.target.0, "about.html", "falls back to html output");
-        assert!(!link.attr.2.contains_key("link-format"));
-        assert_q13_9(&diags, "llms pin on a draft target");
+        let Block::Paragraph(p) = &out[0] else {
+            panic!("expected a paragraph");
+        };
+        assert!(
+            !p.content.iter().any(|i| matches!(i, Inline::Link(_))),
+            "link removed: {:?}",
+            p.content
+        );
+        assert!(
+            p.content
+                .iter()
+                .any(|i| matches!(i, Inline::Str(s) if s.text == "About")),
+            "link text kept: {:?}",
+            p.content
+        );
+        assert!(diags.is_empty(), "{diags:?}");
+    }
+
+    /// A body link to a hidden draft is replaced by its content, in
+    /// place, with surrounding inlines untouched; a link to a visible
+    /// draft is rewritten normally (bd-2hy80x1j, bd-p4sc).
+    #[tokio::test]
+    async fn links_to_hidden_drafts_are_unwrapped() {
+        use crate::project::drafts::DraftMode;
+        let hidden = DocumentProfile {
+            draft: true,
+            ..make_profile("hidden.qmd", "hidden.html")
+        };
+        let visible = DocumentProfile {
+            draft: true,
+            draft_mode: DraftMode::Visible,
+            ..make_profile("shown.qmd", "shown.html")
+        };
+        let blocks = vec![para(vec![
+            Inline::Str(Str {
+                text: "before".to_string(),
+                source_info: SourceInfo::for_test(),
+            }),
+            link_with_kv("hidden.qmd", "Hidden", &[]),
+            link_with_kv("shown.qmd", "Shown", &[]),
+        ])];
+        let (out, _) = run_cfg(
+            blocks,
+            "index.qmd",
+            "index.html",
+            vec![hidden, visible],
+            true,
+            false,
+        )
+        .await;
+        let Block::Paragraph(p) = &out[0] else {
+            panic!("expected a paragraph");
+        };
+        let shape: Vec<String> = p
+            .content
+            .iter()
+            .map(|i| match i {
+                Inline::Str(s) => format!("str:{}", s.text),
+                Inline::Link(l) => format!("link:{}", l.target.0),
+                other => format!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(shape, vec!["str:before", "str:Hidden", "link:shown.html"]);
     }
 
     /// An unknown `link-format` value warns and is stripped; the link

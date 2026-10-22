@@ -302,15 +302,18 @@ pub(crate) fn resolve_listings(
                 if patterns.excluded(&candidate_path_str) {
                     continue;
                 }
-                if !item_visible(profile) {
-                    continue;
-                }
                 let mut first_match: Option<usize> = None;
                 for (i, set) in positive_sets.iter().enumerate() {
                     if set.matches(&candidate_path_str) {
                         matched_any[i] = true;
                         first_match.get_or_insert(i);
                     }
+                }
+                // After the `matched_any` bookkeeping: a glob whose only
+                // matches are hidden drafts did match something, so it
+                // must not warn Q-12-19 "matched nothing".
+                if !item_visible(index, profile) {
+                    continue;
                 }
                 if let Some(pattern_idx) = first_match {
                     sources.insert(ListingItemSource::Document);
@@ -395,7 +398,12 @@ pub(crate) fn resolve_listings(
                     diags,
                 ) {
                     RecordPath::Document(profile) => {
-                        if !item_visible(profile) {
+                        // A record naming a hidden draft is dropped
+                        // silently, as Q1 does.
+                        if inputs
+                            .project_index
+                            .is_some_and(|index| !item_visible(index, profile))
+                        {
                             continue;
                         }
                         sources.insert(ListingItemSource::MetadataDocument);
@@ -565,14 +573,12 @@ impl ListingItemSource {
     }
 }
 
-/// Whether a document may appear as a listing item.
-///
-/// Listings do not filter drafts today (Q1 does). bd-zeormbsa
-/// introduces the shared `is_linkable` predicate on `ProjectIndex`;
-/// this is the one seam it replaces — the glob path and the record
+/// Whether a document may appear as a listing item: the shared draft
+/// policy (`ProjectIndex::is_linkable`, see `project::drafts`), Q1's
+/// `website-listing-read.ts` draft filter. The glob path and the record
 /// `path:` path both go through it, so the two can never disagree.
-fn item_visible(_profile: &DocumentProfile) -> bool {
-    true
+fn item_visible(index: &ProjectIndex, profile: &DocumentProfile) -> bool {
+    index.is_linkable(profile)
 }
 
 enum RecordPath<'a> {

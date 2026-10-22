@@ -91,6 +91,7 @@ mod metadata_normalize;
 mod navbar_generate;
 mod navbar_render;
 pub(crate) mod navigation_active;
+mod navigation_drafts;
 mod navigation_enrich;
 pub(crate) mod navigation_href;
 mod page_nav_generate;

@@ -319,3 +319,119 @@ fn non_website_project_never_blanks() {
     assert!(html.contains("Draft body."), "{html}");
     assert!(html.contains("quarto-draft-alert"), "{html}");
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Unlinking
+// ═══════════════════════════════════════════════════════════════════
+
+/// The quarto-web example: a navbar listing two pages, one a draft,
+/// plus a sidebar, a footer, a body link, a listing and a sitemap, all
+/// pointing at the draft. `extra` sets `draft-mode` (or nothing).
+fn linked_draft_site(d: &Path, draft_mode_line: &str) {
+    write(
+        &d.join("_quarto.yml"),
+        &format!(
+            "project:\n  type: website\n  output-dir: _site\n\
+             website:\n  title: \"Cool Website\"\n  site-url: https://example.com\n\
+             {draft_mode_line}\
+             \x20 navbar:\n    left:\n      - stuff/item1.qmd\n      - stuff/item2.qmd\n\
+             \x20 sidebar:\n    contents:\n      - stuff/item1.qmd\n      - stuff/item2.qmd\n\
+             \x20 page-footer:\n    left:\n      - stuff/item1.qmd\n      - stuff/item2.qmd\n"
+        ),
+    );
+    write(
+        &d.join("index.qmd"),
+        "---\ntitle: Home\nlisting:\n  id: all\n  contents: \"stuff/*.qmd\"\n---\n\n\
+         See [the second item](stuff/item2.qmd) and [the first](stuff/item1.qmd).\n\n\
+         ::: {#all}\n:::\n",
+    );
+    write(
+        &d.join("stuff/item1.qmd"),
+        "---\ntitle: Item 1\n---\n\nFirst.\n",
+    );
+    write(
+        &d.join("stuff/item2.qmd"),
+        "---\ntitle: Item 2\ndraft: true\n---\n\nSecond.\n",
+    );
+}
+
+/// Count `href="…stuff/item2.html"` occurrences.
+fn links_to_item2(html: &str) -> usize {
+    html.matches("item2.html\"").count()
+}
+
+fn assert_item2_unlinked(dir: &Path) {
+    let home = read(&dir.join("_site/index.html"));
+    assert_eq!(
+        links_to_item2(&home),
+        0,
+        "no navbar, sidebar, footer, body or listing link to the draft:\n{home}"
+    );
+    assert!(
+        home.contains("the second item"),
+        "the body link's text stays when the link goes"
+    );
+    assert!(links_to_item2(&read(&dir.join("_site/stuff/item1.html"))) == 0);
+    let sitemap = read(&dir.join("_site/sitemap.xml"));
+    assert!(!sitemap.contains("item2"), "{sitemap}");
+    assert!(sitemap.contains("item1"), "{sitemap}");
+}
+
+#[test]
+fn gone_drafts_are_unlinked_everywhere() {
+    let (dir, summary) = render_project(|d| linked_draft_site(d, ""));
+    assert_item2_unlinked(&dir);
+    assert!(!diagnostic_codes(&summary).iter().any(|c| c == "Q-12-19"));
+}
+
+/// A listing glob whose only matches are hidden drafts did match
+/// something: it lists nothing, but must not warn Q-12-19 "matched
+/// nothing".
+#[test]
+fn listing_glob_matching_only_drafts_does_not_warn() {
+    let (dir, summary) = render_project(|d| {
+        write(&d.join("_quarto.yml"), &quarto_yml(""));
+        write(
+            &d.join("index.qmd"),
+            "---\ntitle: Home\nlisting:\n  contents: \"posts/*.qmd\"\n---\n",
+        );
+        write(&d.join("posts/wip.qmd"), &draft_page("WIP", ""));
+    });
+    let codes = diagnostic_codes(&summary);
+    assert!(!codes.iter().any(|c| c == "Q-12-19"), "{codes:?}");
+    assert!(!read(&dir.join("_site/index.html")).contains("wip.html"));
+}
+
+#[test]
+fn unlinked_drafts_are_unlinked_everywhere_but_render() {
+    let (dir, _) = render_project(|d| linked_draft_site(d, "  draft-mode: unlinked\n"));
+    assert_item2_unlinked(&dir);
+    let item2 = read(&dir.join("_site/stuff/item2.html"));
+    assert!(item2.contains("Second."), "{item2}");
+    assert!(item2.contains("quarto-draft-alert"), "{item2}");
+}
+
+#[test]
+fn visible_drafts_stay_linked() {
+    let (dir, _) = render_project(|d| linked_draft_site(d, "  draft-mode: visible\n"));
+    let home = read(&dir.join("_site/index.html"));
+    // navbar + sidebar + footer + body link + listing item.
+    assert!(
+        links_to_item2(&home) >= 5,
+        "every surface links the visible draft:\n{home}"
+    );
+    assert!(read(&dir.join("_site/sitemap.xml")).contains("item2"));
+}
+
+/// A page under the authoring audience sees the draft linked, even with
+/// the default `gone`.
+#[test]
+fn authoring_view_keeps_draft_links() {
+    let options = RenderToFileOptions {
+        audience: RenderAudience::Authoring,
+        ..Default::default()
+    };
+    let (dir, _) = render_project_with(options, |d| linked_draft_site(d, ""));
+    let home = read(&dir.join("_site/index.html"));
+    assert!(links_to_item2(&home) >= 5, "{home}");
+}

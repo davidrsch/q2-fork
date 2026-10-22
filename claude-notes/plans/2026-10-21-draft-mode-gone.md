@@ -369,7 +369,21 @@ is one commit or a small group, with tests.
      body text is absent.
    - A `_metadata.yml` fixture setting `draft-mode: unlinked` for one
      directory proves directory scoping.
-4. **Unlinking.**
+4. **Unlinking.** *Done 2026-10-22.* This phase departs from the design
+   above in three ways:
+   - **Nav pruning.** No `draft` field was added to `NavigationItem`.
+     Instead, the Generate transforms prune entries whose
+     project-root-relative href names a non-linkable profile
+     (`transforms/navigation_drafts.rs`). This is equivalent and needs no
+     new field. The sidebar is pruned *after* selection, so a draft page
+     still gets its sidebar.
+   - **Sections.** A sidebar section whose header links a draft keeps its
+     children and only loses the link. Q1 drops the whole section.
+   - **Known gap.** Links written inside config *text* (markdown links in
+     footer/navbar `text:`, handled by
+     `navigation_href::rewrite_config_inlines` over a slice) are not
+     unwrapped. Q1's DOM pass would unwrap them. Body links, nav items,
+     listings, sitemap, search and llms are covered.
    - Nav items, body links (closes bd-p4sc), listings/RSS (with the
      Q-12-19 fix), sitemap (closes bd-4zdf), search, llms.
    - Smoke-all fixtures for `gone`/`unlinked`/`visible`, modelled on the

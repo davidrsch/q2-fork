@@ -527,7 +527,9 @@ pub(super) fn write_sitemap(
         .unwrap_or_default();
 
     let mut entries: Vec<SitemapEntry> = Vec::with_capacity(index.profiles().len());
-    for profile in index.profiles() {
+    // Hidden drafts are not part of the published site (bd-2hy80x1j,
+    // bd-4zdf; Q1 `website-sitemap.ts`).
+    for profile in index.linkable_profiles() {
         let loc_raw = format!("{}/{}", base, profile.output_href.trim_start_matches('/'));
         let loc_escaped = escape_xml_text(&loc_raw);
 
