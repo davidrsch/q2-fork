@@ -734,11 +734,11 @@ test('auth-on: legacy doc renders via actor fallback, continuous identity', asyn
   // change itself); the --me highlight must persist via the actor fallback.
   for (let i = 0; i < 120; i++) {
     const position = await pageA.locator('.replay-drawer__position').innerText();
-    if (position.trim().startsWith('1/')) break;
+    if (position.trim().startsWith('1 /')) break;
     await pageA.keyboard.press('ArrowLeft');
     await pageA.waitForTimeout(120);
   }
-  await expect(pageA.locator('.replay-drawer__position')).toHaveText(/^1\//);
+  await expect(pageA.locator('.replay-drawer__position')).toHaveText(/^1 \//);
   await expect(chip).toHaveAttribute('data-actor-key', legacyKey);
   await expect(chip).toHaveClass(/replay-drawer__actor--me/);
 
