@@ -555,6 +555,7 @@ function ReplayHarness() {
                 style={{ backgroundColor: '#447099' }}
               />
               Ada Lovelace
+              <span className="replay-drawer__actor-you">(you)</span>
             </span>
             <span className="replay-drawer__actor">
               <span

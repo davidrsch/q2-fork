@@ -502,17 +502,26 @@ export const viewToggle = {
 
 /** ReplayDrawer transport and overlays. */
 export const replay = {
-  title: 'Replay',
+  title: 'Version history',
   collapse: 'Collapse replay',
   close: 'Close replay',
+  closeTooltip: 'Close replay (Esc)',
   skipToStart: 'Skip to start',
+  skipToStartTooltip: 'Skip to start (Home)',
   stepBackward: 'Step backward',
+  stepBackwardTooltip: 'Step backward (←)',
   pause: 'Pause',
+  pauseTooltip: 'Pause (Space)',
   play: 'Play',
+  playTooltip: 'Play (Space)',
   stepForward: 'Step forward',
+  stepForwardTooltip: 'Step forward (→)',
   skipToEnd: 'Skip to end',
+  skipToEndTooltip: 'Skip to end (End)',
   playbackSpeed: 'Playback speed',
+  playbackSpeedTooltip: 'Playback speed — cycles 1×, 2×, 4×',
   position: 'Replay position',
-  restore: 'Restore',
+  restore: 'Restore this version',
+  restoreTooltip: 'Replace the document with this version (history is preserved)',
   changeTooltip: (n: number) => `Change ${n}`,
 } as const;

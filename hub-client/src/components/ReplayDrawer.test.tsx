@@ -63,12 +63,18 @@ describe('ReplayDrawer', () => {
   describe('collapsed state', () => {
     it('renders chevron and "History" label', () => {
       render(<ReplayDrawer state={makeState()} controls={controls} />);
-      expect(screen.getByText('Replay')).toBeDefined();
+      expect(screen.getByText('Version history')).toBeDefined();
+    });
+
+    it('renders a history icon and a chevron in the toggle', () => {
+      render(<ReplayDrawer state={makeState()} controls={controls} />);
+      const toggle = screen.getByText('Version history').closest('button')!;
+      expect(toggle.querySelectorAll('svg').length).toBe(2);
     });
 
     it('clicking the bar calls controls.enter()', () => {
       render(<ReplayDrawer state={makeState()} controls={controls} />);
-      fireEvent.click(screen.getByText('Replay'));
+      fireEvent.click(screen.getByText('Version history'));
       expect(controls.enter).toHaveBeenCalled();
     });
   });
@@ -105,15 +111,24 @@ describe('ReplayDrawer', () => {
       expect(controls.seekToEnd).toHaveBeenCalled();
     });
 
-    it('renders Apply button and handle', () => {
-      render(<ReplayDrawer state={activeState} controls={controls} />);
-      expect(screen.getByText('Restore')).toBeDefined();
+    it('renders Restore button and close button (no drag handle)', () => {
+      const { container } = render(<ReplayDrawer state={activeState} controls={controls} />);
+      expect(screen.getByText('Restore this version')).toBeDefined();
       expect(screen.getByLabelText('Close replay')).toBeDefined();
+      expect(container.querySelector('.replay-drawer__handle')).toBeNull();
+    });
+
+    it('restore renders as the primary action with an icon', () => {
+      render(<ReplayDrawer state={activeState} controls={controls} />);
+      const btn = screen.getByText('Restore this version').closest('button')!;
+      expect(btn.className).toContain('replay-drawer__restore');
+      expect(btn.querySelector('svg')).not.toBeNull();
     });
 
     it('renders position indicator', () => {
       render(<ReplayDrawer state={activeState} controls={controls} />);
-      expect(screen.getByText(/43\/100/)).toBeDefined();
+      const current = screen.getByText('43');
+      expect(current.closest('.replay-drawer__position')?.textContent).toBe('43 / 100');
     });
 
     it('renders actor short hash when no identity available', () => {
@@ -203,10 +218,10 @@ describe('ReplayDrawer', () => {
           <ReplayDrawer state={mixed} controls={controls} identities={identities} />,
         );
 
-        // One continuous color band: every actor-colored waveform rect uses
-        // the single identity entry's color.
+        // One continuous color band: every actor-colored waveform rect in
+        // the (played) past group uses the single identity entry's color.
         const rects = container.querySelectorAll<SVGRectElement>(
-          '.replay-waveform rect:not([fill="#1f3460"]):not([fill^="rgba"])',
+          '.replay-waveform__past rect',
         );
         expect(rects.length).toBe(4);
         for (const rect of rects) {
@@ -219,13 +234,13 @@ describe('ReplayDrawer', () => {
       });
     });
 
-    it('Apply button calls controls.apply()', () => {
+    it('Restore button calls controls.apply()', () => {
       render(<ReplayDrawer state={activeState} controls={controls} />);
-      fireEvent.click(screen.getByText('Restore'));
+      fireEvent.click(screen.getByText('Restore this version'));
       expect(controls.apply).toHaveBeenCalled();
     });
 
-    it('handle calls controls.exit()', () => {
+    it('close button calls controls.exit()', () => {
       render(<ReplayDrawer state={activeState} controls={controls} />);
       fireEvent.click(screen.getByLabelText('Close replay'));
       expect(controls.exit).toHaveBeenCalled();
@@ -233,14 +248,14 @@ describe('ReplayDrawer', () => {
 
     it('clicking the toggle calls controls.exit()', () => {
       render(<ReplayDrawer state={activeState} controls={controls} />);
-      fireEvent.click(screen.getByText('Replay'));
+      fireEvent.click(screen.getByText('Version history'));
       expect(controls.exit).toHaveBeenCalled();
     });
 
     it('header row does not exit on click', () => {
       render(<ReplayDrawer state={activeState} controls={controls} />);
       // Clicking the position text in the header should not trigger exit
-      fireEvent.click(screen.getByText(/43\/100/));
+      fireEvent.click(screen.getByText('43'));
       expect(controls.exit).not.toHaveBeenCalled();
     });
 
@@ -253,6 +268,14 @@ describe('ReplayDrawer', () => {
       expect(screen.getByLabelText('Pause')).toBeDefined();
     });
 
+    it('play/pause render as uniform ghost buttons (no filled-play modifier)', () => {
+      render(<ReplayDrawer state={activeState} controls={controls} />);
+      expect(screen.getByLabelText('Play').className).toBe('replay-drawer__btn');
+      const playingState = makeState({ ...activeState, isPlaying: true });
+      render(<ReplayDrawer state={playingState} controls={controls} />);
+      expect(screen.getByLabelText('Pause').className).toBe('replay-drawer__btn');
+    });
+
     it('scrubber onChange calls controls.seekTo()', () => {
       render(<ReplayDrawer state={activeState} controls={controls} />);
       const scrubber = screen.getByRole('slider');
@@ -263,7 +286,7 @@ describe('ReplayDrawer', () => {
     it('speed button shows current speed and calls cycleSpeed', () => {
       render(<ReplayDrawer state={activeState} controls={controls} />);
       const speedBtn = screen.getByLabelText('Playback speed');
-      expect(speedBtn.textContent).toBe('1x');
+      expect(speedBtn.textContent).toBe('1×');
       fireEvent.click(speedBtn);
       expect(controls.cycleSpeed).toHaveBeenCalled();
     });
@@ -271,7 +294,155 @@ describe('ReplayDrawer', () => {
     it('speed button reflects 4x speed', () => {
       const fastState = makeState({ ...activeState, playbackSpeed: 4 });
       render(<ReplayDrawer state={fastState} controls={controls} />);
-      expect(screen.getByLabelText('Playback speed').textContent).toBe('4x');
+      expect(screen.getByLabelText('Playback speed').textContent).toBe('4×');
+    });
+
+    it('adds a (you) suffix to the current user actor chip', () => {
+      mockAuthorId = 'abcdef0123456789abcdef0123456789';
+      const identities = { 'abcdef0123456789abcdef0123456789': { name: 'Alice', color: '#E91E63' } };
+      const { container } = render(
+        <ReplayDrawer state={activeState} controls={controls} identities={identities} />,
+      );
+      expect(container.querySelector('.replay-drawer__actor-you')?.textContent).toBe('(you)');
+    });
+
+    it('omits the (you) suffix for other actors', () => {
+      mockAuthorId = 'different0123456789abcdef01234567';
+      const identities = { 'abcdef0123456789abcdef0123456789': { name: 'Alice', color: '#E91E63' } };
+      const { container } = render(
+        <ReplayDrawer state={activeState} controls={controls} identities={identities} />,
+      );
+      expect(container.querySelector('.replay-drawer__actor-you')).toBeNull();
+    });
+  });
+
+  describe('waveform', () => {
+    const activeState = makeState({
+      isActive: true,
+      historyLength: 100,
+      currentIndex: 42,
+      currentContent: 'hello',
+      timestamp: 1710000000,
+      actor: 'abcdef0123456789abcdef0123456789',
+      chunkActors: Array.from({ length: 10 }, () => [{ actor: 'abcdef0123456789abcdef0123456789', fraction: 1 }]),
+    });
+
+    it('track rect carries a CSS class, not a hard-coded fill', () => {
+      const { container } = render(<ReplayDrawer state={activeState} controls={controls} />);
+      const track = container.querySelector('.replay-waveform__track');
+      expect(track).not.toBeNull();
+      expect(track!.getAttribute('fill')).toBeNull();
+    });
+
+    it('renders past and future clip groups mirroring the actor chunks', () => {
+      const { container } = render(<ReplayDrawer state={activeState} controls={controls} />);
+      const past = container.querySelectorAll('.replay-waveform__past rect');
+      const future = container.querySelectorAll('.replay-waveform__future rect');
+      expect(past.length).toBe(10);
+      expect(future.length).toBe(10);
+    });
+
+    it('clips the waveform at the playhead position', () => {
+      const { container } = render(<ReplayDrawer state={activeState} controls={controls} />);
+      // currentIndex 42 of 100 → 42/99 × 100 = 42.4242…
+      const pastClip = container.querySelector('.replay-waveform__clip-past rect');
+      const futureClip = container.querySelector('.replay-waveform__clip-future rect');
+      expect(parseFloat(pastClip!.getAttribute('width')!)).toBeCloseTo(42.4242, 3);
+      expect(parseFloat(futureClip!.getAttribute('x')!)).toBeCloseTo(42.4242, 3);
+      expect(parseFloat(futureClip!.getAttribute('width')!)).toBeCloseTo(57.5758, 3);
+    });
+
+    it('renders contiguous columns when chunks are few', () => {
+      const { container } = render(<ReplayDrawer state={activeState} controls={controls} />);
+      const rects = container.querySelectorAll<SVGRectElement>('.replay-waveform__past rect');
+      // 10 chunks → columns tile the full width (no gaps).
+      expect(parseFloat(rects[0].getAttribute('x')!)).toBeCloseTo(0, 5);
+      expect(parseFloat(rects[0].getAttribute('width')!)).toBeCloseTo(10, 5);
+      expect(parseFloat(rects[1].getAttribute('x')!)).toBeCloseTo(10, 5);
+    });
+
+    it('renders contiguous columns even when chunks are dense', () => {
+      const denseState = makeState({
+        ...activeState,
+        chunkActors: Array.from({ length: 40 }, () => [{ actor: 'abcdef0123456789abcdef0123456789', fraction: 1 }]),
+      });
+      const { container } = render(<ReplayDrawer state={denseState} controls={controls} />);
+      const rects = container.querySelectorAll<SVGRectElement>('.replay-waveform__past rect');
+      // 40 chunks → column width 2.5, still no gaps (review feedback:
+      // inter-column gaps read as missing data, not separators).
+      expect(rects.length).toBe(40);
+      expect(parseFloat(rects[0].getAttribute('x')!)).toBeCloseTo(0, 5);
+      expect(parseFloat(rects[0].getAttribute('width')!)).toBeCloseTo(2.5, 5);
+      expect(parseFloat(rects[1].getAttribute('x')!)).toBeCloseTo(2.5, 5);
+    });
+
+    it('renders a playhead with caret at the progress position', () => {
+      const { container } = render(<ReplayDrawer state={activeState} controls={controls} />);
+      const playhead = container.querySelector<HTMLElement>('.replay-waveform__playhead');
+      expect(playhead).not.toBeNull();
+      expect(playhead!.style.left.startsWith('42.42')).toBe(true);
+      expect(playhead!.querySelector('.replay-waveform__playhead-caret')).not.toBeNull();
+    });
+
+    it('scrubber hover tooltip shows the timestamp and change number', () => {
+      const tsControls = makeControls({
+        getTimestampAtIndex: vi.fn().mockReturnValue(1710000000),
+      });
+      const { container } = render(<ReplayDrawer state={activeState} controls={tsControls} />);
+      const input = screen.getByRole('slider');
+      vi.spyOn(input, 'getBoundingClientRect').mockReturnValue({
+        left: 0, width: 200, top: 0, right: 200, bottom: 30, height: 30, x: 0, y: 0,
+        toJSON: () => ({}),
+      } as DOMRect);
+      fireEvent.mouseMove(input, { clientX: 100 });
+      const tip = container.querySelector('.replay-drawer__tooltip');
+      expect(tip).not.toBeNull();
+      expect(tip!.textContent).toContain('Change 51');
+      expect(tip!.textContent).toContain('2024');
+    });
+  });
+
+  describe('tooltip shortcut hints', () => {
+    const activeState = makeState({
+      isActive: true,
+      historyLength: 100,
+      currentIndex: 42,
+      currentContent: 'hello',
+      chunkActors: [],
+    });
+
+    it('play/pause tooltip carries the Space hint', () => {
+      render(<ReplayDrawer state={activeState} controls={controls} />);
+      const play = screen.getByLabelText('Play');
+      fireEvent.focus(play);
+      expect(screen.getByRole('tooltip').textContent).toBe('Play (Space)');
+      fireEvent.blur(play);
+    });
+
+    it('step backward tooltip carries the arrow hint', () => {
+      render(<ReplayDrawer state={activeState} controls={controls} />);
+      const step = screen.getByLabelText('Step backward');
+      fireEvent.focus(step);
+      expect(screen.getByRole('tooltip').textContent).toBe('Step backward (←)');
+      fireEvent.blur(step);
+    });
+
+    it('close button tooltip carries the Esc hint', () => {
+      render(<ReplayDrawer state={activeState} controls={controls} />);
+      const close = screen.getByLabelText('Close replay');
+      fireEvent.focus(close);
+      expect(screen.getByRole('tooltip').textContent).toBe('Close replay (Esc)');
+      fireEvent.blur(close);
+    });
+
+    it('restore tooltip states that history is preserved', () => {
+      render(<ReplayDrawer state={activeState} controls={controls} />);
+      const restore = screen.getByText('Restore this version').closest('button')!;
+      fireEvent.focus(restore);
+      expect(screen.getByRole('tooltip').textContent).toBe(
+        'Replace the document with this version (history is preserved)',
+      );
+      fireEvent.blur(restore);
     });
   });
 

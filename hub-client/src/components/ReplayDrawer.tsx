@@ -1,9 +1,23 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo, useId } from 'react';
 import type { ReplayState, ReplayControls } from '../hooks/useReplayMode';
 import { actorColor } from '../utils/palette';
 import type { ActorIdentity } from '@quarto/preview-runtime';
 import { getAuthorId } from '@quarto/preview-runtime';
-import { CommentsExpandIcon, CommentsShowIcon, CommentsHideIcon } from './icons';
+import {
+  CommentsExpandIcon,
+  CommentsShowIcon,
+  CommentsHideIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  HistoryIcon,
+  SkipBackIcon,
+  SkipForwardIcon,
+  PlayIcon,
+  PauseIcon,
+  XIcon,
+  UndoIcon,
+} from './icons';
 import Tooltip from './Tooltip';
 import { replay } from '../strings';
 import './ReplayDrawer.css';
@@ -356,6 +370,9 @@ export default function ReplayDrawer({
     commentsMode !== undefined && onCommentsModeChange !== undefined;
   const currentActorId = getAuthorId();
   const drawerRef = useRef<HTMLDivElement>(null);
+  // Clip-path ids for the waveform past/future split (useId's colons are
+  // legal but awkward inside url(#…) references — strip them).
+  const clipId = useId().replace(/:/g, '');
 
   // Auto-focus the drawer when replay mode activates so keyboard shortcuts work immediately
   useEffect(() => {
@@ -412,7 +429,8 @@ export default function ReplayDrawer({
     const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const index = Math.round(fraction * (state.historyLength - 1));
     const ts = controls.getTimestampAtIndex(index);
-    const text = ts !== null ? formatFullTimestamp(ts) : replay.changeTooltip(index + 1);
+    const change = replay.changeTooltip(index + 1);
+    const text = ts !== null ? `${formatFullTimestamp(ts)} · ${change}` : change;
     // Position relative to the scrubber container
     const left = e.clientX - (scrubberRef.current?.getBoundingClientRect().left ?? rect.left);
     setScrubberTooltip({ left, text });
@@ -428,7 +446,9 @@ export default function ReplayDrawer({
     return identity?.color || actorColor(actor);
   }, [identities]);
 
-  // Build per-chunk stacked rects: each chunk is a vertical column, split by actor fractions.
+  // Build per-chunk stacked rects: each chunk is a vertical column, split
+  // by actor fractions. Columns tile contiguously — gaps between them
+  // read as missing data rather than chunk separators (review feedback).
   const chunkRects = useMemo(() => {
     const chunks = state.chunkActors;
     const n = chunks.length || 1;
@@ -453,7 +473,8 @@ export default function ReplayDrawer({
           onClick={disabled ? undefined : controls.enter}
           disabled={disabled}
         >
-          <span className="replay-drawer__chevron">&#x25B6;</span>
+          <span className="replay-drawer__chevron"><ChevronRightIcon size={12} /></span>
+          <HistoryIcon size={13} />
           <span>{replay.title}</span>
         </button>
         {statusSlot}
@@ -497,16 +518,9 @@ export default function ReplayDrawer({
           onClick={controls.exit}
           aria-label={replay.collapse}
         >
-          <span className="replay-drawer__chevron">&#x25BC;</span>
+          <span className="replay-drawer__chevron"><ChevronDownIcon size={12} /></span>
+          <HistoryIcon size={13} />
           <span>{replay.title}</span>
-        </button>
-
-        <button
-          className="replay-drawer__handle"
-          onClick={controls.exit}
-          aria-label={replay.close}
-        >
-          <span className="replay-drawer__handle-bar" />
         </button>
 
         <div className="replay-drawer__info">
@@ -527,12 +541,14 @@ export default function ReplayDrawer({
                 style={{ backgroundColor: resolveActorColor(state.actor) }}
               />
               {identities?.[state.actor]?.name || state.actor.slice(0, 8)}
+              {currentActorId === state.actor && (
+                <span className="replay-drawer__actor-you">(you)</span>
+              )}
             </span>
           )}
-          <span className="replay-drawer__position">
-            {state.currentIndex + 1}/{state.historyLength}
-          </span>
         </div>
+
+        <span className="replay-drawer__spacer" />
 
         {statusSlot}
         {showEditToggle && (
@@ -553,86 +569,132 @@ export default function ReplayDrawer({
         {showCommentsToggle && (
           <CommentsModeToggle mode={commentsMode!} onChange={onCommentsModeChange!} count={commentsCount} disabled={!!commentsDisabled} />
         )}
+        <Tooltip content={replay.closeTooltip}>
+          <button
+            type="button"
+            className="replay-drawer__close"
+            onClick={controls.exit}
+            aria-label={replay.close}
+          >
+            <XIcon size={13} />
+          </button>
+        </Tooltip>
       </div>
 
       <div className="replay-drawer__controls">
         <div className="replay-drawer__transport">
-          <button
-            className="replay-drawer__btn"
-            onClick={controls.seekToStart}
-            aria-label={replay.skipToStart}
-          >
-            &#x23EE;
-          </button>
-          <button
-            className="replay-drawer__btn"
-            onClick={controls.stepBackward}
-            aria-label={replay.stepBackward}
-          >
-            &#x25C1;
-          </button>
+          <Tooltip content={replay.skipToStartTooltip}>
+            <button
+              className="replay-drawer__btn"
+              onClick={controls.seekToStart}
+              aria-label={replay.skipToStart}
+            >
+              <SkipBackIcon />
+            </button>
+          </Tooltip>
+          <Tooltip content={replay.stepBackwardTooltip}>
+            <button
+              className="replay-drawer__btn"
+              onClick={controls.stepBackward}
+              aria-label={replay.stepBackward}
+            >
+              <ChevronLeftIcon />
+            </button>
+          </Tooltip>
           {state.isPlaying ? (
-            <button
-              className="replay-drawer__btn replay-drawer__btn--play"
-              onClick={controls.pause}
-              aria-label={replay.pause}
-            >
-              &#x23F8;
-            </button>
+            <Tooltip content={replay.pauseTooltip}>
+              <button
+                className="replay-drawer__btn"
+                onClick={controls.pause}
+                aria-label={replay.pause}
+              >
+                <PauseIcon />
+              </button>
+            </Tooltip>
           ) : (
-            <button
-              className="replay-drawer__btn replay-drawer__btn--play"
-              onClick={controls.play}
-              aria-label={replay.play}
-            >
-              &#x25B6;
-            </button>
+            <Tooltip content={replay.playTooltip}>
+              <button
+                className="replay-drawer__btn"
+                onClick={controls.play}
+                aria-label={replay.play}
+              >
+                <PlayIcon />
+              </button>
+            </Tooltip>
           )}
-          <button
-            className="replay-drawer__btn"
-            onClick={controls.stepForward}
-            aria-label={replay.stepForward}
-          >
-            &#x25B7;
-          </button>
-          <button
-            className="replay-drawer__btn"
-            onClick={controls.seekToEnd}
-            aria-label={replay.skipToEnd}
-          >
-            &#x23ED;
-          </button>
-          <button
-            className="replay-drawer__btn replay-drawer__btn--speed"
-            onClick={controls.cycleSpeed}
-            aria-label={replay.playbackSpeed}
-          >
-            {state.playbackSpeed}x
-          </button>
+          <Tooltip content={replay.stepForwardTooltip}>
+            <button
+              className="replay-drawer__btn"
+              onClick={controls.stepForward}
+              aria-label={replay.stepForward}
+            >
+              <ChevronRightIcon />
+            </button>
+          </Tooltip>
+          <Tooltip content={replay.skipToEndTooltip}>
+            <button
+              className="replay-drawer__btn"
+              onClick={controls.seekToEnd}
+              aria-label={replay.skipToEnd}
+            >
+              <SkipForwardIcon />
+            </button>
+          </Tooltip>
+          <Tooltip content={replay.playbackSpeedTooltip}>
+            <button
+              className="replay-drawer__btn replay-drawer__btn--speed"
+              onClick={controls.cycleSpeed}
+              aria-label={replay.playbackSpeed}
+            >
+              {state.playbackSpeed}×
+            </button>
+          </Tooltip>
         </div>
 
         <div className="replay-waveform-container" ref={scrubberRef}>
-          <svg
-            className="replay-waveform"
-            viewBox="0 0 100 1"
-            preserveAspectRatio="none"
-          >
-            {/* Background */}
-            <rect width={100} height={1} fill="#1f3460" />
-            {/* Actor-colored chunk rects */}
-            {chunkRects.map((r, i) => (
-              <rect key={i} x={r.x} y={r.y} width={r.width} height={r.height} fill={r.color} />
-            ))}
-            {/* Dim the portion past the playhead */}
-            <rect x={progressPercent} y={0} width={100 - progressPercent} height={1} fill="rgba(0,0,0,0.6)" />
-            {/* Playhead */}
-            <line
-              x1={progressPercent} y1={0}
-              x2={progressPercent} y2={1}
-              stroke="rgba(255,255,255,0.6)"
-              strokeWidth={0.3}
-            />
-          </svg>
+          {/* Clipped wrapper: rounds the corners and keeps the playhead
+              and caret inside the track — at the end position (the
+              default) nothing hangs past the rounded edge. */}
+          <div className="replay-waveform__clip">
+            <svg
+              className="replay-waveform"
+              viewBox="0 0 100 1"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              {/* Theme-aware track (token, not a hard-coded fill) */}
+              <rect className="replay-waveform__track" width={100} height={1} />
+              <defs>
+                <clipPath id={`${clipId}-past`} className="replay-waveform__clip-past">
+                  <rect x={0} y={0} width={progressPercent} height={1} />
+                </clipPath>
+                <clipPath id={`${clipId}-future`} className="replay-waveform__clip-future">
+                  <rect x={progressPercent} y={0} width={100 - progressPercent} height={1} />
+                </clipPath>
+              </defs>
+              {/* Actor-colored chunks, split at the playhead: the already
+                  replayed past at full color, the future desaturated. */}
+              <g className="replay-waveform__past" clipPath={`url(#${clipId}-past)`}>
+                {chunkRects.map((r, i) => (
+                  <rect key={i} x={r.x} y={r.y} width={r.width} height={r.height} fill={r.color} />
+                ))}
+              </g>
+              <g className="replay-waveform__future" clipPath={`url(#${clipId}-future)`}>
+                {chunkRects.map((r, i) => (
+                  <rect key={i} x={r.x} y={r.y} width={r.width} height={r.height} fill={r.color} />
+                ))}
+              </g>
+            </svg>
+            {/* Playhead: HTML overlay so the caret and overshoot stay crisp
+                under the SVG's non-uniform stretch. */}
+            <span
+              className="replay-waveform__playhead"
+              style={{ left: `${progressPercent}%` }}
+              aria-hidden="true"
+            >
+              <span className="replay-waveform__playhead-caret" />
+            </span>
+          </div>
           <input
             type="range"
             min={0}
@@ -655,12 +717,19 @@ export default function ReplayDrawer({
           )}
         </div>
 
-        <button
-          className="replay-drawer__btn replay-drawer__btn--apply"
-          onClick={controls.apply}
-        >
-          {replay.restore}
-        </button>
+        <span className="replay-drawer__position">
+          <b>{state.currentIndex + 1}</b> / {state.historyLength}
+        </span>
+
+        <Tooltip content={replay.restoreTooltip}>
+          <button
+            className="replay-drawer__restore"
+            onClick={controls.apply}
+          >
+            <UndoIcon size={13} />
+            {replay.restore}
+          </button>
+        </Tooltip>
       </div>
     </div>
   );

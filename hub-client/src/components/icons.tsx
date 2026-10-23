@@ -403,3 +403,95 @@ export function CommentsHideIcon() {
     </LayoutGlyph>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/* Replay drawer icons (bd-belnj273) — transport, title, and actions. */
+/* ------------------------------------------------------------------ */
+
+/** Counterclockwise clock arrow — "version history". */
+export function HistoryIcon({ size }: IconProps) {
+  return (
+    <StrokeIcon size={size}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M12 7v5l4 2" />
+    </StrokeIcon>
+  );
+}
+
+/** Chevron pointing left — "step backward". */
+export function ChevronLeftIcon({ size }: IconProps) {
+  return (
+    <StrokeIcon size={size}>
+      <path d="m14 18-6-6 6-6" />
+    </StrokeIcon>
+  );
+}
+
+/** Chevron pointing right — "step forward". */
+export function ChevronRightIcon({ size }: IconProps) {
+  return (
+    <StrokeIcon size={size}>
+      <path d="m10 18 6-6-6-6" />
+    </StrokeIcon>
+  );
+}
+
+/** Triangle with a bar at its point, facing left — "skip to start". */
+export function SkipBackIcon({ size }: IconProps) {
+  return (
+    <StrokeIcon size={size}>
+      <polygon points="19 20 9 12 19 4 19 20" />
+      <line x1="5" y1="19" x2="5" y2="5" />
+    </StrokeIcon>
+  );
+}
+
+/** Triangle with a bar at its point, facing right — "skip to end". */
+export function SkipForwardIcon({ size }: IconProps) {
+  return (
+    <StrokeIcon size={size}>
+      <polygon points="5 4 15 12 5 20 5 4" />
+      <line x1="19" y1="5" x2="19" y2="19" />
+    </StrokeIcon>
+  );
+}
+
+/** Triangle pointing right — "play". */
+export function PlayIcon({ size }: IconProps) {
+  return (
+    <StrokeIcon size={size}>
+      <polygon points="7 4 20 12 7 20 7 4" />
+    </StrokeIcon>
+  );
+}
+
+/** Two vertical bars — "pause". */
+export function PauseIcon({ size }: IconProps) {
+  return (
+    <StrokeIcon size={size}>
+      <rect x="6" y="4" width="4" height="16" rx="1" />
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+    </StrokeIcon>
+  );
+}
+
+/** Crossed diagonal lines — "close". */
+export function XIcon({ size }: IconProps) {
+  return (
+    <StrokeIcon size={size}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </StrokeIcon>
+  );
+}
+
+/** Counterclockwise arrow returning to a point — "restore a version". */
+export function UndoIcon({ size }: IconProps) {
+  return (
+    <StrokeIcon size={size}>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+    </StrokeIcon>
+  );
+}

@@ -362,13 +362,16 @@
   --view-toggle-active-text: var(--posit-blue-dark-2);
 
   /* Replay drawer */
-  --replay-handle: #c0c0c0;
-  --replay-handle-hover: #888;
   --replay-actor-border: #ccc;
   --replay-actor-me-text: var(--posit-blue-dark-1);
   --replay-actor-me-border: var(--posit-blue-light-2);
   --replay-actor-me-bg: var(--posit-blue-alpha-08);
-  --replay-tooltip-bg: #ffffff;
+  /* Waveform track + scrubber tooltip. The tooltip is an inverted chip
+     (dark on light theme, light on dark) so it stands apart from the
+     drawer surface. */
+  --replay-track: rgba(68, 112, 153, 0.12);
+  --replay-tooltip-bg: var(--posit-blue-dark-2);
+  --replay-tooltip-text: #ffffff;
 
   /* Minimal header */
 
@@ -536,13 +539,14 @@
   --view-toggle-active-text: #c0d0f0;
 
   /* Replay drawer */
-  --replay-handle: #444;
-  --replay-handle-hover: #888;
   --replay-actor-border: #666;
   --replay-actor-me-text: var(--posit-blue-light-2);
   --replay-actor-me-border: var(--posit-blue-dark-1);
   --replay-actor-me-bg: var(--posit-blue-alpha-15);
-  --replay-tooltip-bg: #0f0f1e;
+  /* See the light-theme note on the inverted tooltip chip. */
+  --replay-track: rgba(255, 255, 255, 0.12);
+  --replay-tooltip-bg: var(--posit-blue-light-1);
+  --replay-tooltip-text: var(--posit-blue-dark-3);
 
   /* Minimal header */
 

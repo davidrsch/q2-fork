@@ -33,6 +33,16 @@ import {
   CommentsExpandIcon,
   CommentsShowIcon,
   CommentsHideIcon,
+  HistoryIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  SkipBackIcon,
+  PlayIcon,
+  PauseIcon,
+  SkipForwardIcon,
+  XIcon,
+  UndoIcon,
 } from './icons';
 import '../ui.css';
 
@@ -271,6 +281,18 @@ export default function DevGalleryPage() {
           <SortIcon />
           <MoreIcon />
           <PanelLeftIcon />
+        </Row>
+        <Row label="replay drawer">
+          <HistoryIcon />
+          <ChevronDownIcon />
+          <ChevronLeftIcon />
+          <ChevronRightIcon />
+          <SkipBackIcon />
+          <PlayIcon />
+          <PauseIcon />
+          <SkipForwardIcon />
+          <XIcon />
+          <UndoIcon />
         </Row>
         <Row label="pictograms">
           <LayoutMarkupIcon />
