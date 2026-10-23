@@ -594,6 +594,50 @@ pub(crate) fn transform_list_table_div(div: Div) -> Block {
     })
 }
 
+/// Pop a trailing `Inline::Attr` off a table caption's inlines and merge it
+/// into the table's own attr: kvs override, classes append (deduplicated),
+/// and the id is used only if the table has none. Returns the caption
+/// inlines without the attribute (and without the space before it).
+fn take_caption_attr(
+    table: &mut quarto_pandoc_types::table::Table,
+    mut content: Inlines,
+) -> Inlines {
+    if !matches!(content.last(), Some(Inline::Attr(_))) {
+        return content;
+    }
+    let Some(Inline::Attr(inline_attr)) = content.pop() else {
+        unreachable!("checked above");
+    };
+    let content = trim_inlines(content).0;
+    let (id, classes, kvs) = inline_attr.attr;
+    let source = inline_attr.attr_source;
+
+    // Pad the source vectors so a short (or empty) AttrSourceInfo never
+    // drops a value; a missing source is just `None`.
+    let kv_sources = source
+        .attributes
+        .into_iter()
+        .chain(std::iter::repeat((None, None)));
+    for ((key, value), kv_source) in kvs.into_iter().zip(kv_sources) {
+        table.attr.2.insert(key, value);
+        table.attr_source.attributes.push(kv_source);
+    }
+    let class_sources = source.classes.into_iter().chain(std::iter::repeat(None));
+    for (class, class_source) in classes.into_iter().zip(class_sources) {
+        if !table.attr.1.contains(&class) {
+            table.attr.1.push(class);
+            table.attr_source.classes.push(class_source);
+        }
+    }
+    if table.attr.0.is_empty() && !id.is_empty() {
+        table.attr.0 = id;
+        if table.attr_source.id.is_none() {
+            table.attr_source.id = source.id;
+        }
+    }
+    content
+}
+
 /// Trim leading and trailing spaces from inlines
 pub fn trim_inlines(inlines: Inlines) -> (Inlines, bool) {
     let mut result: Inlines = Vec::new();
@@ -1394,6 +1438,11 @@ pub fn postprocess(
                     }
                 }
 
+                // A trailing `{...}` attribute block belongs to the table, as on
+                // the blank-line caption path (bd-hfghrqvh: product-doc-theme's
+                // `:Caption {.striped .hover}` directly under its table).
+                let caption_inlines = take_caption_attr(&mut table, caption_inlines);
+
                 // Create the caption
                 table.caption = Caption {
                     short: None,
@@ -1749,80 +1798,8 @@ pub fn postprocess(
                     if let Block::CaptionBlock(caption_block) = block {
                         // Look for a preceding Table
                         if let Some(Block::Table(table)) = result.last_mut() {
-                            // Extract any trailing Inline::Attr from caption content
-                            let mut caption_content = caption_block.content.clone();
-                            let mut caption_attr: Option<Attr> = None;
-                            let mut caption_attr_source: Option<
-                                crate::pandoc::attr::AttrSourceInfo,
-                            > = None;
-
-                            if let Some(Inline::Attr(inline_attr)) = caption_content.last() {
-                                caption_attr = Some(inline_attr.attr.clone());
-                                caption_attr_source = Some(inline_attr.attr_source.clone());
-                                caption_content.pop(); // Remove the Attr from caption content
-
-                                // Trim trailing space before the attribute
-                                caption_content = trim_inlines(caption_content).0;
-                            }
-
-                            // If we found attributes in the caption, merge them with the table's attr
-                            if let Some(caption_attr_value) = caption_attr {
-                                // Merge: caption attributes override table attributes
-                                // table.attr is (id, classes, key_values)
-
-                                // Merge key-value pairs (both values and sources)
-                                if let Some(ref caption_attr_source_value) = caption_attr_source {
-                                    for ((key, value), (key_source, value_source)) in
-                                        caption_attr_value
-                                            .2
-                                            .iter()
-                                            .zip(caption_attr_source_value.attributes.iter())
-                                    {
-                                        table.attr.2.insert(key.clone(), value.clone());
-                                        table
-                                            .attr_source
-                                            .attributes
-                                            .push((key_source.clone(), value_source.clone()));
-                                    }
-                                } else {
-                                    // Fallback: merge values without sources
-                                    for (key, value) in caption_attr_value.2 {
-                                        table.attr.2.insert(key, value);
-                                    }
-                                }
-
-                                // Merge classes (both values and sources)
-                                if let Some(ref caption_attr_source_value) = caption_attr_source {
-                                    for (class, class_source) in caption_attr_value
-                                        .1
-                                        .iter()
-                                        .zip(caption_attr_source_value.classes.iter())
-                                    {
-                                        if !table.attr.1.contains(class) {
-                                            table.attr.1.push(class.clone());
-                                            table.attr_source.classes.push(class_source.clone());
-                                        }
-                                    }
-                                } else {
-                                    // Fallback: merge classes without sources
-                                    for class in caption_attr_value.1 {
-                                        if !table.attr.1.contains(&class) {
-                                            table.attr.1.push(class);
-                                        }
-                                    }
-                                }
-
-                                // Use caption id if table doesn't have one (merge both value and source)
-                                if table.attr.0.is_empty() && !caption_attr_value.0.is_empty() {
-                                    table.attr.0 = caption_attr_value.0;
-                                    // Also merge the source location
-                                    if let Some(caption_attr_source_value) = caption_attr_source
-                                        && table.attr_source.id.is_none()
-                                    {
-                                        table.attr_source.id = caption_attr_source_value.id;
-                                    }
-                                }
-                            }
+                            let caption_content =
+                                take_caption_attr(table, caption_block.content.clone());
 
                             // Attach caption to the table (with Attr removed from content)
                             table.caption = Caption {

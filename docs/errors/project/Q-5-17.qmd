@@ -60,7 +60,7 @@ For an extension type, install it and use the full
 `organization/name` form:
 
 ```bash
-quarto add <owner>/<repo>
+q2 add <owner>/<repo>
 ```
 
 ```yaml

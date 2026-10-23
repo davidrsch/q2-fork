@@ -72,6 +72,29 @@ pub fn extract_quoted_text(
     file_id: quarto_source_map::FileId,
     text_start: usize,
 ) -> (String, quarto_source_map::SourceInfo) {
+    extract_quoted_text_into(text, text_start, |anchor| {
+        ProvenanceBuilder::in_file(file_id, anchor)
+    })
+}
+
+/// [`extract_quoted_text`] with the provenance rooted the way `context`
+/// roots node spans: under `parent_source_info` when this parse is a reparse
+/// of an embedded string, in the context's own file otherwise.
+pub fn extract_quoted_text_with_context(
+    text: &str,
+    context: &ASTContext,
+    text_start: usize,
+) -> (String, quarto_source_map::SourceInfo) {
+    extract_quoted_text_into(text, text_start, |anchor| {
+        crate::pandoc::location::provenance_builder_with_context(context, anchor)
+    })
+}
+
+fn extract_quoted_text_into(
+    text: &str,
+    text_start: usize,
+    builder_at: impl FnOnce(usize) -> ProvenanceBuilder,
+) -> (String, quarto_source_map::SourceInfo) {
     let is_double = text.starts_with('"') && text.ends_with('"') && text.len() >= 2;
     let is_single = text.starts_with('\'') && text.ends_with('\'') && text.len() >= 2;
     let (inner, inner_start) = if is_double || is_single {
@@ -80,7 +103,7 @@ pub fn extract_quoted_text(
         (text, text_start)
     };
 
-    let mut builder = ProvenanceBuilder::in_file(file_id, inner_start);
+    let mut builder = builder_at(inner_start);
     let out = unescape_punctuation(inner, inner_start, &mut builder);
     (out, builder.finish())
 }
@@ -550,9 +573,9 @@ pub fn wrap_inline_with_delimiter_spaces(
 
     if let Some(space_range) = &space_info.leading_space_range {
         result.push(Inline::Space(Space {
-            source_info: quarto_source_map::SourceInfo::from_range(
-                context.current_file_id(),
-                space_range.clone(),
+            source_info: crate::pandoc::location::range_to_source_info_with_context(
+                space_range,
+                context,
             ),
         }));
     }
@@ -561,9 +584,9 @@ pub fn wrap_inline_with_delimiter_spaces(
 
     if let Some(space_range) = &space_info.trailing_space_range {
         result.push(Inline::Space(Space {
-            source_info: quarto_source_map::SourceInfo::from_range(
-                context.current_file_id(),
-                space_range.clone(),
+            source_info: crate::pandoc::location::range_to_source_info_with_context(
+                space_range,
+                context,
             ),
         }));
     }
@@ -605,9 +628,9 @@ where
 
     // Build the inline element using existing helper
     let inlines = process_emphasis_like_inline(children, delimiter_name, native_inline);
-    let adjusted_source_info = quarto_source_map::SourceInfo::from_range(
-        context.current_file_id(),
-        space_info.adjusted_range.clone(),
+    let adjusted_source_info = crate::pandoc::location::range_to_source_info_with_context(
+        &space_info.adjusted_range,
+        context,
     );
     let inline = create_inline(inlines, adjusted_source_info);
 

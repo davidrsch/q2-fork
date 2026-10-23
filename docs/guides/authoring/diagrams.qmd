@@ -183,10 +183,32 @@ An uncaptioned diagram, a captioned one, and a numbered one that body
 text refers to. [View source](https://github.com/quarto-dev/q2/tree/main/examples/diagrams/03-mermaid-captions)
 ::::
 
-Diagram blocks accept `label`, `fig-cap`, `fig-scap`, and `fig-alt`. A
-diagram has no execution engine to interpret anything else, so Quarto
-warns about an option it cannot act on rather than passing it silently
-into the drawing.
+## Alignment
+
+`fig-align` places a diagram on the page. It takes `left`, `center`, or
+`right`; `default` means `center`.
+
+````markdown
+```mermaid
+%%| fig-cap: The path a change takes from commit to production.
+%%| fig-align: left
+flowchart LR
+  commit --> build
+  build --> test
+  test --> deploy
+```
+````
+
+The option works on every diagram, whether or not it has a caption or a
+label. A captioned diagram without `fig-align` is centered, like any
+other figure; an uncaptioned one sits at the start of the line.
+
+## Diagram options
+
+Diagram blocks accept `label`, `fig-cap`, `fig-scap`, `fig-alt`, and
+`fig-align`. A diagram has no execution engine to interpret anything
+else, so Quarto warns about an option it cannot act on rather than
+passing it silently into the drawing.
 
 ## How diagrams render
 
@@ -228,6 +250,11 @@ Quarto 1 embeds diagrams through executable cells — ```` ```{mermaid} ````
 — and Quarto 2 does not recognize that form: only the plain
 fence ```` ```mermaid ```` renders. To move a Quarto 1 document over, drop
 the braces; the diagram body and its `%%|` options need no other change.
+
+`fig-align` behaves differently. Quarto 1 accepts it on a diagram cell
+but aligns the diagram only in Reveal.js presentations and multi-panel
+layouts; in an HTML page the diagram stays centered. Quarto 2 applies it
+everywhere.
 
 The following Quarto 1 diagram features are not yet available:
 

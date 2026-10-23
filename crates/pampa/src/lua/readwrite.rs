@@ -18,6 +18,100 @@ use crate::options::{
     merge_with_defaults, normalize_reader_format, normalize_writer_format, parse_format_string,
 };
 
+/// The text one `pandoc.read` call parsed, as a virtual file (GH #884).
+///
+/// Every span in the call's result is rooted at `file_id`. The id is a 53-bit
+/// hash minted at call time (the way `MetadataMergeStage` registers config files
+/// under `quarto_yaml::file_id_for_filename`), so the Lua side needs no
+/// knowledge of the host document's `SourceContext`. A host that drains these
+/// with [`take_read_sources`] and registers them ([`register_read_sources`])
+/// gets diagnostics that show the string itself under `label`. A host that
+/// doesn't leaves the id unknown to its context, so such a diagnostic has no
+/// location, rather than one at the string's offsets in the host document
+/// (which is what a private context's FileId(0) used to produce).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadSource {
+    pub file_id: quarto_source_map::FileId,
+    /// Names the call site, e.g. `doc.qmd[pandoc.read, line 14]` (the same
+    /// shape as a notebook cell's `notebook.ipynb[cell 2, markdown]`).
+    pub label: String,
+    pub content: String,
+}
+
+/// Lua app data: the files `pandoc.read` minted in this state, in call order,
+/// until a host drains them.
+#[derive(Default)]
+struct ReadSources {
+    /// Calls so far, hashed into each id so that two reads of the same text
+    /// from the same line (a loop) still get distinct files.
+    calls: u64,
+    pending: Vec<ReadSource>,
+}
+
+/// Drain the files `pandoc.read` minted in `lua` since the last drain.
+pub fn take_read_sources(lua: &Lua) -> Vec<ReadSource> {
+    lua.app_data_mut::<ReadSources>()
+        .map(|mut sources| std::mem::take(&mut sources.pending))
+        .unwrap_or_default()
+}
+
+/// Register drained `pandoc.read` files in a host context. Ids already
+/// present are skipped: pipeline re-entry, or the astronomically unlikely
+/// collision of a hash id with a sequential one (`add_file_with_id` would
+/// panic on a duplicate).
+pub fn register_read_sources(
+    context: &mut quarto_source_map::SourceContext,
+    sources: &[ReadSource],
+) {
+    for source in sources {
+        if context.get_file(source.file_id).is_none() {
+            // lint:allow(add-file-with-id) — hash-minted id; see `ReadSource`
+            context.add_file_with_id(
+                source.file_id,
+                source.label.clone(),
+                Some(source.content.clone()),
+            );
+        }
+    }
+}
+
+/// Mint the virtual file for one `pandoc.read` call of `content` and
+/// record it in `lua`'s pending sources.
+fn mint_read_source(lua: &Lua, content: String) -> quarto_source_map::FileId {
+    use std::hash::{Hash, Hasher};
+
+    let (chunk, line) = super::diagnostics::get_caller_location(lua);
+    // Lua's chunk-name convention is `@path` for a file and `=name` for a
+    // literal name; lmd names its cells `@<doc>`, while filters pass their
+    // path bare. A multi-line name is an unnamed chunk's own source text.
+    let chunk = match chunk.strip_prefix(['@', '=']) {
+        Some(name) => name.to_string(),
+        None if chunk.contains('\n') => "<string>".to_string(),
+        None => chunk,
+    };
+    let label = format!("{chunk}[pandoc.read, line {line}]");
+
+    if lua.app_data_ref::<ReadSources>().is_none() {
+        lua.set_app_data(ReadSources::default());
+    }
+    let mut sources = lua
+        .app_data_mut::<ReadSources>()
+        .expect("ReadSources was just installed");
+    sources.calls += 1;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    ("pandoc.read", &label, &content, sources.calls).hash(&mut hasher);
+    // 53 bits: the id must survive Lua (a node's location passes through a
+    // Lua table, whose integers are i64, in `quarto.warn(msg, node)`) and
+    // JavaScript (JSON consumers' numbers are exact only to 2^53).
+    let file_id = quarto_source_map::FileId((hasher.finish() & ((1 << 53) - 1)) as usize);
+    sources.pending.push(ReadSource {
+        file_id,
+        label,
+        content,
+    });
+    file_id
+}
+
 /// Register pandoc.read, pandoc.write, and option constructors on the pandoc table.
 pub fn register_pandoc_readwrite(lua: &Lua, pandoc: &Table) -> Result<()> {
     // Register format lists
@@ -268,28 +362,63 @@ fn pandoc_read(lua: &Lua, args: mlua::MultiValue) -> Result<Value> {
             // bd-okfxemnj). The reader's real diagnostics come back as the
             // third tuple element; forwarding those is bd-fwswbxnl.
             let mut trace = crate::utils::output::VerboseOutput::Sink(std::io::sink());
-            match crate::readers::qmd::read(
-                &content,
-                false, // loose
+            // Root every span in this call's own virtual file (GH #884), not
+            // the reader's private FileId(0), which the host document would
+            // read as itself. The reader parses a newline-terminated copy, so
+            // register exactly that text.
+            let mut text = String::from_utf8_lossy(&content).into_owned();
+            if !text.ends_with('\n') {
+                text.push('\n');
+            }
+            let file_id = mint_read_source(lua, text.clone());
+            match crate::readers::qmd::read_as_file(
+                text.as_bytes(),
                 "<pandoc.read>",
+                file_id,
                 &mut trace,
                 true, // prune_errors
-                None, // parent_source_info
             ) {
-                Ok((pandoc, _context, _warnings)) => {
-                    // Convert Rust Pandoc to Lua
+                Ok((pandoc, _context, warnings)) => {
+                    // The reader's warnings are located in this call's text,
+                    // so the host can show them there (bd-fwswbxnl).
+                    super::diagnostics::push_diagnostics(lua, warnings);
                     rust_pandoc_to_lua_table(lua, &pandoc)
                 }
                 Err(diagnostics) => {
-                    // Convert diagnostics to error message
+                    // The Lua error names the problems; the structured
+                    // diagnostics, located in the text, go to the host too,
+                    // for when the error is caught (`pcall`) or the host
+                    // reports the failure alongside them (an lmd cell).
                     let messages: Vec<String> =
                         diagnostics.iter().map(|d| d.title.clone()).collect();
+                    super::diagnostics::push_diagnostics(lua, diagnostics);
                     Err(Error::runtime(format!(
                         "pandoc.read failed: {}",
                         messages.join("; ")
                     )))
                 }
             }
+        }
+        "commonmark" => {
+            // CommonMark through comrak (GH #885): for strings that were never
+            // written as qmd (data-driven prose), where the qmd reader's
+            // reserved braces, bare brackets, quote balancing and `$` math
+            // would reject or rewrite ordinary text. Spans root in this
+            // call's own file, like the qmd arm's. Precision limits are those
+            // of `comrak-to-pandoc`: a `Code` span covers its backticks while
+            // its text does not, link and image URLs carry no provenance, and
+            // a known multi-character entity directly followed by `&` or `\`
+            // can misattribute within a token. Extensions are ignored, as for
+            // every format here.
+            let text = String::from_utf8_lossy(&content).into_owned();
+            let file_id = mint_read_source(lua, text.clone());
+            let pandoc = crate::readers::commonmark::convert(&text, file_id);
+            // The structural desugaring set the other arms get; for
+            // CommonMark input that is in practice the implicit figure.
+            let mut collector = crate::utils::diagnostic_collector::DiagnosticCollector::new();
+            let pandoc = crate::pandoc::desugar::desugar_document(pandoc, &mut collector);
+            super::diagnostics::push_diagnostics(lua, collector.into_diagnostics());
+            rust_pandoc_to_lua_table(lua, &pandoc)
         }
         "json" => {
             // Lua-side `pandoc.read(json, "json")` — the JSON comes from the
@@ -305,12 +434,13 @@ fn pandoc_read(lua: &Lua, args: mlua::MultiValue) -> Result<Value> {
                 Ok((pandoc, _context)) => {
                     // The structural desugaring set (list-table, definition-list,
                     // implicit figure), as for the qmd arm above (where the reader
-                    // applies it) and the CLI's `--from json`. `pandoc.read` has
-                    // no diagnostics channel, so a malformed list-table's Q-2-35
-                    // is not reported here; the div is left as is.
+                    // applies it) and the CLI's `--from json`. Its diagnostics
+                    // (e.g. a malformed list-table's Q-2-35; the div is left as
+                    // is) go to the host (bd-fwswbxnl).
                     let mut collector =
                         crate::utils::diagnostic_collector::DiagnosticCollector::new();
                     let pandoc = crate::pandoc::desugar::desugar_document(pandoc, &mut collector);
+                    super::diagnostics::push_diagnostics(lua, collector.into_diagnostics());
                     rust_pandoc_to_lua_table(lua, &pandoc)
                 }
                 Err(e) => Err(Error::runtime(format!("pandoc.read (json) failed: {}", e))),
@@ -1190,5 +1320,289 @@ mod tests {
 
         let parsed = parse_format_spec_from_lua(&lua, Value::Table(format_table)).unwrap();
         assert_eq!(parsed.base_format, "markdown");
+    }
+
+    /// The file ids every `Original` in a `pandoc.read` result is rooted in,
+    /// read off the JSON writer's source-info pool (`t == 0` entries carry
+    /// their file id in `d`), which holds every span the writer emits,
+    /// including the parents of `Substring`s and the pieces of `Concat`s.
+    ///
+    /// The zero-length `Original(FileId(0), 0, 0)` is skipped: it is
+    /// `location::empty_source_info()`, the reader-wide placeholder for a
+    /// node with no source of its own (e.g. a list table's absent caption),
+    /// not a span into this call's text.
+    fn original_file_ids_of_read(lua: &Lua, chunk: &str) -> Vec<u64> {
+        let value: Value = lua.load(chunk).eval().unwrap();
+        let doc = lua_pandoc_to_rust(lua, value).unwrap();
+        let mut buf = Vec::new();
+        crate::writers::json::write_with_config(
+            &doc,
+            &crate::pandoc::ast_context::ASTContext::anonymous(),
+            &mut buf,
+            &crate::writers::json::JsonConfig::default(),
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&buf).unwrap();
+        let pool = json["astContext"]["p"]
+            .as_array()
+            .expect("the writer emits a source-info pool");
+        let mut ids: Vec<u64> = pool
+            .iter()
+            .filter(|entry| entry["t"] == 0)
+            .filter(|entry| !(entry["d"] == 0 && entry["r"] == serde_json::json!([0, 0])))
+            .map(|entry| entry["d"].as_u64().expect("Original carries its file id"))
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
+    /// GH #884: no span in a `pandoc.read` result may be rooted at
+    /// FileId(0), which in the host document is the document itself. Every
+    /// span roots in the one virtual file the call minted. The fixture
+    /// exercises the reader's node kinds broadly, so a reader path that
+    /// stamps a hard-coded FileId(0) instead of rerooting through
+    /// `parent_source_info` shows up here.
+    #[test]
+    fn pandoc_read_spans_root_in_the_call_s_own_file() {
+        let lua = Lua::new();
+        let pandoc = lua.create_table().unwrap();
+        register_pandoc_readwrite(&lua, &pandoc).unwrap();
+        lua.globals().set("pandoc", pandoc).unwrap();
+
+        let ids = original_file_ids_of_read(
+            &lua,
+            r#"return pandoc.read([==[
+# Heading {#hid .cls}
+
+Para with *emph*, **strong**, `code`{.x}, $x^2$, "quoted", a soft
+break, a hard\
+break, [link](http://a.b "title"){.c}, ![img](i.png){width=10},
+[span]{.s key="v"}, ~~del~~, ^sup^, ~sub~, a note^[inline note], and
+a reference note[^1].
+
+[^1]: The note.
+
+- item one
+- item two
+
+1. ordered
+2. list
+
+Term
+: Definition
+
+> quoted block
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+::: {.callout-note}
+Inside a div.
+:::
+
+```python
+print(1)
+```
+
+::: {.list-table}
+* - a
+  - b
+:::
+]==], "markdown")"#,
+        );
+
+        assert!(
+            !ids.is_empty(),
+            "the result should carry Original spans at all"
+        );
+        assert!(
+            !ids.contains(&0),
+            "a span is rooted at FileId(0), the host document's id: {ids:?}"
+        );
+        assert_eq!(
+            ids.len(),
+            1,
+            "every span should root in the one file this call minted: {ids:?}"
+        );
+    }
+
+    /// Two reads (even from the same line) mint distinct files, so their
+    /// spans never alias each other once registered.
+    #[test]
+    fn two_pandoc_reads_mint_distinct_files() {
+        let lua = Lua::new();
+        let pandoc = lua.create_table().unwrap();
+        register_pandoc_readwrite(&lua, &pandoc).unwrap();
+        lua.globals().set("pandoc", pandoc).unwrap();
+
+        let first = original_file_ids_of_read(&lua, r#"return pandoc.read("same", "markdown")"#);
+        let second = original_file_ids_of_read(&lua, r#"return pandoc.read("same", "markdown")"#);
+        assert_eq!(first.len(), 1);
+        assert_eq!(second.len(), 1);
+        assert_ne!(first, second);
+    }
+
+    /// A Lua state with the full `pandoc` and `quarto` namespaces, as a
+    /// filter sees them.
+    fn filter_lua() -> Lua {
+        let lua = Lua::new();
+        super::super::constructors::register_pandoc_namespace(
+            &lua,
+            std::sync::Arc::new(super::super::runtime::NativeRuntime::new()),
+            super::super::mediabag::create_shared_mediabag(),
+        )
+        .unwrap();
+        super::super::diagnostics::register_quarto_namespace(&lua).unwrap();
+        lua
+    }
+
+    /// bd-fwswbxnl: the reader's own warnings reach the host, located in
+    /// the call's text.
+    #[test]
+    fn pandoc_read_forwards_the_reader_s_warnings() {
+        let lua = filter_lua();
+        lua.load(r#"pandoc.read("Term\n: Definition", "markdown")"#)
+            .exec()
+            .unwrap();
+
+        let diags = super::super::diagnostics::extract_lua_diagnostics(&lua).unwrap();
+        let sources = take_read_sources(&lua);
+        let q_2_54: Vec<_> = diags
+            .iter()
+            .filter(|d| d.code.as_deref() == Some("Q-2-54"))
+            .collect();
+        assert_eq!(q_2_54.len(), 1, "{diags:#?}");
+        let (file, _, _) = q_2_54[0]
+            .location
+            .as_ref()
+            .and_then(|l| l.resolve_byte_range())
+            .expect("located");
+        assert_eq!(sources.len(), 1);
+        assert_eq!(file, sources[0].file_id.0);
+    }
+
+    /// bd-fwswbxnl: the json arm's desugaring diagnostics (here Q-2-35, a
+    /// list-table div that is not a list of lists) reach the host too.
+    #[test]
+    fn pandoc_read_json_forwards_desugaring_diagnostics() {
+        let lua = filter_lua();
+        lua.load(
+            r#"
+            local doc = pandoc.Pandoc({
+              pandoc.Div({ pandoc.Para({ pandoc.Str("x") }) }, pandoc.Attr("", {"list-table"})),
+            })
+            pandoc.read(pandoc.write(doc, "json"), "json")
+        "#,
+        )
+        .exec()
+        .unwrap();
+
+        let diags = super::super::diagnostics::extract_lua_diagnostics(&lua).unwrap();
+        assert!(
+            diags.iter().any(|d| d.code.as_deref() == Some("Q-2-35")),
+            "{diags:#?}"
+        );
+    }
+
+    /// GH #885: `commonmark` reads ordinary prose that the qmd reader rejects
+    /// or rewrites (reserved braces, `$`, bare brackets) as the text it is.
+    #[test]
+    fn pandoc_read_commonmark_keeps_prose_qmd_rejects() {
+        let lua = filter_lua();
+        for text in [
+            "Set {env:VAR} first.",
+            "Uses $HOME and $PATH.",
+            r#"Allowed kinds: ["skills", "commands"] only."#,
+        ] {
+            lua.globals().set("SRC", text).unwrap();
+            let out: String = lua
+                .load("return pandoc.utils.stringify(pandoc.read(SRC, 'commonmark').blocks)")
+                .eval()
+                .unwrap_or_else(|e| panic!("{text:?}: {e}"));
+            assert_eq!(out, text);
+        }
+        // Raw HTML in CommonMark, an error in qmd: it must at least read.
+        lua.load(r#"pandoc.read('Call it "<name>".', 'commonmark')"#)
+            .exec()
+            .unwrap();
+    }
+
+    /// GH #885: commonmark-read spans root in the call's own file, like the
+    /// qmd arm's (no FileId(0), one minted id).
+    #[test]
+    fn pandoc_read_commonmark_spans_root_in_the_call_s_own_file() {
+        let lua = filter_lua();
+        let ids = original_file_ids_of_read(
+            &lua,
+            r#"return pandoc.read([==[
+# Heading
+
+Para with *emph*, **strong**, `code`, a [link](http://a.b "t"),
+![img](i.png), an &amp; entity, a hard\
+break and <https://auto.link>.
+
+- item
+- item
+
+> quote
+
+```python
+x = 1
+```
+]==], "commonmark")"#,
+        );
+        assert!(!ids.is_empty());
+        assert!(!ids.contains(&0), "{ids:?}");
+        assert_eq!(ids.len(), 1, "{ids:?}");
+    }
+
+    /// GH #885: `commonmark` is a listed reader, and its result gets the
+    /// structural desugaring the other arms apply (here, an implicit figure).
+    #[test]
+    fn pandoc_read_commonmark_is_listed_and_desugared() {
+        let lua = filter_lua();
+        let listed: bool = lua.load("return pandoc.readers.commonmark").eval().unwrap();
+        assert!(listed);
+        let kind: String = lua
+            .load("return pandoc.read('![alt](x.png)', 'commonmark').blocks[1].t")
+            .eval()
+            .unwrap();
+        assert_eq!(kind, "Figure");
+    }
+
+    /// Minted ids survive the trip through Lua: `quarto.warn(msg, node)`
+    /// serializes the node's location into a Lua table, whose integers are
+    /// i64, and the JSON writer's ids reach JavaScript, whose numbers are
+    /// exact only to 2^53. Many reads, so that a full-width hash (half of
+    /// which exceed i64::MAX) cannot pass by luck.
+    #[test]
+    fn minted_ids_survive_quarto_warn() {
+        let lua = filter_lua();
+        lua.load(
+            r#"
+            for i = 1, 64 do
+              local doc = pandoc.read("text number " .. i, "commonmark")
+              quarto.warn("w" .. i, doc.blocks[1])
+            end
+        "#,
+        )
+        .exec()
+        .unwrap();
+
+        let sources = take_read_sources(&lua);
+        let diags = super::super::diagnostics::extract_lua_diagnostics(&lua).unwrap();
+        assert_eq!(sources.len(), 64);
+        assert_eq!(diags.len(), 64);
+        for (source, diag) in sources.iter().zip(&diags) {
+            assert!(source.file_id.0 < (1 << 53), "{:?}", source.file_id);
+            let (file, _, _) = diag
+                .location
+                .as_ref()
+                .and_then(|l| l.resolve_byte_range())
+                .unwrap_or_else(|| panic!("{} lost its location", diag.title));
+            assert_eq!(file, source.file_id.0, "{}", diag.title);
+        }
     }
 }

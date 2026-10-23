@@ -59,8 +59,11 @@ If the extension came from a repository, reinstalling is usually
 faster than repairing by hand:
 
 ```bash
-quarto add <owner>/<repo>
+q2 add <owner>/<repo>
 ```
+
+If `q2 add` installed the extension and reports that its files have
+local changes, add `--force` to replace them.
 
 If the manifest is one you are writing, note that `contributes:` must
 be a mapping — a list under `contributes:` is a common and easily

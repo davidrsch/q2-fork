@@ -151,9 +151,9 @@ pub fn process_uri_autolink(
     // Add leading space if present
     if let Some(space_range) = leading_space_range {
         result.push(Inline::Space(Space {
-            source_info: quarto_source_map::SourceInfo::from_range(
-                context.current_file_id(),
-                space_range,
+            source_info: crate::pandoc::location::range_to_source_info_with_context(
+                &space_range,
+                context,
             ),
         }));
     }
@@ -185,16 +185,16 @@ pub fn process_uri_autolink(
     result.push(Inline::Link(Link {
         content: vec![Inline::Str(Str {
             text: display_text.to_string(),
-            source_info: quarto_source_map::SourceInfo::from_range(
-                context.current_file_id(),
-                autolink_range.clone(),
+            source_info: crate::pandoc::location::range_to_source_info_with_context(
+                &autolink_range,
+                context,
             ),
         })],
         attr,
         target: (target, String::new()),
-        source_info: quarto_source_map::SourceInfo::from_range(
-            context.current_file_id(),
-            autolink_range,
+        source_info: crate::pandoc::location::range_to_source_info_with_context(
+            &autolink_range,
+            context,
         ),
         attr_source: crate::pandoc::attr::AttrSourceInfo::empty(),
         target_source: crate::pandoc::attr::TargetSourceInfo::empty(),
@@ -203,9 +203,9 @@ pub fn process_uri_autolink(
     // Add trailing space if present
     if let Some(space_range) = trailing_space_range {
         result.push(Inline::Space(Space {
-            source_info: quarto_source_map::SourceInfo::from_range(
-                context.current_file_id(),
-                space_range,
+            source_info: crate::pandoc::location::range_to_source_info_with_context(
+                &space_range,
+                context,
             ),
         }));
     }
@@ -227,7 +227,7 @@ fn raw_html_fallback(
     error_collector: &mut DiagnosticCollector,
 ) -> PandocNativeIntermediate {
     let trimmed_source_info =
-        quarto_source_map::SourceInfo::from_range(context.current_file_id(), autolink_range);
+        crate::pandoc::location::range_to_source_info_with_context(&autolink_range, context);
 
     let msg = DiagnosticMessageBuilder::warning("HTML element converted to raw HTML")
         .with_code("Q-2-9")
@@ -241,9 +241,9 @@ fn raw_html_fallback(
 
     if let Some(space_range) = leading_space_range {
         result.push(Inline::Space(Space {
-            source_info: quarto_source_map::SourceInfo::from_range(
-                context.current_file_id(),
-                space_range,
+            source_info: crate::pandoc::location::range_to_source_info_with_context(
+                &space_range,
+                context,
             ),
         }));
     }
@@ -256,9 +256,9 @@ fn raw_html_fallback(
 
     if let Some(space_range) = trailing_space_range {
         result.push(Inline::Space(Space {
-            source_info: quarto_source_map::SourceInfo::from_range(
-                context.current_file_id(),
-                space_range,
+            source_info: crate::pandoc::location::range_to_source_info_with_context(
+                &space_range,
+                context,
             ),
         }));
     }

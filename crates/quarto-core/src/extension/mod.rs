@@ -26,7 +26,9 @@ pub mod types;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod build;
 
-pub use discover::{discover_extensions, discover_project_extensions, find_extension};
+pub use discover::{
+    discover_extensions, discover_project_extensions, find_extension, read_extensions_dir,
+};
 pub use read::read_extension;
 pub use types::{Contributes, Extension, ExtensionFilter, ExtensionId};
 

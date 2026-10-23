@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback, useImperativeHandle, useState } from 'r
 import type { Ref } from 'react';
 import morphdom from 'morphdom';
 import { postProcessIframe } from '../utils/iframePostProcessor';
+import { jumpToAnchor } from '../utils/jumpToAnchor';
 import {
   parseDataLoc,
   scrollIframeToLine,
@@ -207,14 +208,8 @@ function MorphIframe({
 
   // Scroll the preview to an anchor element
   const scrollToAnchor = useCallback((anchor: string) => {
-    const iframe = iframeRef.current;
-    const doc = iframe?.contentDocument;
-    if (!doc) return;
-
-    const element = doc.getElementById(anchor);
-    if (element) {
-      element.scrollIntoView({ behavior: 'instant', block: 'start' });
-    }
+    const doc = iframeRef.current?.contentDocument;
+    if (doc) jumpToAnchor(doc, anchor);
   }, []);
 
   // Handler for .qmd link clicks and anchor clicks in the preview

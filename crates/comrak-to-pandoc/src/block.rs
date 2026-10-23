@@ -16,7 +16,7 @@ use hashlink::LinkedHashMap;
 use quarto_pandoc_types::{
     AttrSourceInfo, Block, BlockQuote, Blocks, BulletList, CodeBlock, ConfigValue, Header,
     HorizontalRule, ListAttributes, ListNumberDelim, ListNumberStyle, OrderedList, Pandoc,
-    Paragraph, Plain,
+    Paragraph, Plain, RawBlock,
 };
 use quarto_source_map::SourceInfo;
 use std::cell::RefCell;
@@ -131,11 +131,17 @@ fn convert_block<'a>(
             vec![]
         }
 
-        // Unsupported block types - panic as they're outside CommonMark subset
-        // These require enabling comrak extensions, which we don't support
-        NodeValue::HtmlBlock(_) => {
-            panic!("HtmlBlock not supported in CommonMark subset")
+        // Raw HTML, as pandoc's commonmark reader (raw_html on) produces it.
+        NodeValue::HtmlBlock(html) => {
+            vec![Block::RawBlock(RawBlock {
+                format: "html".to_string(),
+                text: html.literal.clone(),
+                source_info,
+            })]
         }
+
+        // Unsupported block types - panic as they're outside CommonMark.
+        // These require enabling comrak extensions, which we don't support
         NodeValue::Table(_) => {
             panic!("Table (GFM extension) not supported in CommonMark subset")
         }
@@ -188,10 +194,6 @@ fn convert_heading<'a>(
     heading: &NodeHeading,
     source_ctx: Option<&SourceLocationContext>,
 ) -> Block {
-    if heading.setext {
-        panic!("Setext headings not supported in CommonMark subset");
-    }
-
     let ast = node.data.borrow();
     let source_info = get_source_info(&ast, source_ctx);
     let inlines = convert_children_to_inlines_with_source(node, source_ctx);
@@ -205,10 +207,7 @@ fn convert_heading<'a>(
 }
 
 fn convert_code_block(code_block: &NodeCodeBlock, source_info: SourceInfo) -> Block {
-    if !code_block.fenced {
-        panic!("Indented code blocks not supported in CommonMark subset");
-    }
-
+    // Indented code blocks arrive here too, with an empty info string.
     let classes = if code_block.info.is_empty() {
         vec![]
     } else {
@@ -507,18 +506,42 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Setext headings not supported")]
-    fn test_setext_heading_panics() {
-        // Setext-style heading (underlined with === or ---)
-        // This is valid CommonMark but not supported in our subset
-        parse("Heading\n=======\n");
+    fn test_setext_heading() {
+        // Setext-style headings (underlined with === or ---), as pandoc reads them
+        let pandoc = parse("Heading\n=======\n\nSub\n---\n");
+        let levels: Vec<usize> = pandoc
+            .blocks
+            .iter()
+            .map(|b| match b {
+                Block::Header(h) => h.level,
+                other => panic!("Expected Header, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(levels, vec![1, 2]);
     }
 
     #[test]
-    #[should_panic(expected = "Indented code blocks not supported")]
-    fn test_indented_code_block_panics() {
-        // Indented code block (4 spaces)
-        // This is valid CommonMark but not supported in our subset
-        parse("    code\n    more code\n");
+    fn test_indented_code_block() {
+        // Indented code block (4 spaces): a CodeBlock with no classes
+        let pandoc = parse("    code\n    more code\n");
+        match &pandoc.blocks[0] {
+            Block::CodeBlock(cb) => {
+                assert!(cb.attr.1.is_empty());
+                assert!(cb.text.starts_with("code\nmore code"));
+            }
+            other => panic!("Expected CodeBlock, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_html_block_is_raw_html() {
+        let pandoc = parse("<div>\nfoo\n</div>\n");
+        match &pandoc.blocks[0] {
+            Block::RawBlock(rb) => {
+                assert_eq!(rb.format, "html");
+                assert_eq!(rb.text, "<div>\nfoo\n</div>\n");
+            }
+            other => panic!("Expected RawBlock, got {other:?}"),
+        }
     }
 }

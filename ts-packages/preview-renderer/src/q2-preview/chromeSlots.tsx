@@ -48,6 +48,25 @@ interface SlotProps {
 const TRANSPARENT: CSSProperties = { display: 'contents' };
 
 /**
+ * Skip-to-content link (bd-21n09dwj), mirroring template.rs
+ * `SKIP_LINK_PARTIAL`: the first element of the page, ahead of the draft
+ * banner and site header, targeting `<main id="quarto-document-content"
+ * tabindex="-1">`. It sits inside React's `#root`, not as `body`'s first
+ * child as in render; that is the one DOM difference, and the smoke-all
+ * selectors are written so they hold in both. Activating it focuses
+ * `<main>` via `jumpToAnchor` (the preview intercepts `#frag` clicks).
+ * `.visually-hidden-focusable` and the `#quarto-skip-link:focus` rule
+ * come from the preview's compiled theme. React-owned markup, so the
+ * label is escaped by React (render escapes it in Rust).
+ */
+export const SkipLinkSlot = memo(({ text }: { text: string }) => (
+    <a id="quarto-skip-link" className="visually-hidden-focusable" href="#quarto-document-content">
+        {text}
+    </a>
+));
+SkipLinkSlot.displayName = 'SkipLinkSlot';
+
+/**
  * Draft alert banner — Quarto 1's `#quarto-draft-alert` strip for
  * `draft: true` pages (bd-3cpv7dah). `DraftAlertTransform` decides
  * whether a page is a draft and publishes the *localized* label at

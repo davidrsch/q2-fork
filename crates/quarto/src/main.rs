@@ -438,9 +438,45 @@ enum Commands {
     },
 
     /// Add an extension to this folder or project
+    ///
+    /// Installs into `_extensions/` at the project root (or the current
+    /// folder outside a project). A remote source must be trusted: at
+    /// the prompt, or with --trust.
     Add {
-        /// Extension to add
+        /// Extension to add: `<gh-org>/<gh-repo>[/<subdir>][@<ref>]`,
+        /// the URL of a .zip or .tar.gz archive, or a local archive or
+        /// folder
         extension: String,
+
+        /// Install into this folder instead of the project root
+        #[arg(long)]
+        dir: Option<PathBuf>,
+
+        /// Report what would happen without writing anything
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Replace installed extensions even if their files changed
+        /// since they were installed, and reinstall ones that report
+        /// No Change. Does **not** waive the remote-source trust
+        /// prompt — see --trust.
+        #[arg(long)]
+        force: bool,
+
+        /// Skip the trust prompt for a remote source. Does **not**
+        /// override local-change checks — see --force.
+        #[arg(long)]
+        trust: bool,
+
+        /// Never prompt interactively, even on a terminal. A remote
+        /// source then needs --trust.
+        #[arg(long)]
+        no_prompt: bool,
+
+        /// Emit one JSON result object on stdout; diagnostics go to
+        /// stderr as JSON lines
+        #[arg(long)]
+        json: bool,
     },
 
     /// Updates an extension or global dependency
@@ -1719,7 +1755,23 @@ fn main() -> Result<()> {
                 json,
             }),
         },
-        Commands::Add { .. } => commands::add::execute(),
+        Commands::Add {
+            extension,
+            dir,
+            dry_run,
+            force,
+            trust,
+            no_prompt,
+            json,
+        } => commands::add::execute(commands::add::AddArgs {
+            extension,
+            dir,
+            dry_run,
+            force,
+            trust,
+            no_prompt,
+            json,
+        }),
         Commands::Update { .. } => commands::update::execute(),
         Commands::Remove { .. } => commands::remove::execute(),
         Commands::Convert { .. } => commands::convert::execute(),

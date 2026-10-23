@@ -1,6 +1,7 @@
 //! quarto integration test binary.
 //! See bd-xvdop / claude-notes/plans/2026-05-28-integration-test-consolidation.md.
 
+pub mod add;
 pub mod attribution_cli_e2e;
 pub mod book_docx_diagnostic_e2e;
 pub mod book_scope_cli_e2e;
@@ -26,6 +27,7 @@ pub mod metadata_flag_cli_e2e;
 pub mod nested_projects_cli;
 pub mod nightly_gate;
 pub mod output_dir_images_e2e;
+pub mod pandoc_read_locations_e2e;
 pub mod pandoc_read_stderr_e2e;
 pub mod preview_cli;
 pub mod preview_static_e2e;

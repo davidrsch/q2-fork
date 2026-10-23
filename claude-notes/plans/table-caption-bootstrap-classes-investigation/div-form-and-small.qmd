@@ -1,0 +1,18 @@
+---
+title: div form and small
+---
+
+::: {#tbl-div .striped}
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+Div caption
+:::
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+: Small {.small}

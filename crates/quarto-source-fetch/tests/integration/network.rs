@@ -124,7 +124,8 @@ fn a_main_default_repository_resolves_on_the_first_request() {
         &fake,
         &ExtractLimits::default(),
     )
-    .unwrap();
+    .unwrap()
+    .root;
 
     assert_eq!(fake.requests(), [url]);
     assert!(root.join("_brand.yml").is_file());
@@ -146,7 +147,8 @@ fn a_master_default_repository_resolves_after_main_404s() {
         &fake,
         &ExtractLimits::default(),
     )
-    .unwrap();
+    .unwrap()
+    .root;
 
     assert_eq!(
         fake.requests(),
@@ -225,7 +227,8 @@ fn a_ref_containing_a_slash_extracts_correctly() {
         &fake,
         &ExtractLimits::default(),
     )
-    .unwrap();
+    .unwrap()
+    .root;
 
     assert!(root.join("_brand.yml").is_file());
     assert!(root.ends_with("repo-feature-foo"));
@@ -246,7 +249,8 @@ fn a_tag_beginning_with_v_extracts_correctly() {
         &fake,
         &ExtractLimits::default(),
     )
-    .unwrap();
+    .unwrap()
+    .root;
 
     assert!(root.join("_brand.yml").is_file());
 }
@@ -265,7 +269,8 @@ fn an_archive_root_named_nothing_like_the_repo_still_works() {
         &fake,
         &ExtractLimits::default(),
     )
-    .unwrap();
+    .unwrap()
+    .root;
     assert!(root.join("_brand.yml").is_file());
 }
 
@@ -293,7 +298,8 @@ fn a_subdirectory_target_selects_the_brand_beneath_the_root() {
         &fake,
         &ExtractLimits::default(),
     )
-    .unwrap();
+    .unwrap()
+    .root;
 
     assert_eq!(
         std::fs::read_to_string(root.join("_brand.yml")).unwrap(),
@@ -340,7 +346,8 @@ fn a_local_directory_is_used_in_place() {
         &FakeFetch::new(),
         &ExtractLimits::default(),
     )
-    .unwrap();
+    .unwrap()
+    .root;
 
     assert_eq!(root, dir.path(), "a local directory must not be copied");
 }
@@ -358,7 +365,8 @@ fn a_local_archive_is_extracted_and_rooted() {
         &FakeFetch::new(),
         &ExtractLimits::default(),
     )
-    .unwrap();
+    .unwrap()
+    .root;
 
     assert!(root.join("_brand.yml").is_file());
     assert!(
@@ -437,7 +445,8 @@ fn the_real_client_downloads_and_extracts_from_a_url() {
 
     let target = resolve_target(&format!("{}/archive", server.base_url)).unwrap();
     let root = fetch_into(&target, work.path(), &UreqFetch, &ExtractLimits::default())
-        .expect("the real client should fetch from localhost");
+        .expect("the real client should fetch from localhost")
+        .root;
 
     assert_eq!(
         std::fs::read_to_string(root.join("_brand.yml")).unwrap(),
@@ -506,7 +515,8 @@ fn fake_and_real_paths_agree_on_the_same_archive() {
         &fake,
         &ExtractLimits::default(),
     )
-    .unwrap();
+    .unwrap()
+    .root;
 
     let requests = Arc::new(Mutex::new(Vec::new()));
     let server = TestServer::start(body, Arc::clone(&requests));
@@ -518,7 +528,8 @@ fn fake_and_real_paths_agree_on_the_same_archive() {
         &UreqFetch,
         &ExtractLimits::default(),
     )
-    .unwrap();
+    .unwrap()
+    .root;
 
     assert_eq!(
         std::fs::read_to_string(fake_root.join("_brand.yml")).unwrap(),

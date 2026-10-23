@@ -80,11 +80,17 @@ fn read_up_to(reader: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> 
     Ok(filled)
 }
 
-/// What an extraction produced, for logging and tests.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What an extraction produced.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtractSummary {
     pub entries: usize,
     pub bytes: u64,
+    /// Symlink and hardlink entries that were skipped, as sanitized
+    /// paths relative to the destination. Links are never created (see
+    /// `ExtractSink::link`), so whatever a source reached through one is
+    /// absent from the extracted tree. Callers that install part of the
+    /// tree use this to refuse — or warn — when that part needed a link.
+    pub skipped_links: Vec<PathBuf>,
 }
 
 /// Extract `archive` into `dest`, enforcing `limits`.
@@ -122,6 +128,7 @@ struct ExtractSink<'a> {
     limits: &'a ExtractLimits,
     entries: usize,
     bytes: u64,
+    skipped_links: Vec<PathBuf>,
 }
 
 impl<'a> ExtractSink<'a> {
@@ -131,6 +138,7 @@ impl<'a> ExtractSink<'a> {
             limits,
             entries: 0,
             bytes: 0,
+            skipped_links: Vec::new(),
         }
     }
 
@@ -138,6 +146,7 @@ impl<'a> ExtractSink<'a> {
         ExtractSummary {
             entries: self.entries,
             bytes: self.bytes,
+            skipped_links: self.skipped_links.clone(),
         }
     }
 
@@ -165,6 +174,48 @@ impl<'a> ExtractSink<'a> {
             });
         }
         Ok(target)
+    }
+
+    /// Account for an entry we read past without writing (a pax global
+    /// header). The tar reader still decompresses its payload, so it
+    /// counts against both ceilings exactly as a written file would.
+    fn skip(&mut self, declared: u64) -> Result<(), FetchError> {
+        self.entries += 1;
+        if self.entries > self.limits.max_entries {
+            return Err(FetchError::TooManyEntries {
+                limit: self.limits.max_entries,
+            });
+        }
+        self.bytes = self.bytes.saturating_add(declared);
+        if self.bytes > self.limits.max_uncompressed_bytes {
+            return Err(FetchError::TooLarge {
+                limit: self.limits.max_uncompressed_bytes,
+            });
+        }
+        Ok(())
+    }
+
+    /// Record a symlink or hardlink entry **without creating it**.
+    ///
+    /// A link is the setup move for an escape: a *later* entry written
+    /// through it lands wherever it points. Never creating links removes
+    /// that move entirely — a later entry under the link's name becomes
+    /// a plain path inside the destination. Real repositories do ship
+    /// links (posit-dev/product-doc-theme links `example/_extensions` to
+    /// `../_extensions`), and refusing the whole archive over one that
+    /// sits outside the part being installed helps nobody, so the link
+    /// is skipped and reported instead (bd-rfz4e3bw).
+    ///
+    /// The name is still validated and counted, exactly like a file: a
+    /// hostile name is refused even though nothing would be written.
+    fn link(&mut self, name: &str) -> Result<(), FetchError> {
+        let target = self.accept(name)?;
+        let relative = target
+            .strip_prefix(&self.dest)
+            .map(Path::to_path_buf)
+            .unwrap_or(target);
+        self.skipped_links.push(relative);
+        Ok(())
     }
 
     fn directory(&mut self, name: &str) -> Result<(), FetchError> {
@@ -324,6 +375,20 @@ fn extract_tar_gz(archive: &Path, sink: &mut ExtractSink) -> Result<(), FetchErr
             sink.directory(&name)?;
             continue;
         }
+        // `git archive` — and so every GitHub archive — begins with a
+        // pax global header (`pax_global_header`) holding the commit id.
+        // The tar crate applies per-entry pax and GNU long-name records
+        // itself but yields a global header as an entry, and never lets
+        // it affect later entries' names. It is metadata, not content:
+        // skip it, never write it, still charge it to the budgets.
+        if kind == tar::EntryType::XGlobalHeader {
+            sink.skip(header.size().unwrap_or(0))?;
+            continue;
+        }
+        if matches!(kind, tar::EntryType::Symlink | tar::EntryType::Link) {
+            sink.link(&name)?;
+            continue;
+        }
         if let Some(rejected) = rejected_tar_kind(kind) {
             return Err(FetchError::UnsupportedEntryType {
                 name,
@@ -345,6 +410,8 @@ fn rejected_tar_kind(kind: tar::EntryType) -> Option<&'static str> {
     use tar::EntryType;
     match kind {
         EntryType::Regular | EntryType::Continuous => None,
+        // Links never reach here: `extract_tar_gz` skips them (see
+        // `ExtractSink::link`). Kept so the classification stays total.
         EntryType::Symlink => Some("symbolic link"),
         EntryType::Link => Some("hard link"),
         EntryType::Char => Some("character device"),
@@ -352,7 +419,8 @@ fn rejected_tar_kind(kind: tar::EntryType) -> Option<&'static str> {
         EntryType::Fifo => Some("named pipe"),
         // GNU/pax extension records are metadata the tar crate applies
         // to the following entry; they are not content and must not be
-        // written out as files.
+        // written out as files. (A pax *global* header never reaches
+        // here: `extract_tar_gz` skips it.)
         EntryType::GNULongName
         | EntryType::GNULongLink
         | EntryType::XGlobalHeader
@@ -404,10 +472,8 @@ fn extract_zip(archive: &Path, sink: &mut ExtractSink) -> Result<(), FetchError>
             continue;
         }
         if entry.is_symlink() {
-            return Err(FetchError::UnsupportedEntryType {
-                name: raw_name,
-                kind: "symbolic link",
-            });
+            sink.link(&raw_name)?;
+            continue;
         }
 
         let declared = entry.size();

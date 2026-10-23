@@ -116,6 +116,11 @@ pub struct FilterOutput {
     /// (`bd-o8pr` Phase 3). The orchestrator resolves each path
     /// against the project root and the document's parent dir.
     pub resources: Vec<std::path::PathBuf>,
+    /// The virtual files `pandoc.read` minted while the filter ran (GH #884),
+    /// already registered in `context.source_context`. A host that keeps
+    /// another `SourceContext` for the same document registers them there
+    /// too ([`super::register_read_sources`]).
+    pub read_sources: Vec<super::ReadSource>,
 }
 
 /// Create the Lua environment exactly as user filters see it.
@@ -358,14 +363,18 @@ pub async fn apply_lua_filter_with(
     let html_dependencies = super::quarto_doc::extract_html_dependencies(&lua)?;
     let text_includes = super::quarto_doc::extract_text_includes(&lua)?;
     let resources = super::quarto_doc::extract_resources(&lua)?;
+    let read_sources = super::take_read_sources(&lua);
+    let mut context = context.clone();
+    super::register_read_sources(&mut context.source_context, &read_sources);
 
     Ok(FilterOutput {
         pandoc: filtered_pandoc,
-        context: context.clone(),
+        context,
         diagnostics,
         html_dependencies,
         text_includes,
         resources,
+        read_sources,
     })
 }
 
@@ -412,6 +421,7 @@ pub async fn apply_lua_filters_with(
     let mut all_html_dependencies = Vec::new();
     let mut all_text_includes = Vec::new();
     let mut all_resources = Vec::new();
+    let mut all_read_sources = Vec::new();
 
     for filter_path in filter_paths {
         let output = apply_lua_filter_with(
@@ -430,6 +440,7 @@ pub async fn apply_lua_filters_with(
         all_html_dependencies.extend(output.html_dependencies);
         all_text_includes.extend(output.text_includes);
         all_resources.extend(output.resources);
+        all_read_sources.extend(output.read_sources);
     }
 
     Ok(FilterOutput {
@@ -439,6 +450,7 @@ pub async fn apply_lua_filters_with(
         html_dependencies: all_html_dependencies,
         text_includes: all_text_includes,
         resources: all_resources,
+        read_sources: all_read_sources,
     })
 }
 

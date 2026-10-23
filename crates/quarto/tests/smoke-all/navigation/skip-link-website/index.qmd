@@ -8,8 +8,11 @@ _quarto:
         -
           # Ahead of the navbar and sidebar it lets keyboard users skip
           # (bd-rbd3jq4n; Quarto 1 tests/smoke/site/render-skip-link.test.ts).
-          - 'body > a#quarto-skip-link:first-child[href="#quarto-document-content"]'
-          - 'body > a#quarto-skip-link ~ header#quarto-header'
+          # Not anchored to `body >`, which the hub preview's `#root`
+          # wrapper breaks (bd-21n09dwj); the sibling selector still
+          # pins the link ahead of the header in both DOMs.
+          - 'a#quarto-skip-link[href="#quarto-document-content"]'
+          - 'a#quarto-skip-link ~ header#quarto-header'
           - 'main#quarto-document-content[tabindex="-1"]'
         - []
 ---

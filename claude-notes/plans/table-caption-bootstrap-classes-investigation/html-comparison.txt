@@ -1,0 +1,22 @@
+# q2 @ c68647049
+<div id="tbl-div" class="striped quarto-float quarto-figure quarto-figure-center">
+<table class="caption-top table">
+<figcaption id="tbl-div-caption" class="quarto-float-caption-bottom quarto-float-caption quarto-float-tbl">
+<table class="small caption-top table">
+<table class="striped hover my-class caption-top table">
+<div id="tbl-one" class="bordered sm quarto-float quarto-figure quarto-figure-center">
+<table class="caption-top table">
+<figcaption id="tbl-one-caption" class="quarto-float-caption-bottom quarto-float-caption quarto-float-tbl">
+<table class="responsive-md primary caption-top table">
+
+# Quarto 1 (99.9.9)
+<div id="tbl-div" class="striped quarto-float quarto-figure quarto-figure-center anchored">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-div-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<table class="table-striped caption-top table">
+<table class="small table-sm caption-top table">
+<table class="table-striped table-hover my-class caption-top table">
+<div id="tbl-one" class="bordered sm quarto-float quarto-figure quarto-figure-center anchored">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-one-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<table class="table-bordered table-sm small caption-top table">
+<div class="table-responsive-md">
+<table class="table-primary caption-top table">

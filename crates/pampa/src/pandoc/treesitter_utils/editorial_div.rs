@@ -48,7 +48,7 @@ pub fn process_editorial_div(
             if let PandocNativeIntermediate::IntermediateUnknown(range) = child {
                 marker = Some((
                     class,
-                    quarto_source_map::SourceInfo::from_range(context.current_file_id(), range),
+                    crate::pandoc::location::range_to_source_info_with_context(&range, context),
                 ));
             }
             continue;

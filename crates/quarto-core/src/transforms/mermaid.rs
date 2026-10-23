@@ -242,12 +242,27 @@ fn mermaid_runtime_url(ctx: &RenderContext) -> String {
 /// [`CodeBlockRenderTransform`](super::CodeBlockRenderTransform)'s
 /// walker so nested diagrams (columns, slide sections, list items)
 /// convert too.
+///
+/// A `fig-align` still on the block means no figure wrapper harvested
+/// it — a bare diagram (bd-2pmjmjmj). It becomes a
+/// `quarto-figure-<align>` class on the `<pre>` itself, as Q1 does for a
+/// bare image (`quarto-post/html.lua`); the stylesheet aligns the
+/// rendered `<svg>` from either position.
 fn convert_mermaid_blocks(blocks: &mut Blocks, found: &mut bool) {
     for block in blocks.iter_mut() {
         match block {
             Block::CodeBlock(cb) if cb.attr.1.iter().any(|c| c == "mermaid") => {
                 *found = true;
-                let text = format!("<pre class=\"mermaid\">\n{}\n</pre>", html_escape(&cb.text));
+                let class = match cb.attr.2.get("fig-align").map(String::as_str) {
+                    // Allow-listed rather than escaped: an attribute-form
+                    // block (`{.mermaid fig-align=...}`) skips the cell
+                    // option's validation.
+                    Some(align @ ("left" | "center" | "right")) => {
+                        format!("mermaid quarto-figure-{align}")
+                    }
+                    _ => "mermaid".to_string(),
+                };
+                let text = format!("<pre class=\"{class}\">\n{}\n</pre>", html_escape(&cb.text));
                 let source_info = cb.source_info.clone();
                 *block = Block::RawBlock(RawBlock {
                     format: "html".to_string(),
@@ -851,6 +866,39 @@ mod tests {
         };
         run_transform(&mut ast, Format::html()).await;
         assert!(matches!(&ast.blocks[0], Block::RawBlock(_)));
+    }
+
+    fn pre_for_fig_align(align: &str) -> String {
+        let mut block = make_codeblock(&["mermaid"], "flowchart LR");
+        if let Block::CodeBlock(cb) = &mut block {
+            cb.attr.2.insert("fig-align".to_string(), align.to_string());
+        }
+        let mut blocks = vec![block];
+        let mut found = false;
+        convert_mermaid_blocks(&mut blocks, &mut found);
+        let Block::RawBlock(raw) = &blocks[0] else {
+            panic!("expected RawBlock; got {:?}", blocks[0]);
+        };
+        raw.text.lines().next().unwrap().to_string()
+    }
+
+    /// bd-2pmjmjmj: a bare diagram's `fig-align` (left on the block
+    /// because no figure wrapper harvested it) becomes the alignment
+    /// class on the `<pre>`.
+    #[test]
+    fn bare_fig_align_becomes_pre_class() {
+        assert_eq!(
+            pre_for_fig_align("right"),
+            "<pre class=\"mermaid quarto-figure-right\">"
+        );
+    }
+
+    /// The attribute form (`{.mermaid fig-align=...}`) never went through
+    /// the cell option's validation, so an unknown value must not reach
+    /// the class attribute.
+    #[test]
+    fn unknown_fig_align_value_is_not_emitted() {
+        assert_eq!(pre_for_fig_align("\"><script>"), "<pre class=\"mermaid\">");
     }
 
     /// Non-HTML-family formats: transform is a no-op (self-gated).

@@ -24,6 +24,6 @@ mod target;
 
 pub use archive::{ArchiveFormat, ExtractSummary, detect_format, extract_into};
 pub use error::FetchError;
-pub use fetch::{SourceFetch, UreqFetch, derive_archive_root, fetch_into};
+pub use fetch::{FetchedSource, SourceFetch, UreqFetch, derive_archive_root, fetch_into};
 pub use limits::ExtractLimits;
 pub use target::{RemoteTarget, Target, resolve_target};

@@ -314,6 +314,14 @@ impl PipelineStage for AstTransformsStage {
         // Transfer any diagnostics collected during transforms
         ctx.diagnostics.extend(render_ctx.diagnostics);
 
+        // `render_ctx` borrowed `doc.ast_context.source_context`; with it
+        // gone, register the text `pandoc.read` parsed in shortcode handlers
+        // (GH #884) in both contexts, in the same order.
+        let read_sources = render_ctx.read_sources;
+        for source_context in [&mut doc.ast_context.source_context, &mut doc.source_context] {
+            pampa::lua::register_read_sources(source_context, &read_sources);
+        }
+
         // Handle result
         result.map_err(|e| PipelineError::stage_error(self.name(), e.to_string()))?;
 

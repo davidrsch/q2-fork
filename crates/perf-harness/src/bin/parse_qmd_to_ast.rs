@@ -85,6 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             example_list_counter: std::cell::Cell::new(1),
             source_context: result.source_context.clone(),
             parent_source_info: None,
+            ..ASTContext::anonymous()
         };
 
         let mut buf = Vec::new();

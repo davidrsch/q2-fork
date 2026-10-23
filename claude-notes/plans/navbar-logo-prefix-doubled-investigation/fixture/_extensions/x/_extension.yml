@@ -1,0 +1,18 @@
+title: X
+author: Test
+version: 1.0.0
+contributes:
+  project:
+    project:
+      type: website
+    website:
+      title: Repro
+      favicon: assets/logo.svg
+      navbar:
+        logo: assets/logo.svg
+        logo-href: assets/logo.svg
+        left:
+          - href: index.qmd
+            text: Home
+      sidebar:
+        logo: assets/logo.svg

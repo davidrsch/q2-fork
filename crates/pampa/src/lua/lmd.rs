@@ -215,6 +215,13 @@ impl LmdRuntime {
         Ok(())
     }
 
+    /// The virtual files `pandoc.read` minted in the cells (GH #884), drained
+    /// so the next call starts empty. The host registers them in the
+    /// document's source contexts ([`super::register_read_sources`]).
+    pub fn take_read_sources(&self) -> Vec<super::ReadSource> {
+        super::take_read_sources(&self.lua)
+    }
+
     /// Diagnostics the cells recorded through `quarto.warn` / `quarto.error`, drained so the
     /// next call starts empty.
     pub fn take_diagnostics(&self) -> Vec<DiagnosticMessage> {
