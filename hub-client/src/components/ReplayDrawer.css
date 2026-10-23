@@ -29,7 +29,10 @@
   outline-offset: calc(-1 * var(--focus-ring-offset));
 }
 
-/* Title toggle — sentence-case label with history icon + chevron. */
+/* Title toggle — sentence-case label with history icon + chevron.
+   line-height: 1 matches the timestamp beside it, so both texts share
+   a baseline regardless of which line-height an environment inherits
+   (buttons get "normal" from the UA sheet; divs inherit the app's). */
 .replay-drawer__toggle {
   display: flex;
   align-items: center;
@@ -39,6 +42,7 @@
   border: none;
   color: var(--editor-text-dim);
   font-size: 12px;
+  line-height: 1;
   font-weight: 600;
   letter-spacing: 0.01em;
   cursor: pointer;
@@ -157,6 +161,7 @@
 
 .replay-drawer__timestamp {
   font-size: 12px;
+  line-height: 1;
   color: var(--editor-text-dim);
   display: flex;
   align-items: baseline;
