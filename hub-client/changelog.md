@@ -23,6 +23,10 @@ WASM rebuild is needed for a changelog-only edit.
 
 -->
 
+### 2026-10-23
+
+- [`ed9fbe476`](https://github.com/quarto-dev/q2/commits/ed9fbe476): The replay drawer is redesigned: it's now called "Version history", the history waveform follows the theme with the unreplayed portion faded and a clear playhead, transport buttons are proper icons with keyboard shortcuts in their tooltips, and restoring an older state is a prominent "Restore this version" button.
+
 ### 2026-10-22
 
 - [`10c2aaf81`](https://github.com/quarto-dev/q2/commits/10c2aaf81): A navbar logo, favicon or logo link bundled with an extension's custom project type now loads on every page, including pages in subdirectories, and navbar links set by the extension point at the project's pages instead of into the extension's folder.
