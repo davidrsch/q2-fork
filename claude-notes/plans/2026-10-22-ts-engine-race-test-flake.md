@@ -2,7 +2,7 @@
 title: 'CI flake: ts_engine test_race_free_instance_exclusive times out (bd-cig41dcs)'
 date: 2026-10-22
 description: 'A polling watcher thread in the ts_engine race test can give up early or answer the wrong request id, which leaves both ensure_launched calls waiting until the watchdog fires; fix it by matching on recorded request ids and waiting until the response is delivered.'
-status: ready  # Design aligned with user 2026-10-22
+status: done  # Implemented 2026-10-22 on braid/bd-cig41dcs-ts-engine-race-flake
 braid:
   strand: bd-cig41dcs
 ---
