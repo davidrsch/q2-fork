@@ -22,8 +22,8 @@ import type { NodeArgs, CodeBlock as CodeBlockType } from '../../framework';
  * dynamic-import path is exercised in browser e2e (Phase 4).
  */
 
-const codeBlock = (classes: string[], code: string): CodeBlockType =>
-    ({ t: 'CodeBlock', c: [['', classes, []], code] }) as CodeBlockType;
+const codeBlock = (classes: string[], code: string, attrs: [string, string][] = []): CodeBlockType =>
+    ({ t: 'CodeBlock', c: [['', classes, attrs], code] }) as CodeBlockType;
 
 function renderNode(node: CodeBlockType, Component = MermaidCodeBlock) {
     const args = { node, setLocalAst: () => {} } as NodeArgs<CodeBlockType>;
@@ -65,6 +65,22 @@ describe('MermaidCodeBlock', () => {
         expect(renderCalls).toEqual(['flowchart LR\n  a --> b']);
         // The raw source must not be shown as code once rendered.
         expect(container.querySelector('pre')).toBeNull();
+    });
+
+    // bd-2pmjmjmj: `%%| fig-align` reaches the preview as a CodeBlock
+    // attribute and aligns the diagram.
+    it('aligns the diagram from its fig-align attribute', () => {
+        installFakeMermaid();
+        const { container } = renderNode(codeBlock(['mermaid'], 'flowchart LR', [['fig-align', 'right']]));
+        const wrapper = container.querySelector<HTMLElement>('[data-mermaid-diagram]');
+        expect(wrapper?.style.textAlign).toBe('right');
+    });
+
+    it('ignores a fig-align value that is not an alignment', () => {
+        installFakeMermaid();
+        const { container } = renderNode(codeBlock(['mermaid'], 'flowchart LR', [['fig-align', 'middle']]));
+        const wrapper = container.querySelector<HTMLElement>('[data-mermaid-diagram]');
+        expect(wrapper?.style.textAlign).toBe('');
     });
 
     it('delegates non-mermaid code blocks to the plain CodeBlock', () => {

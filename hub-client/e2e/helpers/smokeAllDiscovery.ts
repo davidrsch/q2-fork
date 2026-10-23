@@ -458,6 +458,9 @@ function readAllFiles(dir: string): {
 export const DOM_ASSERTIONS_PENDING_PARITY: ReadonlyMap<string, string> = new Map([
   // Mermaid blocks: no `pre.mermaid` component in q2-preview yet.
   ['mermaid/basic.qmd', 'bd-c3dtpe36'],
+  // Same gap, plus no crossref_render wrapper: the preview carries
+  // `fig-align` on the CodeBlock and MermaidCodeBlock.tsx applies it.
+  ['mermaid/fig-align.qmd', 'bd-c3dtpe36'],
   // User-declared `css:` links are not emitted in VFS/preview mode.
   ['metadata/dir-metadata-paths/chapters/intro/doc.qmd', 'bd-b3oq2fsy'],
   // TOC copy of repo actions dropped at the default toc-location.

@@ -444,5 +444,13 @@
 # gains `#quarto-skip-link:focus { … }` and the `#quarto-document-content:focus,
 # #quarto-content:focus { outline: none }` rule; verified those two rules are
 # the only CSS delta (rendered with and without the SCSS change, diffed on `}`).
+#
+# Re-captured 2026-10-22 (bd-2pmjmjmj, mermaid fig-align): doc_files/styles.css
+# hash updated because `_bootstrap-rules.scss` gained the three diagram
+# alignment rules (`.quarto-figure-<align> pre.mermaid > svg,
+# pre.mermaid.quarto-figure-<align> > svg { display: block; margin-… }`).
+# Verified those three rules are the only CSS delta (rendered with and without
+# the SCSS change, diffed on `}`). doc.html hash unchanged: CSS-only change,
+# and the fixture has no diagram.
 doc.html 8bc5f1b52f07aa842a9420d2d08a24243e851ca7f18e3d55a089e5d1ffe84f59
-doc_files/styles.css 07c6ce19cafb14de60b29b5d47c7b3dab02cd788bf1bdce52cdcb3b568deeedc
+doc_files/styles.css 4a1515b8a68f1d6863acd5a2ac9fd62ebd43d6d45e3887ad62326cc0e06daf66

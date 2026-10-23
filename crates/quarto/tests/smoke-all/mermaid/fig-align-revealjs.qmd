@@ -1,0 +1,32 @@
+---
+title: "Mermaid fig-align in revealjs"
+format: revealjs
+# bd-2pmjmjmj: the same wrapper and <pre> classes reach a deck (crossref
+# rendering builds the float DOM for every HTML-family format), and the
+# reveal stylesheet carries the matching SVG alignment rules.
+_quarto:
+  tests:
+    revealjs:
+      noErrors: true
+      ensureHtmlElements:
+        - ["section div#fig-left.quarto-figure-left pre.mermaid", "section pre.mermaid.quarto-figure-right"]
+        - []
+---
+
+## Float
+
+```mermaid
+%%| label: fig-left
+%%| fig-cap: Aligned left.
+%%| fig-align: left
+flowchart LR
+  a --> b
+```
+
+## Bare
+
+```mermaid
+%%| fig-align: right
+flowchart LR
+  c --> d
+```

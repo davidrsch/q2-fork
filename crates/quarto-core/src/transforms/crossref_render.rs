@@ -533,7 +533,8 @@ struct HarvestedFigureAttrs {
 
 /// Find the float's first image (not descending into tables — Q1 #7727)
 /// and harvest alignment/style/forwardable classes from it, stripping
-/// `fig-align` and `style` from the image itself.
+/// `fig-align` and `style` from the image itself. A mermaid code block
+/// met first counts as the image, for its `fig-align` only.
 fn harvest_figure_attrs(blocks: &mut Blocks) -> Option<HarvestedFigureAttrs> {
     fn from_image(img: &mut quarto_pandoc_types::inline::Image) -> HarvestedFigureAttrs {
         let align = img.attr.2.remove("fig-align");
@@ -568,6 +569,16 @@ fn harvest_figure_attrs(blocks: &mut Blocks) -> Option<HarvestedFigureAttrs> {
     for block in blocks {
         match block {
             Block::Table(_) => continue,
+            // A mermaid diagram carries its cell's `fig-align` as a code
+            // block attribute (`codeblock_shorthand`, bd-2pmjmjmj) — the
+            // diagram's stand-in for an image's own `fig-align`.
+            Block::CodeBlock(cb) if cb.attr.1.iter().any(|c| c == "mermaid") => {
+                return Some(HarvestedFigureAttrs {
+                    align: cb.attr.2.remove("fig-align"),
+                    style: None,
+                    forwarded_classes: Vec::new(),
+                });
+            }
             Block::Paragraph(p) => {
                 if let Some(h) = scan_inlines(&mut p.content) {
                     return Some(h);
@@ -1918,6 +1929,48 @@ mod tests {
             !img.attr.2.contains_key("fig-align"),
             "fig-align must be stripped from the image: {:?}",
             img.attr.2
+        );
+    }
+
+    #[tokio::test]
+    async fn mermaid_fig_align_attribute_drives_alignment_class() {
+        // bd-2pmjmjmj: a diagram cell's `fig-align` arrives as an
+        // attribute on the mermaid code block, and is harvested like an
+        // image's.
+        let mut cb_attr: LinkedHashMap<String, String> = LinkedHashMap::new();
+        cb_attr.insert("fig-align".to_string(), "right".to_string());
+        let blocks = vec![Block::Div(Div {
+            attr: attr_id("fig-d"),
+            content: vec![
+                Block::CodeBlock(quarto_pandoc_types::block::CodeBlock {
+                    attr: (String::new(), vec!["mermaid".to_string()], cb_attr),
+                    text: "flowchart LR".to_string(),
+                    source_info: si(),
+                    attr_source: AttrSourceInfo::empty(),
+                }),
+                para("Cap"),
+            ],
+            source_info: si(),
+            attr_source: AttrSourceInfo::empty(),
+        })];
+        let ast = run_full(blocks).await;
+        let (outer, fig) = float_shape(&ast.blocks[0]);
+        assert_classes(&outer.attr, &["quarto-figure-right"], "outer div");
+        assert!(
+            !outer.attr.1.iter().any(|c| c == "quarto-figure-center"),
+            "got {:?}",
+            outer.attr.1
+        );
+        let Block::Div(content_div) = &fig.content[0] else {
+            panic!("expected content div; got {:?}", fig.content[0])
+        };
+        let Block::CodeBlock(cb) = &content_div.content[0] else {
+            panic!("expected the diagram; got {:?}", content_div.content[0])
+        };
+        assert!(
+            !cb.attr.2.contains_key("fig-align"),
+            "a harvested fig-align must leave the code block: {:?}",
+            cb.attr.2
         );
     }
 

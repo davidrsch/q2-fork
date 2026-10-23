@@ -1,0 +1,65 @@
+---
+title: "Mermaid fig-align"
+# bd-2pmjmjmj: `%%| fig-align` aligns a diagram in every position, with
+# no Q-2-47. Q1 diverts the cell option to the `.cell` div's
+# `layout-align`, where only panel layouts read it, so this deliberately
+# goes further than Q1:
+#
+# - a numbered float and an unlabelled captioned figure take the class
+#   on their `quarto-figure` wrapper, harvested from the diagram the way
+#   an image's `fig-align` is (and stripped from the diagram itself);
+# - a bare diagram has no wrapper, so the class lands on the <pre>;
+# - `default` means `center`; a diagram without the option keeps the
+#   plain `<pre class="mermaid">`.
+_quarto:
+  tests:
+    html:
+      noErrors: true
+      printsMessage:
+        level: WARN
+        regex: "Q-2-4[78]|Q-2-57"
+        negate: true
+      ensureHtmlElements:
+        - [
+            "div#fig-right.quarto-figure-right pre.mermaid",
+            "div.quarto-figure.quarto-figure-left > figure > pre.mermaid",
+            "pre.mermaid.quarto-figure-right",
+            "pre.mermaid.quarto-figure-center",
+          ]
+        - ["div#fig-right.quarto-figure-center", "pre.mermaid[fig-align]", "pre.mermaid[data-fig-align]"]
+      ensureFileRegexMatches:
+        - ["<pre class=\"mermaid\">\nflowchart LR\n  plain"]
+        - ["%%\\| fig-align"]
+---
+
+```mermaid
+%%| label: fig-right
+%%| fig-cap: A numbered float, aligned right.
+%%| fig-align: right
+flowchart LR
+  a --> b
+```
+
+```mermaid
+%%| fig-cap: An unnumbered figure, aligned left.
+%%| fig-align: left
+flowchart LR
+  c --> d
+```
+
+```mermaid
+%%| fig-align: right
+flowchart LR
+  bare --> right
+```
+
+```mermaid
+%%| fig-align: default
+flowchart LR
+  bare --> default
+```
+
+```mermaid
+flowchart LR
+  plain --> diagram
+```
