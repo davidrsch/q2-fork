@@ -95,13 +95,17 @@
   min-width: 8px;
 }
 
+/* Info cluster: same centering model as the title toggle (full-height,
+   optically centered) so "Version history" and the timestamp share a
+   baseline; baseline alignment is kept *inside* the timestamp, where
+   the relative/absolute sizes meet. */
 .replay-drawer__info {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  align-self: stretch;
   gap: 8px;
   margin-inline-start: 8px;
   text-overflow: ellipsis;
-  height: 20px;
   overflow: hidden;
 }
 
