@@ -30,7 +30,7 @@ use crate::storage::StorageManager;
 use crate::watch::{FileWatcher, WatchConfig, WatchEvent};
 
 /// Extract peer_id and storage_id as clean display strings from a `PeerInfo`.
-pub(crate) fn format_peer_info(info: &Option<samod::PeerInfo>) -> (String, String) {
+pub(crate) fn format_peer_info(info: Option<&samod::PeerInfo>) -> (String, String) {
     match info {
         Some(info) => (
             info.peer_id.to_string(),
@@ -1648,7 +1648,7 @@ async fn ws_handler(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> axum::response::Response {
-    let email = if ctx.auth_config().is_some() {
+    let identity = if ctx.auth_config().is_some() {
         let credential = match extract_credential(&headers, !ctx.allow_insecure_auth()) {
             Ok(c) => c,
             Err(CredentialError::Conflicting) => {
@@ -1680,27 +1680,69 @@ async fn ws_handler(
         }
 
         match ctx.authenticate_credential(&credential).await {
-            Ok(user) => Some(user.email().to_string()),
+            Ok(user) => Some(WsIdentity {
+                sub: user.subject().to_string(),
+                email: user.email().to_string(),
+                credential_kind: credential.kind(),
+            }),
             Err(status) => return status.into_response(),
         }
     } else {
         None
     };
 
-    ws.on_upgrade(move |socket| handle_websocket(socket, ctx, email))
+    ws.on_upgrade(move |socket| handle_websocket(socket, ctx, identity))
         .into_response()
 }
 
+/// Authenticated identity of an upgraded `/ws` connection, threaded from
+/// `ws_handler` into `handle_websocket` for the audit events and the
+/// connect/disconnect debug logs. `None` when auth is disabled — a
+/// UDS-mode hub is unauthenticated by design and emits no audit events,
+/// matching `auth_ok`.
+struct WsIdentity {
+    /// JWT `sub` — the audit trail's stable user key.
+    sub: String,
+    /// User email, for the human-readable debug logs.
+    email: String,
+    /// Which credential kind authenticated the upgrade.
+    credential_kind: CredentialKind,
+}
+
 /// Handle an upgraded WebSocket connection.
-async fn handle_websocket(socket: WebSocket, ctx: SharedContext, email: Option<String>) {
+async fn handle_websocket(socket: WebSocket, ctx: SharedContext, identity: Option<WsIdentity>) {
     use futures::StreamExt;
     use samod::AcceptorEvent;
 
-    // accept_axum returns immediately; the connection runs in the background
-    match ctx.acceptor().accept_axum(socket) {
+    // Per-session audit attribution (bd-jvag5d4w): samod 0.16's SharePolicy
+    // subscription is eager per (loaded doc, connected peer), so the removed
+    // per-document "Document accessed" line attributed documents the user
+    // never opened. Session boundaries are the honest granularity. Emitted
+    // once the upgrade has completed, before samod sees the socket.
+    if let Some(ref id) = identity {
+        tracing::event!(
+            target: "quarto_hub::audit",
+            tracing::Level::INFO,
+            action = "ws_connect",
+            outcome = "allow",
+            credential_kind = id.credential_kind.label(),
+            sub = %id.sub,
+        );
+    }
+
+    // What the `ws_disconnect` event reports: the samod reason when a
+    // ClientDisconnected was observed, "repo_stopped" when the repo
+    // refused the socket, "stream_closed" otherwise.
+    let mut disconnect_reason: Option<String> = None;
+
+    // accept_axum returns immediately; the connection runs in the background.
+    // `None` for the expected peer ID: peer IDs are not an authz input
+    // anywhere in the hub (bd-jvag5d4w), so the claimed handshake identity
+    // only reaches a debug log line. Binding it is the
+    // `Transport::with_expected_peer_id` follow-up.
+    match ctx.acceptor().accept_axum(socket, None) {
         Ok(connection) => {
             let mut events = connection.events();
-            let mut connected_peer_id = None;
 
             // Wait for the handshake to complete (ClientConnected) or connection
             // to drop (ClientDisconnected / stream end).
@@ -1710,21 +1752,12 @@ async fn handle_websocket(socket: WebSocket, ctx: SharedContext, email: Option<S
                         peer_info,
                         connection_id: _,
                     } => {
-                        let (peer_id_str, storage_id) = format_peer_info(&Some(peer_info.clone()));
-
-                        // Store peer→email mapping for audit logging
-                        if let Some(ref email) = email {
-                            ctx.peer_emails()
-                                .lock()
-                                .unwrap()
-                                .insert(peer_info.peer_id.clone(), email.clone());
-                        }
-                        connected_peer_id = Some(peer_info.peer_id);
+                        let (peer_id_str, storage_id) = format_peer_info(Some(&peer_info));
 
                         debug!(
                             peer_id = peer_id_str,
                             storage_id,
-                            email = email.as_deref().unwrap_or("-"),
+                            email = identity.as_ref().map_or("-", |id| id.email.as_str()),
                             "WebSocket client connected"
                         );
                     }
@@ -1732,17 +1765,14 @@ async fn handle_websocket(socket: WebSocket, ctx: SharedContext, email: Option<S
                         connection_id: _,
                         reason,
                     } => {
-                        // Clean up mapping and audit-dedup entries for this peer.
-                        if let Some(ref peer_id) = connected_peer_id {
-                            ctx.peer_emails().lock().unwrap().remove(peer_id);
-                            ctx.audit_policy().forget_peer(peer_id);
-                        }
-
                         debug!(
-                            email = email.as_deref().unwrap_or("-"),
+                            email = identity
+                                .as_ref()
+                                .map_or("-", |id| id.email.as_str()),
                             reason = ?reason,
                             "WebSocket client disconnected"
                         );
+                        disconnect_reason = Some(reason.to_string());
                         break;
                     }
                 }
@@ -1750,7 +1780,19 @@ async fn handle_websocket(socket: WebSocket, ctx: SharedContext, email: Option<S
         }
         Err(samod::Stopped) => {
             tracing::warn!("WebSocket rejected: repo is stopped");
+            disconnect_reason = Some("repo_stopped".to_string());
         }
+    }
+
+    if let Some(ref id) = identity {
+        tracing::event!(
+            target: "quarto_hub::audit",
+            tracing::Level::INFO,
+            action = "ws_disconnect",
+            credential_kind = id.credential_kind.label(),
+            sub = %id.sub,
+            reason = disconnect_reason.as_deref().unwrap_or("stream_closed"),
+        );
     }
 }
 
@@ -2819,7 +2861,7 @@ mod tests {
             storage_id: Some(samod::StorageId::from("store-xyz")),
         });
         assert_eq!(
-            format_peer_info(&info),
+            format_peer_info(info.as_ref()),
             ("peer-abc123".to_string(), "store-xyz".to_string())
         );
     }
@@ -2831,13 +2873,13 @@ mod tests {
             storage_id: None,
         });
         assert_eq!(
-            format_peer_info(&info),
+            format_peer_info(info.as_ref()),
             ("peer-abc123".to_string(), "-".to_string())
         );
     }
 
     #[test]
     fn format_peer_info_none() {
-        assert_eq!(format_peer_info(&None), ("-".to_string(), "-".to_string()));
+        assert_eq!(format_peer_info(None), ("-".to_string(), "-".to_string()));
     }
 }
