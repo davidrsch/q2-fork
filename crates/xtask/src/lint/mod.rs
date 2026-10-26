@@ -5,6 +5,7 @@
 
 mod add_file_with_id;
 mod ci_test_wiring;
+mod committed_render_output;
 mod error_docs;
 mod error_docs_sidebar;
 mod external_sources;
@@ -123,6 +124,11 @@ pub fn run_check(config: &LintConfig) -> Result<()> {
         eprintln!("Checking resources/vendored.toml against the tree");
     }
     all_violations.extend(vendored_registry::check(&workspace_root)?);
+
+    if config.verbose {
+        eprintln!("Checking tracked files for committed render output");
+    }
+    all_violations.extend(committed_render_output::check(&workspace_root)?);
 
     // Report results
     if all_violations.is_empty() {
