@@ -1,5 +1,10 @@
 name: Deploy sandboxed preview to GitHub Pages
 
+# TRANSITIONAL (bd-73lilznv): the sandbox now lives at
+# https://quarto-dev.github.io/q2-sandbox/ (deploy-q2-sandbox.yml). This copy
+# at /q2/ only serves quarto-hub.com builds that predate the new default, and
+# is deleted once production is cut over so /q2/ can host the Q2 docs.
+
 on:
   push:
     branches: [main]

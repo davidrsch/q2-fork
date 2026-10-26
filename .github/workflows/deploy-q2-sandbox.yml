@@ -1,0 +1,82 @@
+name: Deploy sandboxed preview to quarto-dev/q2-sandbox
+
+# Publishes the sandboxed preview iframe to
+# https://quarto-dev.github.io/q2-sandbox/ by force-pushing the built dist/
+# as a single commit to the gh-pages branch of quarto-dev/q2-sandbox (Pages
+# there serves that branch). A workflow cannot deploy Pages for another repo
+# via actions/deploy-pages, hence the push. Auth is the write deploy key
+# scoped to q2-sandbox only (secret Q2_SANDBOX_DEPLOY_KEY). See
+# .github/workflows/github-pages.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'hub-client/quarto-hub-sandboxed-preview/**'
+      # The bundle embeds the renderer from preview-renderer source and
+      # vendored resources; rebuild when they change.
+      - 'ts-packages/preview-renderer/**'
+      - 'resources/js/**'
+      - 'resources/revealjs/**'
+      - 'resources/attribution/**'
+      - '.github/workflows/deploy-q2-sandbox.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Allow only one concurrent deployment; don't cancel in-progress runs.
+concurrency:
+  group: q2-sandbox-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: |
+            hub-client/quarto-hub-sandboxed-preview/package-lock.json
+            package-lock.json
+
+      # The bundle imports @quarto/preview-renderer *source*, whose bare
+      # deps (tiptap, reveal.js, katex, …) resolve from the repo-root
+      # node_modules — install the workspaces first.
+      - name: Install workspace dependencies
+        run: npm ci
+
+      # This package is deliberately a standalone npm project (own lockfile),
+      # not part of the root npm workspaces — install inside it too.
+      - name: Install dependencies
+        run: npm ci
+        working-directory: hub-client/quarto-hub-sandboxed-preview
+
+      - name: Build
+        run: npm run build
+        working-directory: hub-client/quarto-hub-sandboxed-preview
+
+      - name: Push dist to quarto-dev/q2-sandbox gh-pages
+        working-directory: hub-client/quarto-hub-sandboxed-preview/dist
+        env:
+          DEPLOY_KEY: ${{ secrets.Q2_SANDBOX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/q2-sandbox-deploy-key"
+          (umask 077 && printf '%s\n' "$DEPLOY_KEY" > "$key")
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          # GitHub Pages runs Jekyll on branch deploys unless told not to.
+          touch .nojekyll
+          git init -q -b gh-pages
+          git add -A
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -q -m "Deploy quarto-dev/q2@${GITHUB_SHA}"
+          git push --force git@github.com:quarto-dev/q2-sandbox.git gh-pages
+          rm -f "$key"
