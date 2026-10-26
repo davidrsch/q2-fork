@@ -210,8 +210,9 @@ mod tests {
         resolver: bool,
     }
 
-    impl Default for Run {
-        fn default() -> Self {
+    impl Run {
+        /// Plain HTML, no index, no resolver.
+        fn html() -> Self {
             Run {
                 format: Format::html(),
                 index: None,
@@ -248,7 +249,7 @@ mod tests {
     }
 
     async fn run(meta: ConfigValue) -> ConfigValue {
-        run_with(meta, Run::default()).await.0
+        run_with(meta, Run::html()).await.0
     }
 
     fn rendered(meta: &ConfigValue, key: &str) -> Option<String> {
@@ -299,7 +300,7 @@ mod tests {
             stored(vec![("content", s("Hello"))]),
             Run {
                 format,
-                ..Run::default()
+                ..Run::html()
             },
         )
         .await;
@@ -338,7 +339,7 @@ mod tests {
             Run {
                 index: Some(index),
                 resolver: true,
-                ..Run::default()
+                ..Run::html()
             },
         )
         .await;
@@ -356,7 +357,7 @@ mod tests {
             Run {
                 index: Some(Arc::new(ProjectIndex::new(vec![]))),
                 resolver: true,
-                ..Run::default()
+                ..Run::html()
             },
         )
         .await;

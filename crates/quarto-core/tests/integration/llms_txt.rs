@@ -1169,7 +1169,10 @@ fn announcement_banner_is_html_only_and_page_opt_out_works() {
                  \x20 navbar:\n    left:\n      - index.qmd\n      - reviewed.qmd\n"
             ),
         );
-        write(&dir.join("index.qmd"), "---\ntitle: Home\n---\n\nHome body.\n");
+        write(
+            &dir.join("index.qmd"),
+            "---\ntitle: Home\n---\n\nHome body.\n",
+        );
         write(
             &dir.join("reviewed.qmd"),
             "---\ntitle: Reviewed\nwebsite:\n  announcement: false\n---\n\nReviewed body.\n",
