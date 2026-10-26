@@ -2124,6 +2124,10 @@
       "c": {
         "language": {
           "c": {
+            "announcement-close": {
+              "c": "Close announcement",
+              "t": "MetaString"
+            },
             "appendix-attribution-bibtex": {
               "c": "BibTeX citation:",
               "t": "MetaString"

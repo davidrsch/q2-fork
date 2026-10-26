@@ -303,7 +303,7 @@ since the docs site is also where users will learn the feature.
 - [x] **2. Generate transform** + `MARKDOWN_CONFIG_PATHS` entries; unit tests
   including a merge test: project map + front-matter `false` resolves to no
   banner; project map + front-matter `{type: danger}` merges field-wise.
-- [ ] **3. Render transform**, template partial + gate, nav-js predicate,
+- [x] **3. Render transform**, template partial + gate, nav-js predicate,
   pipeline registration, buckets, Pandoc exclusion; unit tests for position
   keys, href rewriting at depth, skip conditions.
 - [ ] **4. JS + SCSS** port.
@@ -381,3 +381,24 @@ since the docs site is also where users will learn the feature.
   navbar title) are project-root-relative everywhere, and the announcement
   follows that convention rather than special-casing it. The cross-surface
   gap is filed as **bd-3ys3nkw7**.
+- **Step 3 (2026-10-26).** `transforms/announcement_render.rs`
+  (`announcement-render`), registered right before `navbar-render`, B4,
+  Pandoc-excluded, Navigation count tripwire 22 → 23. Self-gates with the
+  draft banner's predicate (`format.is_html()` and not a reveal target).
+  Header gating is now single-sourced in Rust as
+  `transforms::HEADER_CONTENT_KEYS` / `page_has_header` (navbar,
+  secondary-nav, announcement-above/below), used by `quarto_nav_js`; the
+  template gate is an `$elseif$` chain over the same keys. Both helpers are
+  `pub` and re-exported, because their only Rust consumer
+  (`quarto_nav_js`) is native-only and a crate-private helper would be dead
+  code on wasm32. **D6 `nav-fixed` resolved:** no change. Q1 adds it only
+  when the fixed header contains `nav.navbar`, which q2 already matches, so
+  an announcement-only header gets none (pinned by a template test).
+  - The new language term flows into every Pandoc request (the language
+    table rides in metadata and `QUARTO_FILTER_PARAMS`), so the parity-book
+    input golden was re-recorded (`BOOK_REQUEST_GOLDEN=record`) and the
+    pandoc recordings regenerated with `cargo xtask
+    capture-pandoc-recordings` (pandoc 3.12.1). The regeneration also picked
+    up a pre-existing share-tree drift from `main` (the fig-alt docx
+    backport, bd-ykjwiqcc, had not been re-captured); the orphaned share
+    tree `60d82cb8f21d33d2` was removed, as the v1.11.6 resync did.

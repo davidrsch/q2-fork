@@ -11,8 +11,8 @@
   },
   {
     "path": "env.json",
-    "size": 9388,
-    "sha256": "da135125cc2f6b0115c4ce088c8da24e46618bb59b37e08e9f056083bd094320"
+    "size": 9444,
+    "sha256": "2efb7ee5668799c791a6136d7dda980c84ee69ef90a88e5766a4ed8a95330bd4"
   },
   {
     "path": "fs/__q2_doc__/tables.qmd",
@@ -26,13 +26,13 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 28254,
-    "sha256": "26b121306bd87ddb624a7a9a1ea2b3240d6239b7faa994a7b43eb02e54e3fa55"
+    "size": 28405,
+    "sha256": "c98544186994e485d4a0d37f3bf27b5413607358da9a3d45fe50429f08545a2f"
   },
   {
     "path": "meta.json",
     "size": 176,
-    "sha256": "49eac09b408645568c504a69a01ba6e1e08deaca520beb786c144eb9d2713a40"
+    "sha256": "dbceb296b89baf40f6bb42facff774fd758e6326cd5d2089ca408648db44b5b1"
   },
   {
     "path": "reference/tables.docx",

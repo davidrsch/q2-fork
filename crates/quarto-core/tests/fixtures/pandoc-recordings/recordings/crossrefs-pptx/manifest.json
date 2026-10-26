@@ -11,8 +11,8 @@
   },
   {
     "path": "env.json",
-    "size": 9008,
-    "sha256": "b609efa26638407c932db86964aa06cd0412a5f0de5231936318d21955b6adbc"
+    "size": 9064,
+    "sha256": "9b7a67fc2cd0a68d0164e2b94b8f56fe011cfc3e8b5cc0432674b407f174a864"
   },
   {
     "path": "fs/__q2_doc__/all-docx.qmd",
@@ -31,13 +31,13 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 33197,
-    "sha256": "cda6365ea646204069a323f458644e8526205c04e2100908fb61f96d6f256d29"
+    "size": 33348,
+    "sha256": "7cf4c7dd967d0a511ec19fb77582c3b1a6f4d48898db788868fe653f83136dac"
   },
   {
     "path": "meta.json",
     "size": 182,
-    "sha256": "e4c2f10031990422579ccc8d08e434921c7f05a391afeaca5fcbf8fa18669b8b"
+    "sha256": "5204355f56cdb72695051b950553780510479bc80db5991e7634e78045033519"
   },
   {
     "path": "reference/all-docx.pptx",

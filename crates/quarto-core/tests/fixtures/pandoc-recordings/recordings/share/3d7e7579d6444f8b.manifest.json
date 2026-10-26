@@ -446,8 +446,8 @@
   },
   {
     "path": "filters/main.lua",
-    "size": 24516,
-    "sha256": "154a526ce12bb3d64f9657fcb34996dd3b9aae599bfb18fcb3dc0fb17656f030"
+    "size": 24753,
+    "sha256": "9f9297bb90b6ca822a8c827fb4429c7963879dd3c0d70c0da84dc3564ea88261"
   },
   {
     "path": "filters/mainstateinit.lua",
@@ -796,8 +796,8 @@
   },
   {
     "path": "filters/quarto-post/docx.lua",
-    "size": 7315,
-    "sha256": "11adec016da43ab8bab3d3e9f1645fbde12719fba4b42e75eb75345b4197483d"
+    "size": 8139,
+    "sha256": "b54860ff225ddc36d0109b2e2bc9ec9a8d268eb53727a45132fe27d8ee522364"
   },
   {
     "path": "filters/quarto-post/email.lua",

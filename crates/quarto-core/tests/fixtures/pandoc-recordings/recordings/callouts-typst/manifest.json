@@ -11,8 +11,8 @@
   },
   {
     "path": "env.json",
-    "size": 17988,
-    "sha256": "c466abd039963ec9d578c9ced63fdd59bcd552d84c417c492e8483d7c52f5231"
+    "size": 18044,
+    "sha256": "c5d15925f5b81c6105d50ed679601a2e7727789d508f9bf8c3d27cc68563ae2e"
   },
   {
     "path": "fs/__q2_doc__/callouts.qmd",
@@ -26,8 +26,8 @@
   },
   {
     "path": "fs/__q2_tmp__/pandoc-input.json",
-    "size": 47724,
-    "sha256": "3648d3ecc083e80fd55eb129009e565a50d9704f17706d27b94d1defd89ecb20"
+    "size": 47875,
+    "sha256": "43e0a40bc9ee4819a839e733e61b594544dadc58af15914c714ba9390f93d543"
   },
   {
     "path": "fs/__q2_tmp__/pandoc-typst-template/biblio.typ",
@@ -72,7 +72,7 @@
   {
     "path": "meta.json",
     "size": 179,
-    "sha256": "ee5fb29b2badc056a285d613fd9e44a4da157800fef59eb6935b8cc219c0206b"
+    "sha256": "edf9fadc13963b7c954fc6bcb2de3c742efedf04ac59bac76ee5756c804b1d3d"
   },
   {
     "path": "reference/callouts.typ",

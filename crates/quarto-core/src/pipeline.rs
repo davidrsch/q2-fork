@@ -80,9 +80,9 @@ use crate::stage::{
 };
 use crate::transform::TransformPipeline;
 use crate::transforms::{
-    AnnouncementGenerateTransform, AppendixStructureTransform, AttributionRenderTransform,
-    AttributionViewerTransform, AuthorsNormalizeTransform, BookCoverImageTransform,
-    BreadcrumbsRenderTransform, CalloutResolveTransform, CalloutTransform,
+    AnnouncementGenerateTransform, AnnouncementRenderTransform, AppendixStructureTransform,
+    AttributionRenderTransform, AttributionViewerTransform, AuthorsNormalizeTransform,
+    BookCoverImageTransform, BreadcrumbsRenderTransform, CalloutResolveTransform, CalloutTransform,
     CategoriesSidebarTransform, CodeBlockGenerateTransform, CodeBlockRenderTransform,
     ConditionalContentTransform, CrossrefIndexTransform, CrossrefRenderTransform,
     CrossrefResolveTransform, DateNormalizeTransform, DraftAlertTransform,
@@ -2556,6 +2556,11 @@ pub fn build_transform_pipeline(
     // `toc-block` partial nor the html footer stage, so both slots are
     // inert there.
     pipeline.push(Box::new(RepoActionsRenderTransform::new()));
+    // Announcement banner HTML (bd-website-announcement-w1gtpzki). Writes
+    // `rendered.navigation.announcement-{above,below}`, which open the
+    // `#quarto-header` gate, so it MUST come before QuartoNavJsTransform
+    // (whose predicate reads them). Self-gates to non-reveal HTML.
+    pipeline.push(Box::new(AnnouncementRenderTransform::new()));
     pipeline.push(Box::new(NavbarRenderTransform::new()));
     // MUST come after NavbarRenderTransform: the sidebar-title gate
     // (bd-sidebar-title-with-navbar-82wxow6m) suppresses the sidebar's
@@ -2947,6 +2952,7 @@ const PANDOC_TRANSFORM_EXCLUDED: &[&str] = &[
     "footer-generate",
     "footer-render",
     "announcement-generate",
+    "announcement-render",
     "listing-generate",
     "listing-render",
     "listing-feed-stage",
@@ -3149,6 +3155,7 @@ pub const BUCKETS: &[(&str, Bucket)] = &[
     ("toc-render", Bucket::B4),
     ("toc-location", Bucket::B4),
     ("repo-actions-render", Bucket::B4),
+    ("announcement-render", Bucket::B4),
     ("navbar-render", Bucket::B4),
     ("sidebar-render", Bucket::B4),
     ("breadcrumbs-render", Bucket::B4),
@@ -6617,6 +6624,7 @@ mod tests {
                 "toc-render",
                 "toc-location",
                 "repo-actions-render",
+                "announcement-render",
                 "navbar-render",
                 "sidebar-render",
                 "breadcrumbs-render",
@@ -6714,6 +6722,7 @@ mod tests {
                 "toc-render",
                 "toc-location",
                 "repo-actions-render",
+                "announcement-render",
                 "navbar-render",
                 "sidebar-render",
                 "breadcrumbs-render",
@@ -6818,8 +6827,8 @@ mod tests {
 
         assert_eq!(
             nav_names.len(),
-            22,
-            "expected exactly 22 Navigation-phase transforms in the HTML pipeline; got: \
+            23,
+            "expected exactly 23 Navigation-phase transforms in the HTML pipeline; got: \
              {nav_names:?}",
         );
         assert!(
@@ -7095,6 +7104,7 @@ mod tests {
                 "toc-render",
                 "toc-location",
                 "repo-actions-render",
+                "announcement-render",
                 "navbar-render",
                 "sidebar-render",
                 "breadcrumbs-render",
