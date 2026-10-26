@@ -1,7 +1,7 @@
 ---
 title: 'page-footer: raw HTML `<img src>` neither copied nor warned about (bd-5r97wehd)'
 date: 2026-10-26
-description: 'Raw-HTML `<img>` in `_quarto.yml` footer regions is not copied to `_site`; the strand''s fix sketch conflicts with the shipped "q2 does not parse HTML" decision, so the first step is a policy call.'
+description: 'Raw-HTML `<img>` in `_quarto.yml` footer regions is not copied to `_site`, which q2 documents as intended; resolved by rewriting the product-doc-theme footer in markdown that works on both q2 and Quarto 1.'
 status: draft  # Investigation — pending design alignment with user; do not implement before the go-ahead
 braid:
   strand: bd-5r97wehd
@@ -22,6 +22,69 @@ substring scanner would inevitably accrete bug reports whose fixes require real
 HTML parsing"). The strand's fix sketch, an HTML-tag scanner over footer
 `RawInline`/`RawBlock`, would reverse that decision for config regions. Fixing
 this means changing that policy on purpose, not just fixing a bug.
+
+**Update 2026-10-26 (user direction): fix the content, not q2.** Both footer
+constructs that caused the report can be written in pure markdown that renders
+correctly on **both** q2 and Quarto 1 (see "Markdown spellings" below). That
+keeps fc5pvkcv's policy intact. The work moves to posit-dev/product-doc-theme
+(README + `example/_quarto.yml`). Once that lands, bd-5r97wehd should close as
+working-as-designed.
+
+## Markdown spellings (verified on q2 and Q1)
+
+Fixture: `footer-raw-html-img-investigation/markdown-spellings/`. Rendered with
+`target/debug/q2` @ `4d966ea05` and Quarto 1 dev (`quarto` 99.9.9). Inspected the
+footer of `deep/page.html`.
+
+**Logo item.** Markdown images plus the existing `href`:
+
+```yaml
+- text: '![Posit](/_extensions/posit-docs/assets/images/posit-logos-2024_horiz-full-color.svg){.light-content .posit-footer-logo width="65px"}![Posit](/_extensions/posit-docs/assets/images/posit-logo-fullcolor-TM.svg){.dark-content .posit-footer-logo width="65px"}'
+  href: "https://posit.co"
+```
+
+**Cookie-preferences item.** The id moves from the `<a>` onto a span around the
+images, and the item gets a non-navigating `href`:
+
+```yaml
+- text: '[![Cookie Preferences](/_extensions/posit-docs/assets/images/cookie.svg){.light-content style="width: 1em; height: 1em;"}![Cookie Preferences](/_extensions/posit-docs/assets/images/cookie-copy.svg){.dark-content style="width: 1em; height: 1em;"}]{#open_preferences_center title="Update cookie preferences"}'
+  href: "javascript:void(0)"
+  aria-label: 'Cookie Prefs'
+```
+
+| Variant | q2 | Q1 |
+|---|---|---|
+| V1: `[imgs](#){#id title=…}`, no item `href` (the 2026-10-22 experiment) | ✓ renders, copies | ✗ emitted verbatim |
+| V2: `[imgs]{#id …}` span, item `href: "#"` | ✓ | renders, but `href="#"` is rewritten to `../#` on deep pages, so a click navigates to the site root |
+| V3: `[imgs]{#id …}` span, no item `href` | ✓ | ✗ verbatim (Q1 renders markdown in footer item text only when the item has an `href`) |
+| **V4: `[imgs]{#id …}` span, item `href: "javascript:void(0)"`** | **✓** | **✓** (`href` left alone; images relocated to `site_libs/quarto-contrib/`) |
+
+On q2, all four images are copied to `_site/_extensions/posit-docs/assets/images/`
+and the emitted `src` values are page-relative. Cosmetic differences: Q1 wraps
+the item content in `<p>` inside the `<a>` (it already does this for the logo
+item), and q2's V4 anchor carries `class="nav-link"`.
+
+**Behavior caveat (unverified).** `#open_preferences_center` is now a `<span>`
+inside the `<a>`, not the `<a>` itself. The theme's own JS
+(`assets/_analytics.html`) uses `li:has(#open_preferences_center)`, so it still
+matches. The cookie-consent vendor's click handler is injected through GTM and
+is not in the repo. A listener bound directly to the element still fires,
+because clicks on the images bubble through the span. A delegated handler that
+tests `event.target.id` would not fire. This needs a check on a
+docs.posit.co / netlify.app deploy preview before the README changes.
+
+### Revised next steps
+
+1. Check the V4 cookie item against the real consent vendor on a
+   product-doc-theme deploy preview.
+2. Open a product-doc-theme PR that switches the README's footer snippet and
+   `example/_quarto.yml` to the markdown spellings (outward-facing, so it needs
+   the user's go-ahead).
+3. Close bd-5r97wehd as working-as-designed, with a pointer to the PR (needs
+   the user's confirmation).
+4. Optional, in q2 docs: add the cookie-item pattern (id on a span, `href:
+   "javascript:void(0)"`) to `paths.qmd` as a worked example of "write it in
+   markdown".
 
 ## Issue context
 

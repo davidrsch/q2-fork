@@ -1,0 +1,24 @@
+project:
+  type: website
+website:
+  title: "Markdown footer spellings"
+  page-footer:
+    left:
+      # logo item: markdown images + href
+      - text: '![Posit](/_extensions/posit-docs/assets/images/posit-logos-2024_horiz-full-color.svg){.light-content .posit-footer-logo width="65px"}![Posit](/_extensions/posit-docs/assets/images/posit-logo-fullcolor-TM.svg){.dark-content .posit-footer-logo width="65px"}'
+        href: "https://posit.co"
+    right:
+      # V1: link with id wrapping images, no item href (origin experiment)
+      - text: '[![Cookie Preferences](/_extensions/posit-docs/assets/images/cookie.svg){.light-content style="width: 1em; height: 1em;"}![Cookie Preferences](/_extensions/posit-docs/assets/images/cookie-copy.svg){.dark-content style="width: 1em; height: 1em;"}](#){#open_preferences_center title="Update cookie preferences"}'
+        aria-label: 'Cookie Prefs V1'
+      # V2: item href "#", span with id wrapping images
+      - text: '[![Cookie Preferences](/_extensions/posit-docs/assets/images/cookie.svg){.light-content style="width: 1em; height: 1em;"}![Cookie Preferences](/_extensions/posit-docs/assets/images/cookie-copy.svg){.dark-content style="width: 1em; height: 1em;"}]{#open_preferences_center2 title="Update cookie preferences"}'
+        href: "#"
+        aria-label: 'Cookie Prefs V2'
+      # V3: span with id, no item href
+      - text: '[![Cookie Preferences](/_extensions/posit-docs/assets/images/cookie.svg){.light-content style="width: 1em; height: 1em;"}![Cookie Preferences](/_extensions/posit-docs/assets/images/cookie-copy.svg){.dark-content style="width: 1em; height: 1em;"}]{#open_preferences_center3 title="Update cookie preferences"}'
+        aria-label: 'Cookie Prefs V3'
+      # V4: span with id, href javascript:void(0)
+      - text: '[![Cookie Preferences](/_extensions/posit-docs/assets/images/cookie.svg){.light-content style="width: 1em; height: 1em;"}![Cookie Preferences](/_extensions/posit-docs/assets/images/cookie-copy.svg){.dark-content style="width: 1em; height: 1em;"}]{#open_preferences_center4 title="Update cookie preferences"}'
+        href: "javascript:void(0)"
+        aria-label: 'Cookie Prefs V4'
