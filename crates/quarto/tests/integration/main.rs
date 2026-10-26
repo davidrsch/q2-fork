@@ -15,6 +15,7 @@ pub mod conditional_content_pandoc_e2e;
 pub mod create;
 pub mod diagnostic_render_panic_boundary;
 pub mod docs_llms_cli;
+pub mod docs_serve_cli;
 pub mod engine_diagnostics_cli;
 pub mod extension_config_spans;
 pub mod format_resolution_cli;

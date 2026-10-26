@@ -343,7 +343,7 @@ fn watch_context(report: &RenderReport) -> WatchContext {
 /// with [`Self::install`] *before* the port opens, so a signal that
 /// arrives the instant a client can connect is caught rather than
 /// killing the process with the default disposition.
-struct ShutdownSignal {
+pub(crate) struct ShutdownSignal {
     #[cfg(unix)]
     interrupt: tokio::signal::unix::Signal,
     #[cfg(unix)]
@@ -355,7 +355,7 @@ struct ShutdownSignal {
 }
 
 impl ShutdownSignal {
-    fn install() -> Result<Self> {
+    pub(crate) fn install() -> Result<Self> {
         #[cfg(unix)]
         {
             use tokio::signal::unix::{SignalKind, signal};
@@ -374,7 +374,7 @@ impl ShutdownSignal {
         }
     }
 
-    async fn wait(&mut self) {
+    pub(crate) async fn wait(&mut self) {
         #[cfg(unix)]
         {
             tokio::select! {

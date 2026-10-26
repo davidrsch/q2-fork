@@ -505,33 +505,41 @@ with a cargo warning); `q2 mcp` then fails at runtime pointing at the
 xtask. Design: `claude-notes/plans/2026-06-11-q2-mcp-hub-auth.md`
 (bd-81cfshmw).
 
-## Refreshing the embedded docs for `q2 docs llms`
+## Refreshing the embedded docs for `q2 docs llms` / `q2 docs serve`
 
 The same trap once more, with one twist. `q2 docs llms` (aliased as `q2
 agents-info`) serves the docs site's llms.txt mirror — the index, the
-per-page `.md` companions, and `llms-full.txt` — embedded from
-`agents-docs-dist/` via `include_dir!`. After changing anything under
-`docs/`, the embed is stale until you run:
+per-page `.md` companions, and `llms-full.txt` — and `q2 docs serve`
+(aliased as `q2 docs open`) serves the whole rendered HTML site offline.
+Both read one embed: `agents-docs-dist/` (the rendered site plus the llms
+ledger), archived as a tar.zst by `crates/quarto/build.rs` and stored
+llms-first so `docs llms` decodes only its prefix. After changing
+anything under `docs/`, the embed is stale until you run:
 
 ```bash
 cargo xtask build-agents-docs        # render docs/, stage agents-docs-dist/
-cargo build --bin q2                 # re-embed via include_dir!
+cargo build --bin q2                 # re-embed (build.rs re-archives)
 ```
 
 The twist: staging *renders the docs with `q2` itself*, so unlike every
 other embed artifact this step runs **after** a Rust build, not before.
 `cargo xtask build-all` reflects that — its docs step comes last and
 ends with its own `cargo build --bin q2` (skip it with
-`--skip-agents-docs`).
+`--skip-agents-docs`). Staging also fails if the site loads a remote
+subresource (a CDN script, stylesheet, iframe, …): the embedded docs
+must work offline. The allowlist lives in
+`crates/xtask/src/docs_offline_check.rs`.
 
 Diagnose staleness with `q2 docs llms --embed-info`, which prints the
 source commit, a `(dirty)` marker, and the page count. Fresh clones
 build fine without the staged tree (a placeholder is embedded, with a
-cargo warning); `q2 docs llms` then fails at runtime pointing at the
-xtask. `agents-docs-dist/` is generated and gitignored — never commit
-it. The release workflow stages it once in `web-payloads` and fails any
-leg whose binary reports a placeholder or a foreign commit. Design:
-`claude-notes/plans/2026-08-24-agents-info-command.md` (bd-hwop1zii).
+cargo warning); `q2 docs llms` and `q2 docs serve` then fail at runtime
+pointing at the xtask. `agents-docs-dist/` is generated and gitignored —
+never commit it. The release workflow stages it once in `web-payloads`
+and fails any leg whose binary reports a placeholder or a foreign
+commit. Design: `claude-notes/plans/2026-08-24-agents-info-command.md`
+(bd-hwop1zii), `claude-notes/plans/2026-10-26-q2-docs-serve.md`
+(bd-x248xpyh).
 
 ## Build Commands
 

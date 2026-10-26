@@ -859,8 +859,9 @@ enum Commands {
     /// Documentation embedded in this binary
     ///
     /// A namespace, not a command: `q2 docs` alone prints this help.
-    /// `q2 docs llms` serves the machine-readable (llms.txt) mirror of
-    /// the Quarto 2 documentation site for AI agents and tooling.
+    /// `q2 docs serve` (or `q2 docs open`) browses the Quarto 2
+    /// documentation site offline; `q2 docs llms` serves its
+    /// machine-readable (llms.txt) mirror for AI agents and tooling.
     // Bare `q2 docs` shows the namespace help rather than a terse
     // missing-subcommand error — it must never dump document content.
     #[command(arg_required_else_help = true)]
@@ -875,17 +876,53 @@ enum Commands {
 }
 
 /// Subcommands under `q2 docs` — documentation embedded in the binary
-/// (bd-hwop1zii). `llms` is the machine-readable surface; the namespace
-/// deliberately leaves room for a future human-facing offline-docs
-/// mechanism (e.g. `docs serve`).
+/// (bd-hwop1zii). `serve` is the human-facing surface (bd-x248xpyh),
+/// `llms` the machine-readable one; both read the same embed.
 #[derive(clap::Subcommand)]
 enum DocsCommands {
+    /// Browse the Quarto 2 documentation in a web browser, offline
+    ///
+    /// Starts a local web server for the documentation site embedded in
+    /// this binary — the docs for exactly this version of Quarto — and
+    /// opens it in the browser. Nothing is fetched from the network.
+    /// Ctrl-C stops the server.
+    #[command(visible_alias = "open")]
+    Serve(DocsServeArgs),
+
     /// Machine-readable documentation (llms.txt) for AI agents
     ///
     /// With no arguments, prints the llms.txt index of the embedded
     /// Quarto 2 documentation; each listed href can be fetched with
     /// `q2 docs llms <href>`.
     Llms(DocsLlmsArgs),
+}
+
+/// Arguments of `q2 docs serve` / `q2 docs open`.
+#[derive(clap::Args)]
+struct DocsServeArgs {
+    /// Page to open, as an href from `q2 docs llms --list` (e.g.
+    /// `guides/projects/preview`). The `.md`, `.qmd`, and `.html`
+    /// spellings work too. Defaults to the home page
+    page: Option<String>,
+
+    /// Port to listen on. Defaults to a random free port
+    #[arg(long)]
+    port: Option<u16>,
+
+    /// Network interface to bind to. Defaults to `127.0.0.1`
+    #[arg(long)]
+    host: Option<String>,
+
+    /// Don't open a browser tab on startup. The URL is still printed
+    /// on stdout
+    #[arg(long)]
+    no_browser: bool,
+
+    /// Open the docs in a specific browser instead of the system
+    /// default (e.g. `--browser firefox`). Incompatible with
+    /// --no-browser
+    #[arg(long, value_name = "BROWSER", conflicts_with = "no_browser")]
+    browser: Option<String>,
 }
 
 /// Arguments shared by `q2 docs llms` and its `q2 agents-info` alias.
@@ -1142,6 +1179,49 @@ mod cli_parse_tests {
                 "alias must parse identically to canonical for tail {tail:?}"
             );
         }
+    }
+
+    /// Extract the `DocsServeArgs` from `docs serve` or `docs open`
+    /// (bd-x248xpyh).
+    fn parse_docs_serve(args: &[&str]) -> super::DocsServeArgs {
+        let cli = try_parse(args).expect("args should parse");
+        match cli.command {
+            Commands::Docs {
+                command: super::DocsCommands::Serve(a),
+            } => a,
+            _ => panic!("expected docs serve / open from {args:?}"),
+        }
+    }
+
+    #[test]
+    fn docs_serve_and_open_parse_identically() {
+        for tail in [
+            &[][..],
+            &["guides/projects/preview"],
+            &["--port", "4321", "--host", "0.0.0.0"],
+            &["--no-browser"],
+            &["errors/index.md", "--browser", "firefox"],
+        ] {
+            let parse = |verb: &str| {
+                let args: Vec<&str> = ["docs", verb]
+                    .iter()
+                    .copied()
+                    .chain(tail.iter().copied())
+                    .collect();
+                let a = parse_docs_serve(&args);
+                (a.page, a.port, a.host, a.no_browser, a.browser)
+            };
+            assert_eq!(
+                parse("serve"),
+                parse("open"),
+                "`docs open` must parse identically to `docs serve` for tail {tail:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn docs_serve_browser_conflicts_with_no_browser() {
+        assert!(try_parse(&["docs", "serve", "--no-browser", "--browser", "firefox"]).is_err());
     }
 
     #[test]
@@ -1838,6 +1918,15 @@ fn main() -> Result<()> {
             profile,
         }),
         Commands::Docs { command } => match command {
+            DocsCommands::Serve(args) => {
+                commands::docs_serve::execute(commands::docs_serve::ServeArgs {
+                    page: args.page,
+                    port: args.port,
+                    host: args.host,
+                    no_browser: args.no_browser,
+                    browser: args.browser,
+                })
+            }
             DocsCommands::Llms(args) => commands::docs_llms::execute(args.mode()?),
         },
         Commands::AgentsInfo(args) => commands::docs_llms::execute(args.mode()?),

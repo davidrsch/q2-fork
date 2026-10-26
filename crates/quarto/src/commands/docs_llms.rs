@@ -4,13 +4,13 @@
 //! The `q2 docs` namespace exposes documentation embedded in the binary.
 //! This module implements its `llms` subcommand (aliased as the
 //! top-level `q2 agents-info`): the llms.txt index, per-page markdown
-//! companions, and llms-full.txt that `q2 render docs/` produces are
-//! staged by `cargo xtask build-agents-docs` into `agents-docs-dist/`
-//! and embedded via `include_dir!` (see this crate's `build.rs`).
+//! companions, and llms-full.txt that `q2 render docs/` produces, read
+//! from the embedded docs archive ([`super::docs_embed`]). Only the
+//! files the llms ledger lists are visible here.
 //!
-//! All lookup logic operates on an [`include_dir::Dir`] parameter so
-//! tests can drive it with a synthetic tree; only the thin CLI entry
-//! point binds the real embedded directory.
+//! All lookup logic operates on an [`EmbedFiles`] parameter so tests
+//! can drive it with a synthetic tree; only the thin CLI entry point
+//! decodes the real embed.
 //!
 //! Embed states:
 //! - **real**: `llms.txt` is present (staged by the xtask).
@@ -21,15 +21,13 @@
 //!   stub). Every content mode fails with instructions; `--embed-info`
 //!   reports the state instead of failing.
 
-use include_dir::Dir;
+use std::collections::HashSet;
 
-/// The docs tree staged by `cargo xtask build-agents-docs` (or the
-/// placeholder when it hasn't run); see `build.rs` for the resolution.
-static EMBEDDED_DOCS: Dir<'static> = include_dir::include_dir!("$QUARTO_DOCS_LLMS_EMBED_DIR");
+use super::docs_embed::{EMBED_INFO, EmbedFiles, SITE_PREFIX};
 
 /// How to turn a placeholder embed into a real one. Referenced by the
-/// placeholder error and by `--embed-info`.
-const REBUILD_HINT: &str =
+/// placeholder error and by `--embed-info`, and by `q2 docs serve`.
+pub(crate) const REBUILD_HINT: &str =
     "run `cargo xtask build-agents-docs`, then rebuild with `cargo build --bin q2`";
 
 /// What `q2 docs llms` (or its `q2 agents-info` alias) was asked for.
@@ -51,7 +49,8 @@ pub enum Mode {
 /// stdout. Lookup failures (and placeholder embeds) come back as
 /// errors, so the process exits nonzero with the message on stderr.
 pub fn execute(mode: Mode) -> anyhow::Result<()> {
-    let embed = DocsEmbed::new(&EMBEDDED_DOCS);
+    let files = super::docs_embed::embedded_llms();
+    let embed = DocsEmbed::new(&files);
     let out = match mode {
         Mode::Index => embed.index()?,
         Mode::Full => embed.full()?.to_string(),
@@ -150,20 +149,24 @@ impl std::fmt::Display for DocsLlmsError {
 
 impl std::error::Error for DocsLlmsError {}
 
-/// The embedded docs tree plus the lookup/rendering logic over it.
+/// The embedded docs files plus the lookup/rendering logic over the
+/// llms.txt artifacts among them.
 pub struct DocsEmbed<'a> {
-    dir: &'a Dir<'a>,
+    files: &'a EmbedFiles,
+    /// Site-relative paths of the llms artifacts (the ledger).
+    ledger: HashSet<String>,
 }
 
 impl<'a> DocsEmbed<'a> {
-    pub fn new(dir: &'a Dir<'a>) -> Self {
-        DocsEmbed { dir }
+    pub fn new(files: &'a EmbedFiles) -> Self {
+        let ledger = super::docs_embed::ledger(files).into_iter().collect();
+        DocsEmbed { files, ledger }
     }
 
-    /// Placeholder embeds have no `llms.txt` (build.rs only stages the
-    /// real tree when the xtask has produced one).
+    /// Placeholder embeds have no `llms.txt` (build.rs only archives
+    /// the real tree when the xtask has produced one).
     pub fn is_placeholder(&self) -> bool {
-        self.dir.get_file("llms.txt").is_none() || self.embed_info().placeholder
+        self.site_file("llms.txt").is_none() || self.embed_info().placeholder
     }
 
     fn require_real(&self) -> Result<(), DocsLlmsError> {
@@ -174,10 +177,19 @@ impl<'a> DocsEmbed<'a> {
         }
     }
 
+    /// A ledger-listed site file's text. Site files the ledger does not
+    /// list (the HTML site, a user-resource `.md`) are invisible here.
+    fn site_file(&self, rel: &str) -> Option<&'a str> {
+        if !self.ledger.contains(rel) {
+            return None;
+        }
+        self.files
+            .get(&format!("{SITE_PREFIX}{rel}"))
+            .and_then(|b| std::str::from_utf8(b).ok())
+    }
+
     fn text_file(&self, name: &str) -> Result<&'a str, DocsLlmsError> {
-        self.dir
-            .get_file(name)
-            .and_then(|f| f.contents_utf8())
+        self.site_file(name)
             .ok_or_else(|| DocsLlmsError::Corrupt(name.to_string()))
     }
 
@@ -203,25 +215,12 @@ impl<'a> DocsEmbed<'a> {
 
     /// Every embedded `.md` companion href, sorted, with file contents.
     fn pages(&self) -> Vec<(String, &'a str)> {
-        fn walk<'a>(dir: &Dir<'a>, out: &mut Vec<(String, &'a str)>) {
-            for entry in dir.entries() {
-                match entry {
-                    include_dir::DirEntry::Dir(d) => walk(d, out),
-                    include_dir::DirEntry::File(f) => {
-                        if f.path().extension().is_some_and(|e| e == "md")
-                            && let (Some(path), Some(contents)) =
-                                (f.path().to_str(), f.contents_utf8())
-                        {
-                            // include_dir records build-machine
-                            // separators; hrefs are always `/`.
-                            out.push((path.replace('\\', "/"), contents));
-                        }
-                    }
-                }
-            }
-        }
-        let mut pages = Vec::new();
-        walk(self.dir, &mut pages);
+        let mut pages: Vec<(String, &'a str)> = self
+            .ledger
+            .iter()
+            .filter(|rel| rel.ends_with(".md"))
+            .filter_map(|rel| Some((rel.clone(), self.site_file(rel)?)))
+            .collect();
         pages.sort_by(|a, b| a.0.cmp(&b.0));
         pages
     }
@@ -247,20 +246,29 @@ impl<'a> DocsEmbed<'a> {
     /// as `<q>.md` then `<q>/index.md`.
     pub fn page(&self, query: &str) -> Result<&'a str, DocsLlmsError> {
         self.require_real()?;
-        let q = normalize_query(query);
-        for candidate in candidates(&q) {
-            if let Some(contents) = self
-                .dir
-                .get_file(&candidate)
-                .and_then(|f| f.contents_utf8())
-            {
-                return Ok(contents);
-            }
+        if let Some(href) = self.resolve(query) {
+            return Ok(self
+                .site_file(&href)
+                .expect("resolve only returns present pages"));
         }
-        Err(DocsLlmsError::PageNotFound {
+        Err(self.not_found(query))
+    }
+
+    /// The companion href (`guides/alpha.md`) a page query names, with
+    /// the normalization [`Self::page`] documents; `None` on a miss.
+    /// `q2 docs serve <page>` resolves its argument through this too.
+    pub fn resolve(&self, query: &str) -> Option<String> {
+        candidates(&normalize_query(query))
+            .into_iter()
+            .find(|candidate| candidate.ends_with(".md") && self.site_file(candidate).is_some())
+    }
+
+    /// The lookup-miss error for `query`, with near-miss suggestions.
+    pub fn not_found(&self, query: &str) -> DocsLlmsError {
+        DocsLlmsError::PageNotFound {
             query: query.to_string(),
-            suggestions: self.suggestions(&q),
-        })
+            suggestions: self.suggestions(&normalize_query(query)),
+        }
     }
 
     /// Near-miss help for a failed lookup: pages whose stem shares a
@@ -293,10 +301,9 @@ impl<'a> DocsEmbed<'a> {
 
     /// Parsed `embed-info.json`; defaults when absent or unreadable.
     pub fn embed_info(&self) -> EmbedInfo {
-        self.dir
-            .get_file("embed-info.json")
-            .and_then(|f| f.contents_utf8())
-            .and_then(|s| serde_json::from_str(s).ok())
+        self.files
+            .get(EMBED_INFO)
+            .and_then(|b| serde_json::from_slice(b).ok())
             .unwrap_or_default()
     }
 
@@ -401,70 +408,94 @@ fn candidates(q: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use include_dir::{Dir, DirEntry, File};
+    use crate::commands::docs_embed::LLMS_MANIFEST;
 
     // A synthetic real embed:
     //   llms.txt, llms-full.txt, embed-info.json
     //   index.md, guides/alpha.md, guides/noheading.md, guides/sub/index.md
+    // plus site files the ledger does not list (HTML, a resource .md),
+    // which must be invisible to every mode.
     const LLMS_TXT: &str = "# Test Site\n\n> A test corpus\n\n## Guides\n\n\
                             - [Alpha](guides/alpha.md)\n\
                             - [Sub](guides/sub/index.md)\n";
     const LLMS_FULL: &str = "# Test Site — full corpus\n\nAlpha body. Sub body.\n";
 
-    static REAL_ENTRIES: &[DirEntry<'static>] = &[
-        DirEntry::File(File::new(
-            "embed-info.json",
-            b"{\"commit\":\"abc1234\",\"dirty\":false}",
-        )),
-        DirEntry::File(File::new("index.md", b"\n\n# Home\n\nWelcome.\n")),
-        DirEntry::File(File::new("llms-full.txt", LLMS_FULL.as_bytes())),
-        DirEntry::File(File::new("llms.txt", LLMS_TXT.as_bytes())),
-        DirEntry::Dir(Dir::new(
-            "guides",
-            &[
-                DirEntry::File(File::new(
-                    "guides/alpha.md",
-                    b"# Alpha Page\n\nAlpha body.\n",
-                )),
-                DirEntry::File(File::new("guides/noheading.md", b"no heading here\n")),
-                DirEntry::Dir(Dir::new(
-                    "guides/sub",
-                    &[DirEntry::File(File::new(
-                        "guides/sub/index.md",
-                        b"# Sub Index\n\nSub body.\n",
-                    ))],
-                )),
-            ],
-        )),
-    ];
-    static REAL: Dir<'static> = Dir::new("", REAL_ENTRIES);
+    /// An embed of `site` (site-relative path, contents) where the
+    /// ledger lists `ledger`, with `embed_info` as the sidecar.
+    fn files(embed_info: Option<&str>, ledger: &[&str], site: &[(&str, &str)]) -> EmbedFiles {
+        let mut files = EmbedFiles::new();
+        if let Some(info) = embed_info {
+            files.insert(EMBED_INFO.to_string(), info.as_bytes().into());
+        }
+        if !ledger.is_empty() {
+            let manifest = serde_json::json!({ "version": 1, "generated": ledger });
+            files.insert(
+                LLMS_MANIFEST.to_string(),
+                manifest.to_string().into_bytes().into(),
+            );
+        }
+        for (rel, contents) in site {
+            files.insert(format!("{SITE_PREFIX}{rel}"), contents.as_bytes().into());
+        }
+        files
+    }
 
-    static PLACEHOLDER_ENTRIES: &[DirEntry<'static>] = &[DirEntry::File(File::new(
-        "embed-info.json",
-        b"{\"placeholder\":true}",
-    ))];
-    static PLACEHOLDER: Dir<'static> = Dir::new("", PLACEHOLDER_ENTRIES);
+    fn real_files() -> EmbedFiles {
+        files(
+            Some("{\"commit\":\"abc1234\",\"dirty\":false}"),
+            &[
+                "index.md",
+                "llms-full.txt",
+                "llms.txt",
+                "guides/alpha.md",
+                "guides/noheading.md",
+                "guides/sub/index.md",
+            ],
+            &[
+                ("index.md", "\n\n# Home\n\nWelcome.\n"),
+                ("llms-full.txt", LLMS_FULL),
+                ("llms.txt", LLMS_TXT),
+                ("guides/alpha.md", "# Alpha Page\n\nAlpha body.\n"),
+                ("guides/noheading.md", "no heading here\n"),
+                ("guides/sub/index.md", "# Sub Index\n\nSub body.\n"),
+                // Not in the ledger:
+                ("index.html", "<p>Home</p>"),
+                ("guides/alpha.html", "<p>Alpha</p>"),
+                ("guides/resource.md", "# A user resource\n"),
+            ],
+        )
+    }
+
+    fn placeholder_files() -> EmbedFiles {
+        files(Some("{\"placeholder\":true}"), &[], &[])
+    }
 
     // Real embed with a dirty commit and no llms-full.txt (corrupt).
-    static DIRTY_ENTRIES: &[DirEntry<'static>] = &[
-        DirEntry::File(File::new(
-            "embed-info.json",
-            b"{\"commit\":\"beef999\",\"dirty\":true}",
-        )),
-        DirEntry::File(File::new("llms.txt", b"# Dirty\n")),
-    ];
-    static DIRTY: Dir<'static> = Dir::new("", DIRTY_ENTRIES);
+    fn dirty_files() -> EmbedFiles {
+        files(
+            Some("{\"commit\":\"beef999\",\"dirty\":true}"),
+            &["llms.txt"],
+            &[("llms.txt", "# Dirty\n")],
+        )
+    }
 
     // Real embed with no embed-info.json at all.
-    static NOINFO_ENTRIES: &[DirEntry<'static>] =
-        &[DirEntry::File(File::new("llms.txt", b"# NoInfo\n"))];
-    static NOINFO: Dir<'static> = Dir::new("", NOINFO_ENTRIES);
+    fn noinfo_files() -> EmbedFiles {
+        files(None, &["llms.txt"], &[("llms.txt", "# NoInfo\n")])
+    }
+
+    /// Test fixtures are leaked so `DocsEmbed<'static>` can borrow them,
+    /// keeping the assertions below as terse as they were with static
+    /// `include_dir` trees.
+    fn leak(files: EmbedFiles) -> &'static EmbedFiles {
+        Box::leak(Box::new(files))
+    }
 
     fn real() -> DocsEmbed<'static> {
-        DocsEmbed::new(&REAL)
+        DocsEmbed::new(leak(real_files()))
     }
     fn placeholder() -> DocsEmbed<'static> {
-        DocsEmbed::new(&PLACEHOLDER)
+        DocsEmbed::new(leak(placeholder_files()))
     }
 
     // ---- placeholder detection -------------------------------------
@@ -525,7 +556,7 @@ mod tests {
 
     #[test]
     fn full_missing_from_real_embed_is_corrupt() {
-        let e = DocsEmbed::new(&DIRTY);
+        let e = DocsEmbed::new(leak(dirty_files()));
         assert_eq!(
             e.full().map(|_| ()).unwrap_err(),
             DocsLlmsError::Corrupt("llms-full.txt".to_string())
@@ -661,7 +692,7 @@ mod tests {
     #[test]
     fn embed_info_text_dirty_commit_is_flagged() {
         assert_eq!(
-            DocsEmbed::new(&DIRTY).embed_info_text(),
+            DocsEmbed::new(leak(dirty_files())).embed_info_text(),
             "source: real\ncommit: beef999 (dirty)\npages: 0\n"
         );
     }
@@ -669,7 +700,7 @@ mod tests {
     #[test]
     fn embed_info_text_missing_sidecar_reads_unknown() {
         assert_eq!(
-            DocsEmbed::new(&NOINFO).embed_info_text(),
+            DocsEmbed::new(leak(noinfo_files())).embed_info_text(),
             "source: real\ncommit: unknown\npages: 0\n"
         );
     }

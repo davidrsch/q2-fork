@@ -1,30 +1,36 @@
-//! `cargo xtask build-agents-docs` — stage the docs-site llms.txt
-//! artifacts for embedding into the `q2` binary (bd-hwop1zii).
+//! `cargo xtask build-agents-docs` — stage the rendered docs site for
+//! embedding into the `q2` binary (bd-hwop1zii, bd-x248xpyh).
 //!
-//! Steps:
+//! The staged tree feeds both `q2 docs llms` (the llms.txt artifacts)
+//! and `q2 docs serve` (the whole HTML site). Steps:
 //!
 //! 1. Stage the embedded example projects into `docs/examples/` (the
 //!    `stage-doc-examples` xtask). `docs/_quarto.yml` declares that
 //!    gitignored tree as a project resource and `q2 render` fails hard on
 //!    a missing declared resource, so on a fresh checkout (the release
 //!    workflow) the docs render cannot even start without this.
-//! 2. Render `docs/` in place with `q2` (built once up front and shared
-//!    with step 1 — see `util::build_q2`),
-//!    exactly like CI's docs build. The render's llms-txt pass writes
+//! 2. Clear `docs/_site` and render `docs/` in place with `q2` (built
+//!    once up front and shared with step 1 — see `util::build_q2`),
+//!    exactly like CI's docs build. `q2 render` does not remove output
+//!    whose source is gone, so without the clear a dev checkout would
+//!    embed stale pages. The render's llms-txt pass writes
 //!    `docs/_site/llms.txt`, `docs/_site/llms-full.txt`, one `.md`
 //!    companion per page, and the ledger
 //!    `docs/.quarto/llms-manifest.json`.
-//! 3. Copy the ledger-listed artifacts (and only those — a
-//!    user-authored resource `.md` in `_site/` is not ours to embed)
-//!    into a fresh `agents-docs-dist/` at the workspace root.
-//! 4. Write `agents-docs-dist/embed-info.json` recording the staging
+//! 3. Copy the whole `_site` into a fresh `agents-docs-dist/site/`, and
+//!    the ledger to `agents-docs-dist/llms-manifest.json`: `q2 docs llms`
+//!    serves only the ledger-listed files (a user-authored resource `.md`
+//!    in `_site/` is not an llms companion).
+//! 4. Check the staged site needs no network access for its content
+//!    (`docs_offline_check`); a remote subresource fails the staging.
+//! 5. Write `agents-docs-dist/embed-info.json` recording the staging
 //!    checkout's git commit + dirty flag, for `q2 docs llms
 //!    --embed-info`.
 //!
-//! The next `cargo build --bin q2` embeds the staged tree via the
-//! `quarto` crate's `build.rs` (`include_dir!`). Like the preview SPA
-//! and the MCP bundle, a plain rebuild does NOT re-render the docs —
-//! rerun this xtask to refresh the embed.
+//! The next `cargo build --bin q2` archives and embeds the staged tree
+//! via the `quarto` crate's `build.rs`. Like the preview SPA and the MCP
+//! bundle, a plain rebuild does NOT re-render the docs — rerun this
+//! xtask to refresh the embed.
 
 use std::path::{Path, PathBuf};
 
@@ -59,7 +65,12 @@ pub fn run(release: bool) -> Result<()> {
     println!("━━━ Staging docs/examples/ (embedded example projects) ━━━");
     crate::stage_doc_examples::stage_all(&root, &q2)?;
 
-    println!("━━━ Rendering docs/ (llms.txt artifacts) ━━━");
+    println!("━━━ Rendering docs/ ━━━");
+    let site_dir = root.join("docs").join("_site");
+    if site_dir.exists() {
+        std::fs::remove_dir_all(&site_dir)
+            .with_context(|| format!("clearing stale {}", site_dir.display()))?;
+    }
     render_docs(&root, &q2)?;
 
     println!("━━━ Staging agents-docs-dist/ ━━━");
@@ -71,15 +82,31 @@ pub fn run(release: bool) -> Result<()> {
             manifest_path.display()
         )
     })?;
-    let site_dir = root.join("docs").join("_site");
     let dist_dir = root.join("agents-docs-dist");
-    let staged = stage_files(&manifest_json, &site_dir, &dist_dir)?;
+    let staged = stage_site(&manifest_json, &site_dir, &dist_dir)?;
+
+    println!("━━━ Checking the staged site works offline ━━━");
+    let remote = crate::docs_offline_check::scan_site(&dist_dir.join("site"))?;
+    if !remote.is_empty() {
+        let list: String = remote
+            .iter()
+            .map(|r| format!("\n  {}: {}", r.file, r.url))
+            .collect();
+        bail!(
+            "the docs site loads {} remote subresource(s), so `q2 docs serve` \
+             would need network access to show it:{list}\n\
+             Vendor the resource into the site, or — only if the page is fine \
+             without it — add it to ALLOWED_PREFIXES in \
+             crates/xtask/src/docs_offline_check.rs with a reason.",
+            remote.len()
+        );
+    }
 
     std::fs::write(dist_dir.join("embed-info.json"), &info)
         .with_context(|| format!("writing {}/embed-info.json", dist_dir.display()))?;
 
     println!(
-        "✓ agents-docs-dist/ staged: {staged} artifacts, embed-info {}",
+        "✓ agents-docs-dist/ staged: {staged} site files, embed-info {}",
         info.trim()
     );
     println!("  Rebuild to embed: cargo build --bin q2");
@@ -100,11 +127,13 @@ fn render_docs(root: &Path, q2: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Copy the ledger-listed artifacts from `site_dir` into a fresh
-/// `dist_dir`, preserving the directory tree. Returns the number of
-/// files staged. The dist is rebuilt from scratch so files removed
-/// from the docs can never linger in the embed.
-fn stage_files(manifest_json: &str, site_dir: &Path, dist_dir: &Path) -> Result<usize> {
+/// Stage the rendered site for embedding: `site_dir` is copied whole
+/// into a fresh `dist_dir/site/`, and the llms ledger (`manifest_json`,
+/// verbatim) to `dist_dir/llms-manifest.json`. Returns the number of
+/// site files staged. The dist is rebuilt from scratch so files removed
+/// from the docs can never linger in the embed. Dotfiles (`.DS_Store`
+/// and friends) are skipped: they are never part of the site.
+fn stage_site(manifest_json: &str, site_dir: &Path, dist_dir: &Path) -> Result<usize> {
     #[derive(serde::Deserialize)]
     struct LlmsManifest {
         generated: Vec<String>,
@@ -118,31 +147,46 @@ fn stage_files(manifest_json: &str, site_dir: &Path, dist_dir: &Path) -> Result<
     if !manifest.generated.iter().any(|rel| rel == "llms.txt") {
         bail!("llms-manifest.json does not list llms.txt; refusing to stage");
     }
+    for rel in &manifest.generated {
+        // Ledger paths are output-dir-relative with forward slashes.
+        let src = site_dir.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
+        if !src.is_file() {
+            bail!(
+                "the llms ledger lists {} but the render did not produce it",
+                src.display()
+            );
+        }
+    }
 
     if dist_dir.exists() {
         std::fs::remove_dir_all(dist_dir)
             .with_context(|| format!("clearing stale {}", dist_dir.display()))?;
     }
-    std::fs::create_dir_all(dist_dir)
-        .with_context(|| format!("creating {}", dist_dir.display()))?;
+    let dist_site = dist_dir.join("site");
+    std::fs::create_dir_all(&dist_site)
+        .with_context(|| format!("creating {}", dist_site.display()))?;
 
-    for rel in &manifest.generated {
-        // Ledger paths are output-dir-relative with forward slashes.
-        let src = site_dir.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
-        let dest = dist_dir.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("creating {}", parent.display()))?;
+    let mut staged = 0;
+    let walk = walkdir::WalkDir::new(site_dir)
+        .into_iter()
+        .filter_entry(|e| e.depth() == 0 || !e.file_name().to_string_lossy().starts_with('.'));
+    for entry in walk {
+        let entry = entry.with_context(|| format!("walking {}", site_dir.display()))?;
+        let rel = entry.path().strip_prefix(site_dir)?;
+        let dest = dist_site.join(rel);
+        if entry.file_type().is_dir() {
+            std::fs::create_dir_all(&dest)
+                .with_context(|| format!("creating {}", dest.display()))?;
+        } else if entry.file_type().is_file() {
+            std::fs::copy(entry.path(), &dest)
+                .with_context(|| format!("copying {}", entry.path().display()))?;
+            staged += 1;
         }
-        std::fs::copy(&src, &dest).with_context(|| {
-            format!(
-                "copying {} — the ledger lists it but the render did not \
-                 produce it",
-                src.display()
-            )
-        })?;
     }
-    Ok(manifest.generated.len())
+
+    std::fs::write(dist_dir.join("llms-manifest.json"), manifest_json)
+        .with_context(|| format!("writing {}/llms-manifest.json", dist_dir.display()))?;
+    Ok(staged)
 }
 
 /// Provenance sidecar for `q2 docs llms --embed-info`: the staging
@@ -189,47 +233,50 @@ fn find_project_root() -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::stage_files;
+    use super::stage_site;
 
     fn manifest(entries: &[&str]) -> String {
         serde_json::json!({ "version": 1, "generated": entries }).to_string()
     }
 
     #[test]
-    fn stages_listed_files_preserving_tree_and_clearing_stale() {
+    fn stages_whole_site_and_ledger_clearing_stale() {
         let tmp = tempfile::TempDir::new().unwrap();
         let site = tmp.path().join("_site");
         let dist = tmp.path().join("dist");
         std::fs::create_dir_all(site.join("guides")).unwrap();
+        std::fs::create_dir_all(site.join("site_libs")).unwrap();
         std::fs::write(site.join("llms.txt"), "# Index\n").unwrap();
         std::fs::write(site.join("llms-full.txt"), "full\n").unwrap();
+        std::fs::write(site.join("index.html"), "<html></html>").unwrap();
         std::fs::write(site.join("guides").join("a.md"), "# A\n").unwrap();
-        // An unlisted _site file (user resource) must NOT be staged.
+        std::fs::write(site.join("guides").join("a.html"), "<p>A</p>").unwrap();
+        std::fs::write(site.join("site_libs").join("q.js"), "x").unwrap();
+        // A user-resource .md is part of the site (staged), just not
+        // ledger-listed; dotfiles are not part of the site at all.
         std::fs::write(site.join("guides").join("stray.md"), "stray\n").unwrap();
+        std::fs::write(site.join(".DS_Store"), "junk").unwrap();
         // A stale file from a previous staging must be cleared.
         std::fs::create_dir_all(&dist).unwrap();
         std::fs::write(dist.join("removed-page.md"), "old\n").unwrap();
 
-        let n = stage_files(
-            &manifest(&["guides/a.md", "llms.txt", "llms-full.txt"]),
-            &site,
-            &dist,
-        )
-        .unwrap();
+        let ledger = manifest(&["guides/a.md", "llms.txt", "llms-full.txt"]);
+        let n = stage_site(&ledger, &site, &dist).unwrap();
 
-        assert_eq!(n, 3);
+        assert_eq!(n, 7);
+        let staged = dist.join("site");
         assert_eq!(
-            std::fs::read_to_string(dist.join("llms.txt")).unwrap(),
+            std::fs::read_to_string(staged.join("llms.txt")).unwrap(),
             "# Index\n"
         );
+        assert!(staged.join("guides").join("a.html").is_file());
+        assert!(staged.join("guides").join("stray.md").is_file());
+        assert!(staged.join("site_libs").join("q.js").is_file());
+        assert!(!staged.join(".DS_Store").exists(), "dotfiles are skipped");
         assert_eq!(
-            std::fs::read_to_string(dist.join("guides").join("a.md")).unwrap(),
-            "# A\n"
-        );
-        assert!(dist.join("llms-full.txt").is_file());
-        assert!(
-            !dist.join("guides").join("stray.md").exists(),
-            "unlisted _site files must not be staged"
+            std::fs::read_to_string(dist.join("llms-manifest.json")).unwrap(),
+            ledger,
+            "the ledger is staged verbatim"
         );
         assert!(
             !dist.join("removed-page.md").exists(),
@@ -240,7 +287,7 @@ mod tests {
     #[test]
     fn refuses_manifest_without_llms_txt() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let err = stage_files(
+        let err = stage_site(
             &manifest(&["guides/a.md"]),
             &tmp.path().join("_site"),
             &tmp.path().join("dist"),
@@ -255,7 +302,7 @@ mod tests {
         let site = tmp.path().join("_site");
         std::fs::create_dir_all(&site).unwrap();
         std::fs::write(site.join("llms.txt"), "# Index\n").unwrap();
-        let err = stage_files(
+        let err = stage_site(
             &manifest(&["llms.txt", "ghost.md"]),
             &site,
             &tmp.path().join("dist"),

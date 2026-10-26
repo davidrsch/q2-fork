@@ -792,6 +792,28 @@ jobs:
             *"(dirty)") echo "::warning::embedded docs were staged from a dirty tree at $EXPECTED_SHA" ;;
           esac
 
+          # `q2 docs serve` (bd-x248xpyh) reads the same embed; prove the
+          # binary can decode it and serve the site's home page. Skipped
+          # on Windows, where backgrounding and killing a native process
+          # from Git Bash is unreliable; the embed-info gate above still
+          # covers the Windows embed.
+          if [ "$RUNNER_OS" != "Windows" ]; then
+            "$BIN" docs serve --no-browser --port 0 > docs-serve.out 2>&1 &
+            SERVE_PID=$!
+            DOCS_URL=""
+            for _ in $(seq 1 50); do
+              DOCS_URL=$(grep -o 'http://127\.0\.0\.1:[0-9]*/' docs-serve.out | head -n 1 || true)
+              [ -n "$DOCS_URL" ] && break
+              sleep 0.2
+            done
+            if [ -z "$DOCS_URL" ] || ! curl -fsS "$DOCS_URL" | grep -q 'Quarto 2'; then
+              echo "::error::\`q2 docs serve\` did not serve the embedded docs home page"
+              cat docs-serve.out
+              FAIL=1
+            fi
+            kill "$SERVE_PID" 2>/dev/null || true
+          fi
+
           # Embedded bundler: build a tiny extension with the release binary.
           # It runs the embedded rollup driver under the runner's Node 24 (the
           # same Node TS engine extensions need), so this is where the musl and

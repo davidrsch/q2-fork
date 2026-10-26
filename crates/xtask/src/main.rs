@@ -25,7 +25,7 @@
 //! - `build-ts-bundle`: Build the committed ts-bundle.mjs driver for `q2 call build-ts-extension`
 //! - `vendor-react`: Rebuild the vendored React ES modules under `resources/js/react/`
 //! - `vendored outdated`: Ask each vendored asset's upstream (per `resources/vendored.toml`) what is newer
-//! - `build-agents-docs`: Stage the docs-site llms.txt artifacts for `q2 docs llms`
+//! - `build-agents-docs`: Stage the rendered docs site for `q2 docs llms` and `q2 docs serve`
 //! - `stage-doc-examples`: Render `examples/manifest.yml` projects into `docs/examples/`
 //! - `pull-extension-subtree`: Sync vendored extension subtrees under `resources/extension-subtrees/`
 
@@ -45,6 +45,7 @@ mod check_feature_sets;
 mod check_noop_rebuild;
 mod create_worktree;
 mod dev_setup;
+mod docs_offline_check;
 mod gen_math_spec;
 mod lint;
 mod node_version;
@@ -452,14 +453,16 @@ enum Command {
         table: Option<std::path::PathBuf>,
     },
 
-    /// Stage the docs-site llms.txt artifacts for `q2 docs llms`.
+    /// Stage the rendered docs site for `q2 docs llms` / `q2 docs serve`.
     ///
-    /// Renders `docs/` and copies the llms-txt output (index, per-page
-    /// `.md` companions, llms-full.txt) into `agents-docs-dist/`, which
-    /// is generated and gitignored — regenerate with this command; never
-    /// commit it. The tree is picked up on the next `cargo build --bin
-    /// q2` (via `include_dir!`); without it the binary embeds a
-    /// placeholder. See bd-hwop1zii.
+    /// Renders `docs/` and copies the whole site (HTML, assets, and the
+    /// llms-txt output) plus the llms ledger into `agents-docs-dist/`,
+    /// failing if the site would need network access for its content.
+    /// The tree is generated and gitignored — regenerate with this
+    /// command; never commit it. It is picked up on the next `cargo
+    /// build --bin q2` (archived by the quarto crate's build.rs);
+    /// without it the binary embeds a placeholder. See bd-hwop1zii,
+    /// bd-x248xpyh.
     BuildAgentsDocs {
         /// Build and render with the release-profile `q2`.
         #[arg(long)]
