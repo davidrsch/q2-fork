@@ -315,7 +315,7 @@ since the docs site is also where users will learn the feature.
 - [ ] **7. Preview** slot + integration test
   (`PreviewDocument.integration.test.tsx`). Use the `preview-render-parity`
   skill to compare DOM.
-- [ ] **8. Docs**: `docs/_quarto.yml` + guide page; render `docs/` and eyeball.
+- [x] **8. Docs**: `docs/_quarto.yml` + guide page; render `docs/` and eyeball.
 - [ ] **9. Verification**: `cargo xtask verify`; the Windows `cargo clippy
   --target x86_64-pc-windows-msvc` cross-check for touched crates;
   `q2 render --strict claude-notes`.
@@ -432,3 +432,14 @@ since the docs site is also where users will learn the feature.
   the template unit tests instead. The per-file smoke render
   (`render_to_file`) has no project index, so the `.qmd` → `.html` link
   assertion lives in `project-render.qmd` with `render-project: true`.
+- **Step 8 (2026-10-26).** `docs/guides/projects/announcement.qmd` (guide:
+  forms, options table, closing and `remember-dismissal`, per-page and
+  per-directory opt-out, field-wise override, llms.txt, Q1 differences),
+  sidebar entry after "Header pinning", and the site-wide announcement in
+  `docs/_quarto.yml` (`type: warning`, `icon: info-circle`,
+  `remember-dismissal: false`). No page opts out yet: which pages count as
+  reviewed is the docs owners' call. `q2 render docs` emits the same 33
+  pre-existing warnings with and without these changes; no `.md`/`.txt`
+  llms output contains the banner text. Checked visually with headless
+  Chrome at 1280px and 500px: revealed, above the navbar, page padded,
+  wraps with the close button visible.

@@ -1,0 +1,116 @@
+---
+title: Announcement banner
+---
+
+## Overview
+
+A website can show a short announcement at the top of its pages, inside
+the site header: a beta notice, a pointer to release notes, a warning
+that some pages are still in progress. Set it once in `_quarto.yml`:
+
+```yaml
+website:
+  announcement: "This site is in beta. Expect rough edges."
+```
+
+The text is markdown, so emphasis, code and links work:
+
+```yaml
+website:
+  announcement: "Quarto 2 is out! Read the [release notes](news.qmd)."
+```
+
+Links are written relative to the project root, like the other links in
+`_quarto.yml`, and resolve to the right URL on every page.
+
+## Options
+
+To change how the banner looks or behaves, use the map form, with the
+text under `content`:
+
+```yaml
+website:
+  announcement:
+    content: "Some pages have not been reviewed yet."
+    type: warning
+    icon: info-circle
+    position: below-navbar
+    dismissable: true
+```
+
+| option | values | default |
+|---|---|---|
+| `content` | markdown text | (required) |
+| `type` | `primary`, `secondary`, `success`, `danger`, `warning`, `info`, `light`, `dark` | `primary` |
+| `icon` | a [Bootstrap icon](https://icons.getbootstrap.com/) name, such as `info-circle` or `megaphone` | none |
+| `position` | `above-navbar`, `below-navbar` | `above-navbar` |
+| `dismissable` | `true`, `false` | `true` |
+| `remember-dismissal` | `true`, `false` | `true` |
+
+`type` picks the banner's colors, using the matching Bootstrap alert
+style. A site without a navbar still shows the banner at the top of the
+page.
+
+## Closing the banner
+
+When `dismissable` is `true` (the default), the banner has a close
+button. By default the browser remembers that the reader closed it, and
+the banner stays hidden on every page of the site. Changing the
+announcement text shows the new announcement again, even to readers who
+closed the old one.
+
+To let readers close the banner on the page they are reading without
+hiding it everywhere else, set `remember-dismissal: false`. The banner
+then comes back on the next page. This suits a notice that applies to
+some pages and not others, such as the per-page opt-out below.
+
+With `dismissable: false` the banner has no close button.
+
+## Turning the banner off for some pages
+
+Every page inherits the announcement from `_quarto.yml`. To turn it off
+for one page, set it to `false` in that page's front matter:
+
+```yaml
+---
+title: "Getting started"
+website:
+  announcement: false
+---
+```
+
+To turn it off for a whole directory, put the same setting in that
+directory's `_metadata.yml`:
+
+```yaml
+website:
+  announcement: false
+```
+
+A page can also change a single option and keep the rest. This page
+shows the site's announcement in red:
+
+```yaml
+---
+title: "Breaking changes"
+website:
+  announcement:
+    type: danger
+---
+```
+
+## llms.txt
+
+When the site produces [llms.txt](llms-txt.qmd) output, the
+announcement is left out of the markdown companions, `llms.txt` and
+`llms-full.txt`. It is site chrome, like the navbar and footer, not page
+content.
+
+## Differences from Quarto 1
+
+- A page can turn the announcement off, or change its options, in its
+  front matter or `_metadata.yml`. Quarto 1 reads the announcement only
+  from `_quarto.yml`.
+- `remember-dismissal` is new in Quarto 2.
+- The close control is a keyboard-accessible button with a label for
+  screen readers.
