@@ -154,6 +154,14 @@ const MARKDOWN_CONFIG_PATHS: &[&[&str]] = &[
     // sidebar's `section:` (bd-xygsu15r), no id is derived from it: the
     // `<h2 id="toc-title">` id is a literal constant.
     &["toc-title"],
+    // The announcement banner (bd-website-announcement-w1gtpzki): the
+    // bare-string shorthand and the map form's `content:`. Other keys of
+    // the map (`type`, `icon`, `position`) are machine-facing and stay
+    // literal.
+    &["website", "announcement"],
+    &["website", "announcement", "content"],
+    &["announcement"],
+    &["announcement", "content"],
 ];
 
 /// AST transform: apply [`MARKDOWN_CONFIG_PATHS`] to merged metadata.
@@ -408,6 +416,47 @@ mod tests {
             "expected a Shortcode inline in parsed title; got {:?}",
             inlines
         );
+        assert!(diags.is_empty(), "unexpected diagnostics: {:?}", diags);
+    }
+
+    /// `website.announcement` content is markdown in both the string and
+    /// the map form; the map's machine-facing keys stay literal
+    /// (bd-website-announcement-w1gtpzki).
+    #[test]
+    fn announcement_content_becomes_inlines_options_stay_scalar() {
+        let mut meta = map(vec![
+            ("announcement", s("Top *level*")),
+            (
+                "website",
+                map(vec![(
+                    "announcement",
+                    map(vec![
+                        ("content", s("Not **reviewed**")),
+                        ("type", s("warning")),
+                        ("icon", s("info-circle")),
+                    ]),
+                )]),
+            ),
+        ]);
+        let mut diags = Vec::new();
+        apply_markdown_config_paths(&mut meta, &mut diags);
+
+        for path in [
+            &["announcement"][..],
+            &["website", "announcement", "content"][..],
+        ] {
+            assert!(
+                matches!(kind_at(&meta, path), ConfigValueKind::PandocInlines(_)),
+                "{path:?}: expected PandocInlines, got {:?}",
+                kind_at(&meta, path)
+            );
+        }
+        for key in ["type", "icon"] {
+            assert!(matches!(
+                kind_at(&meta, &["website", "announcement", key]),
+                ConfigValueKind::Scalar { .. }
+            ));
+        }
         assert!(diags.is_empty(), "unexpected diagnostics: {:?}", diags);
     }
 

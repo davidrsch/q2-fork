@@ -16,6 +16,7 @@
 //! - [`EditorialMarksOoxmlTransform`] - Renders editorial marks to Word and PowerPoint (docx, pptx)
 //! - [`FooterGenerateTransform`] - Resolves `page-footer:` YAML into `navigation.footer`
 //! - [`FooterRenderTransform`] - Renders `navigation.footer` to HTML
+//! - [`AnnouncementGenerateTransform`] - Resolves `website.announcement` into `navigation.announcement`
 //! - [`FootnotesTransform`] - Resolves footnote refs/defs into native `Inline::Note`s
 //! - [`FootnotesResolveTransform`] - Resolves `Inline::Note`s into HTML footnote chrome
 //! - [`MetadataNormalizeTransform`] - Normalizes document metadata (adds pagetitle, etc.)
@@ -50,6 +51,7 @@
 /// id and are never deduped) skip this marker entirely.
 pub(crate) const FOOTNOTE_REF_ID_MARKER_FORMAT: &str = "quarto-internal-footnote-ref-id";
 
+mod announcement_generate;
 mod appendix;
 mod attribution_generate;
 mod attribution_render;
@@ -141,6 +143,7 @@ mod website_canonical_url;
 mod website_favicon;
 mod website_title_prefix;
 
+pub use announcement_generate::AnnouncementGenerateTransform;
 pub use appendix::AppendixStructureTransform;
 pub use attribution_generate::AttributionGenerateTransform;
 pub use attribution_render::AttributionRenderTransform;

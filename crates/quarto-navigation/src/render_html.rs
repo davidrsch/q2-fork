@@ -3700,8 +3700,8 @@ mod announcement_tests {
             merge_op: Default::default(),
         };
         let html = announcement_to_html(&announcement(cv), "Close");
-        assert!(html.contains(
-            "<div class=\"quarto-announcement-content\"><p>One</p><p>Two</p></div>"
-        ));
+        assert!(
+            html.contains("<div class=\"quarto-announcement-content\"><p>One</p><p>Two</p></div>")
+        );
     }
 }

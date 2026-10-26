@@ -1,0 +1,51 @@
+---
+title: "Announcement references missing document"
+description: "A link in the website announcement banner points at a document that is not in the project's render index."
+code: Q-13-15
+subsystem: navigation
+status: complete
+since: "99.9.9"
+categories:
+  - navigation
+  - websites
+---
+
+# `Q-13-15` — Announcement references missing document
+
+> A link in the `website.announcement` content points at a document
+> that is not in the project's render index.
+
+## What this means
+
+The announcement banner's `content` is markdown, so it can link to
+other pages of the site, for example
+`content: "See the [release notes](news.qmd)."`. Each link that
+names a document is looked up in the project index at render time,
+and rewritten to the page's output URL. This warning fires when the
+name does not appear in that index. The banner still renders, but
+the link does not lead anywhere useful.
+
+Link paths in the announcement are relative to the project root,
+like other links written in `_quarto.yml`.
+
+## Why this happens
+
+Same family of causes as `Q-13-1` (sidebar missing document):
+
+- **A typo** in the file name.
+- **A renamed or deleted** document.
+- **An excluded file** that is not part of the render set.
+- **A path written relative to the page** rather than to the project
+  root.
+
+## How to fix
+
+Point the link at a file that is in the render set, or add the
+missing file. The message names the missing path.
+
+## Related
+
+- `Q-13-1`, `Q-13-2`, `Q-13-3`, `Q-13-4`, `Q-13-7` — the same
+  diagnostic for the sidebar, navbar, page footer, body links, and
+  page navigation.
+- `Q-13-16`, `Q-13-17` — other announcement configuration problems.

@@ -300,7 +300,7 @@ since the docs site is also where users will learn the feature.
   remember attribute), the `announcement-close` language term; unit tests for
   the string form, the map form, defaults, `false`, `true`/empty content
   (warning), bad `type`/`position`, `remember-dismissal: false`.
-- [ ] **2. Generate transform** + `MARKDOWN_CONFIG_PATHS` entries; unit tests
+- [x] **2. Generate transform** + `MARKDOWN_CONFIG_PATHS` entries; unit tests
   including a merge test: project map + front-matter `false` resolves to no
   banner; project map + front-matter `{type: danger}` merges field-wise.
 - [ ] **3. Render transform**, template partial + gate, nav-js predicate,
@@ -364,3 +364,20 @@ since the docs site is also where users will learn the feature.
 
 - **Decision 6. `remember-dismissal` defaults to `true`** (Q1 behavior); the
   docs site sets `remember-dismissal: false` for now.
+- **Step 2 (2026-10-26).** `transforms/announcement_generate.rs`
+  (`announcement-generate`), registered after `footer-generate`, bucket B4,
+  in the Pandoc exclusion list; exact-list pipeline tests and the
+  Navigation-phase count tripwire (21 → 22) updated. Markdown paths added to
+  `MARKDOWN_CONFIG_PATHS`. New codes, each with a catalog entry, a docs page
+  under `docs/errors/navigation/`, and a sidebar entry:
+  - `Q-13-15` Announcement references missing document (new
+    `NavSurface::Announcement`, used by the render step);
+  - `Q-13-16` Announcement has no content;
+  - `Q-13-17` Invalid announcement option (`type`/`position`).
+
+  **Deviation from D4:** links inside the content are *not* resolved against
+  the authoring file at generate time. Only nav *item* hrefs get that
+  treatment today; Link/Image targets in config *text* (footer text regions,
+  navbar title) are project-root-relative everywhere, and the announcement
+  follows that convention rather than special-casing it. The cross-surface
+  gap is filed as **bd-3ys3nkw7**.

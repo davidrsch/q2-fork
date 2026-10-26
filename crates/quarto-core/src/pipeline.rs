@@ -80,16 +80,16 @@ use crate::stage::{
 };
 use crate::transform::TransformPipeline;
 use crate::transforms::{
-    AppendixStructureTransform, AttributionRenderTransform, AttributionViewerTransform,
-    AuthorsNormalizeTransform, BookCoverImageTransform, BreadcrumbsRenderTransform,
-    CalloutResolveTransform, CalloutTransform, CategoriesSidebarTransform,
-    CodeBlockGenerateTransform, CodeBlockRenderTransform, ConditionalContentTransform,
-    CrossrefIndexTransform, CrossrefRenderTransform, CrossrefResolveTransform,
-    DateNormalizeTransform, DraftAlertTransform, EditorialMarksOoxmlTransform,
-    EquationLabelTransform, ExampleEmbedRenderTransform, ExampleEmbedTransform,
-    FloatRefTargetSugarTransform, FooterGenerateTransform, FooterRenderTransform,
-    FootnotesResolveTransform, FootnotesTransform, LinkExternalTransform, LinkRewriteTransform,
-    ListingGenerateTransform, ListingRenderTransform, MermaidRenderTransform,
+    AnnouncementGenerateTransform, AppendixStructureTransform, AttributionRenderTransform,
+    AttributionViewerTransform, AuthorsNormalizeTransform, BookCoverImageTransform,
+    BreadcrumbsRenderTransform, CalloutResolveTransform, CalloutTransform,
+    CategoriesSidebarTransform, CodeBlockGenerateTransform, CodeBlockRenderTransform,
+    ConditionalContentTransform, CrossrefIndexTransform, CrossrefRenderTransform,
+    CrossrefResolveTransform, DateNormalizeTransform, DraftAlertTransform,
+    EditorialMarksOoxmlTransform, EquationLabelTransform, ExampleEmbedRenderTransform,
+    ExampleEmbedTransform, FloatRefTargetSugarTransform, FooterGenerateTransform,
+    FooterRenderTransform, FootnotesResolveTransform, FootnotesTransform, LinkExternalTransform,
+    LinkRewriteTransform, ListingGenerateTransform, ListingRenderTransform, MermaidRenderTransform,
     MetadataNormalizeTransform, NavbarGenerateTransform, NavbarRenderTransform,
     PageNavGenerateTransform, PageNavRenderTransform, ProofSugarTransform,
     ReferenceLinkDiagnosticsTransform, RepoActionsRenderTransform, ResourceCollectorTransform,
@@ -2481,6 +2481,10 @@ pub fn build_transform_pipeline(
     // resolved `navigation.sidebar` for the current page.
     pipeline.push(Box::new(PageNavGenerateTransform::new()));
     pipeline.push(Box::new(FooterGenerateTransform::new()));
+    // Announcement banner (bd-website-announcement-w1gtpzki): resolves
+    // `website.announcement` from the merged page metadata into
+    // `navigation.announcement`. Format-agnostic like the footer generate.
+    pipeline.push(Box::new(AnnouncementGenerateTransform::new()));
     // ListingGenerateTransform runs after the navigation generates
     // because a future Lua-filter slot (bd-0fd0) should see the full
     // generated set in one place. ListingRenderTransform runs *before*
@@ -2924,8 +2928,9 @@ const PANDOC_TRANSFORM_EXCLUDED: &[&str] = &[
     "website-favicon",
     "website-bootstrap-icons",
     "website-canonical-url",
-    // Navigation phase, twenty: chrome generate + render (TOC, navbar,
-    // sidebar, page-nav, footer, listings) has no Pandoc-writer output slot.
+    // Navigation phase: chrome generate + render (TOC, navbar, sidebar,
+    // page-nav, footer, announcement, listings) has no Pandoc-writer output
+    // slot.
     "navbar-generate",
     "navbar-render",
     "sidebar-generate",
@@ -2941,6 +2946,7 @@ const PANDOC_TRANSFORM_EXCLUDED: &[&str] = &[
     "toc-location",
     "footer-generate",
     "footer-render",
+    "announcement-generate",
     "listing-generate",
     "listing-render",
     "listing-feed-stage",
@@ -3127,13 +3133,14 @@ pub const BUCKETS: &[(&str, Bucket)] = &[
     ("footnotes-resolve", Bucket::B4),
     // Navigation phase, in registration order: website chrome with no
     // Pandoc-writer output slot. T2.2 derives this set from `phase()`, so a
-    // 21st Navigation transform cannot land unexcluded — but it can still
+    // new Navigation transform cannot land unexcluded — but it can still
     // land unclassified here, which is what the totality test catches.
     ("toc-generate", Bucket::B4),
     ("navbar-generate", Bucket::B4),
     ("sidebar-generate", Bucket::B4),
     ("page-nav-generate", Bucket::B4),
     ("footer-generate", Bucket::B4),
+    ("announcement-generate", Bucket::B4),
     ("listing-generate", Bucket::B4),
     ("listing-render", Bucket::B4),
     ("categories-sidebar", Bucket::B4),
@@ -6601,6 +6608,7 @@ mod tests {
                 "sidebar-generate",
                 "page-nav-generate",
                 "footer-generate",
+                "announcement-generate",
                 "listing-generate",
                 "listing-render",
                 "categories-sidebar",
@@ -6697,6 +6705,7 @@ mod tests {
                 "sidebar-generate",
                 "page-nav-generate",
                 "footer-generate",
+                "announcement-generate",
                 "listing-generate",
                 "listing-render",
                 "categories-sidebar",
@@ -6779,10 +6788,10 @@ mod tests {
     /// Task 2 (T2.2): `PANDOC_TRANSFORM_EXCLUDED` must contain **every**
     /// transform in the `HtmlRender` pipeline whose `phase()` is
     /// `TransformPhase::Navigation` — derived by querying `phase()` rather
-    /// than hand-enumerating, so a 21st Navigation transform can never land
+    /// than hand-enumerating, so a new Navigation transform can never land
     /// silently omitted from the Pandoc exclude-list (the exact drift mode
     /// that recurred three consecutive review rounds: 18 → 20 Navigation
-    /// members). The `20` here is a tripwire on *pipeline growth*: both
+    /// members). The count here is a tripwire on *pipeline growth*: both
     /// sides are derived from `build_transform_pipeline` + `phase()`, never
     /// from a hand-list, so it cannot go vacuous the way a
     /// hand-list-vs-hand-list comparison would.
@@ -6809,8 +6818,8 @@ mod tests {
 
         assert_eq!(
             nav_names.len(),
-            21,
-            "expected exactly 21 Navigation-phase transforms in the HTML pipeline; got: \
+            22,
+            "expected exactly 22 Navigation-phase transforms in the HTML pipeline; got: \
              {nav_names:?}",
         );
         assert!(
@@ -7077,6 +7086,7 @@ mod tests {
                 "sidebar-generate",
                 "page-nav-generate",
                 "footer-generate",
+                "announcement-generate",
                 "listing-generate",
                 "listing-render",
                 "categories-sidebar",

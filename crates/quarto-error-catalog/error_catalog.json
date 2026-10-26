@@ -1868,6 +1868,27 @@
     "docs_url": "https://quarto.org/docs/errors/navigation/Q-13-14",
     "since_version": "99.9.9"
   },
+  "Q-13-15": {
+    "subsystem": "navigation",
+    "title": "Announcement references missing document",
+    "message_template": "A link in the `website.announcement` content references a path that is not in the project index. The referenced path is reported as a missing document. Check the spelling, or confirm the target file is included in the render set.",
+    "docs_url": "https://quarto.org/docs/errors/navigation/Q-13-15",
+    "since_version": "99.9.9"
+  },
+  "Q-13-16": {
+    "subsystem": "navigation",
+    "title": "Announcement has no content",
+    "message_template": "`website.announcement` is set to `true`, or to a value with no `content`, so there is nothing to show and no banner is rendered. Give the announcement text, or set it to `false` to turn the banner off.",
+    "docs_url": "https://quarto.org/docs/errors/navigation/Q-13-16",
+    "since_version": "99.9.9"
+  },
+  "Q-13-17": {
+    "subsystem": "navigation",
+    "title": "Invalid announcement option",
+    "message_template": "A `website.announcement` option (`type` or `position`) has a value Quarto does not recognize. The default is used instead and the banner still renders.",
+    "docs_url": "https://quarto.org/docs/errors/navigation/Q-13-17",
+    "since_version": "99.9.9"
+  },
   "Q-14-6": {
     "subsystem": "theme",
     "title": "Theme SCSS compilation failed",

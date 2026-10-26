@@ -37,6 +37,7 @@ use crate::resource_resolver::ResourceResolverContext;
 /// | [`NavSurface::PageFooter`] | `Q-13-3` |
 /// | [`NavSurface::BodyLink`] | `Q-13-4` |
 /// | [`NavSurface::PageNav`] | `Q-13-7` |
+/// | [`NavSurface::Announcement`] | `Q-13-15` |
 ///
 /// `Sidebar` carries an optional `id` so the diagnostic can point at
 /// the specific sidebar that introduced the bad reference (`Sidebar
@@ -61,6 +62,9 @@ pub enum NavSurface<'a> {
     /// `prev:` / `next:` page-navigation buttons rendered at the
     /// bottom of website pages.
     PageNav,
+    /// Links inside `website.announcement` content
+    /// (bd-website-announcement-w1gtpzki).
+    Announcement,
 }
 
 impl<'a> NavSurface<'a> {
@@ -72,6 +76,7 @@ impl<'a> NavSurface<'a> {
             NavSurface::PageFooter => "Q-13-3",
             NavSurface::BodyLink => "Q-13-4",
             NavSurface::PageNav => "Q-13-7",
+            NavSurface::Announcement => "Q-13-15",
         }
     }
 
@@ -83,12 +88,13 @@ impl<'a> NavSurface<'a> {
             NavSurface::PageFooter => "Page footer",
             NavSurface::BodyLink => "Body link",
             NavSurface::PageNav => "Page navigation",
+            NavSurface::Announcement => "Announcement",
         }
     }
 }
 
 /// Build the structured "missing document" diagnostic for a navigation
-/// surface (Q-13-1 through Q-13-4, Q-13-7).
+/// surface (Q-13-1 through Q-13-4, Q-13-7, Q-13-15).
 ///
 /// `location` carries the `SourceInfo` of the offending href when
 /// available: bd-qor9a plumbed it through for nav-surface callsites
@@ -1265,6 +1271,7 @@ mod tests {
             (NavSurface::Navbar, "Q-13-2", "Navbar"),
             (NavSurface::PageFooter, "Q-13-3", "Page footer"),
             (NavSurface::PageNav, "Q-13-7", "Page navigation"),
+            (NavSurface::Announcement, "Q-13-15", "Announcement"),
         ];
         for (surface, expected_code, title_prefix) in cases {
             let mut diags = Vec::new();

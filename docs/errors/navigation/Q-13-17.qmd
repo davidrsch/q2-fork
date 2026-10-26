@@ -1,0 +1,45 @@
+---
+title: "Invalid announcement option"
+description: "A website.announcement option (type or position) has a value Quarto does not recognize; the default is used."
+code: Q-13-17
+subsystem: navigation
+status: complete
+since: "99.9.9"
+categories:
+  - navigation
+  - websites
+---
+
+# `Q-13-17` — Invalid announcement option
+
+> A `website.announcement` option has a value Quarto does not
+> recognize. The default is used and the banner still renders.
+
+## What this means
+
+Two announcement options accept a fixed set of values:
+
+| option | values | default |
+|---|---|---|
+| `type` | `primary`, `secondary`, `success`, `danger`, `warning`, `info`, `light`, `dark` | `primary` |
+| `position` | `above-navbar`, `below-navbar` | `above-navbar` |
+
+`type` selects the banner's colors (the matching Bootstrap alert
+style); `position` places the banner before or after the navbar.
+Any other value is replaced by the default, and this warning names
+the option and the value.
+
+## Why this happens
+
+- **A typo** — `warn`, `error`, `below`.
+- **A color name** in `type`, such as `yellow` or `red`. Pick the
+  alert style with that color instead (`warning`, `danger`).
+
+## How to fix
+
+Use one of the values in the table above, or remove the option to
+get the default.
+
+## Related
+
+- `Q-13-16` — an announcement with no content.
