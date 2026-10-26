@@ -312,11 +312,11 @@ since the docs site is also where users will learn the feature.
   (website project): banner above navbar on page A, opted out on page B via
   front matter, opted out on directory C via `_metadata.yml`, below-navbar
   variant, announcement-only (no navbar) header.
-- [ ] **7. Preview** slot + integration test
+- [x] **7. Preview** slot + integration test
   (`PreviewDocument.integration.test.tsx`). Use the `preview-render-parity`
   skill to compare DOM.
 - [x] **8. Docs**: `docs/_quarto.yml` + guide page; render `docs/` and eyeball.
-- [ ] **9. Verification**: `cargo xtask verify`; the Windows `cargo clippy
+- [x] **9. Verification**: `cargo xtask verify`; the Windows `cargo clippy
   --target x86_64-pc-windows-msvc` cross-check for touched crates;
   `q2 render --strict claude-notes`.
 
@@ -443,3 +443,24 @@ since the docs site is also where users will learn the feature.
   llms output contains the banner text. Checked visually with headless
   Chrome at 1280px and 500px: revealed, above the navbar, page padded,
   wraps with the close button visible.
+- **Step 7 (2026-10-26).** `AnnouncementSlot` in `chromeSlots.tsx`, rendered
+  inside the React-owned `#quarto-header` before the navbar / after the
+  secondary nav; the preview header gate includes both announcement keys.
+  Tests in `headroom-header.integration.test.tsx` (placement, announcement-only
+  header, no `nav-fixed`). Live-preview parity: the Playwright smoke-all spec
+  passes for every announcement fixture in Chromium and Firefox
+  (`project-render.qmd` is skipped by design). Locally this needs an E2E
+  build first (`VITE_E2E=1 VITE_DEFAULT_SYNC_SERVER=/ws npm run build` in
+  `hub-client/`); a plain `verify` build lacks the test hooks.
+- **Step 9 (2026-10-26).** `cargo xtask verify` passes. Fallout fixed on the
+  way: a clippy `derivable_impls` lint in a test helper; the single-doc
+  `styles.css` baseline (re-captured with a note, for the banner SCSS); the
+  `pandoc-request.golden.json` schema golden (`Q2_REGENERATE_GOLDEN=1`, for
+  the new language term); the wasm crate lockfile (`sha2`); `@types/jsdom`
+  for the jsdom test's typecheck. Windows clippy cross-check passes for
+  `quarto-navigation`. `quarto-core` cannot be cross-checked from macOS
+  (`aws-lc-sys` compiles C for the target); CI's windows clippy leg covers
+  it. Manual check in Chrome on the rendered docs site: the close button
+  is focusable; closing removes the banner, re-pads the page (100px to
+  60px) and stores nothing under `remember-dismissal: false`; the banner
+  returns on reload.
