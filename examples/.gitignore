@@ -1,0 +1,9 @@
+# Example sources are .qmd; `type: default` projects render their HTML in
+# place beside the source, and website projects into _site/. All of it is
+# output: regenerate it (`cargo xtask stage-doc-examples`), never commit
+# it. The `committed-render-output` lint (crates/xtask/src/lint/) fails on
+# any that slips through (bd-9xbo5eee).
+*.html
+
+# Quarto 1 reference output, kept on purpose as a comparison fixture.
+!/websites/06-site-metadata/q1-site/**

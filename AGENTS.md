@@ -650,6 +650,11 @@ do when authoring code:
 - **vendored-pandoc-filters / pandoc-pin-agreement**: keep the vendored
   filters' "Ours vs. pinned" section and the pandoc version pin in sync
   across CI / dev-setup / README.
+- **committed-render-output**: never commit rendered HTML (q2's
+  generator stamp, or `X.html` beside a tracked `X.qmd`/`X.md`). Output
+  that should stay current is generated and gitignored (`cargo xtask
+  stage-doc-examples`); a deliberately frozen repro lives under
+  `claude-notes/plans/<name>-investigation/`, the only allowed place.
 
 ### Adding New Lint Rules
 
