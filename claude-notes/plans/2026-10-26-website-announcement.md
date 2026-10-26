@@ -307,7 +307,7 @@ since the docs site is also where users will learn the feature.
   pipeline registration, buckets, Pandoc exclusion; unit tests for position
   keys, href rewriting at depth, skip conditions.
 - [x] **4. JS + SCSS** port.
-- [ ] **5. llms test**: companion has no banner text.
+- [x] **5. llms test**: companion has no banner text.
 - [ ] **6. Smoke-all** fixtures under `crates/quarto/tests/smoke-all/navigation/`
   (website project): banner above navbar on page A, opted out on page B via
   front matter, opted out on directory C via `_metadata.yml`, below-navbar
@@ -416,3 +416,8 @@ since the docs site is also where users will learn the feature.
   block added to `_bootstrap-rules.scss` next to `#quarto-draft-alert`, with
   a button-chrome reset for the `<button>` close control; the dart-sass
   parity fixtures cover Bootstrap only and need no regeneration.
+- **Step 5 (2026-10-26).** End-to-end
+  `llms_txt::announcement_banner_is_html_only_and_page_opt_out_works`
+  (real `ProjectPipeline` render): the banner is in `index.html` with the
+  configured type, absent from a front-matter opted-out page, and absent from
+  `index.md`, `reviewed.md`, `llms.txt`, `llms-full.txt`.

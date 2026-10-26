@@ -1149,3 +1149,45 @@ fn llms_companion_strips_img_fluid() {
         "the inline image survives with a clean attribute list",
     );
 }
+
+/// bd-website-announcement-w1gtpzki: the `website.announcement` banner is
+/// site chrome. It reaches the HTML of every page that has not opted out,
+/// and never reaches the llms view — companions, `llms.txt`, or
+/// `llms-full.txt` — because it lives in metadata, not in the body the
+/// capture serializes. A page opts out with front-matter
+/// `website: {announcement: false}`.
+#[test]
+fn announcement_banner_is_html_only_and_page_opt_out_works() {
+    const MARKER: &str = "Announcement marker 7f3a";
+    let (dir, _) = render_project(|dir| {
+        write(
+            &dir.join("_quarto.yml"),
+            &format!(
+                "project:\n  type: website\n  output-dir: _site\n\
+                 website:\n  title: \"Test Site\"\n  llms-txt: true\n\
+                 \x20 announcement:\n    content: \"{MARKER}\"\n    type: warning\n\
+                 \x20 navbar:\n    left:\n      - index.qmd\n      - reviewed.qmd\n"
+            ),
+        );
+        write(&dir.join("index.qmd"), "---\ntitle: Home\n---\n\nHome body.\n");
+        write(
+            &dir.join("reviewed.qmd"),
+            "---\ntitle: Reviewed\nwebsite:\n  announcement: false\n---\n\nReviewed body.\n",
+        );
+    });
+    let site = dir.join("_site");
+
+    let index_html = read(&site.join("index.html"));
+    assert_contains(&index_html, "id=\"quarto-announcement\"", "index.html");
+    assert_contains(&index_html, MARKER, "index.html");
+    assert_contains(&index_html, "alert alert-warning hidden", "index.html");
+
+    let reviewed_html = read(&site.join("reviewed.html"));
+    assert_not_contains(&reviewed_html, "quarto-announcement", "reviewed.html");
+    assert_not_contains(&reviewed_html, MARKER, "reviewed.html");
+
+    for file in ["index.md", "reviewed.md", "llms.txt", "llms-full.txt"] {
+        assert_not_contains(&read(&site.join(file)), MARKER, file);
+    }
+    assert_contains(&read(&site.join("index.md")), "Home body.", "index.md");
+}
