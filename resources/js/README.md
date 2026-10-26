@@ -56,8 +56,9 @@ Fixed-header offset management + headroom wiring for website renders
 (bd-ersobfbt).
 
 - **`quarto-nav.js`** — q2 port of the header-machinery subset of
-  Quarto 1's `quarto-nav.js` (deviations documented in the file
-  header). Not minified; it is small and diff-reviewability wins.
+  Quarto 1's `quarto-nav.js`, plus its announcement-bar reveal/dismiss
+  logic (deviations documented in the file header). Not minified; it is
+  small and diff-reviewability wins.
 
 Shipped by `QuartoNavJsTransform`
 (`crates/quarto-core/src/transforms/quarto_nav_js.rs`) for website

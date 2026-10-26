@@ -3075,6 +3075,39 @@ code.sourceCode a.code-annotation-anchor {
   }
 }
 
+// Announcement bar (bd-website-announcement-w1gtpzki). Ported from Quarto
+// 1's `navigation/quarto-nav.scss`. q2 change: the close control is a
+// `<button>` around the icon (Q1 used a bare `<i>`), so its default
+// button chrome is reset here to look like the Q1 icon.
+#quarto-announcement {
+  padding: 0.5em;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0;
+  font-size: 0.9em;
+
+  .quarto-announcement-content {
+    margin-right: auto;
+    p {
+      margin-bottom: 0;
+    }
+  }
+  .quarto-announcement-icon {
+    margin-right: 0.5em;
+    font-size: 1.2em;
+    margin-top: -0.15em;
+  }
+  .quarto-announcement-action {
+    cursor: pointer;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+}
+
 #quarto-back-to-top {
   z-index: 1000;
 }

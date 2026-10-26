@@ -23,8 +23,15 @@
  * - no `.headroom-target` selector — q2 has no sidebar-rollup toggle;
  * - no `footerOffset()` / `dashboardOffset()` — no fixed footer or
  *   dashboard header exists in q2;
- * - no `quarto-hrChanged` CustomEvent — no consumer;
- * - no announcement-bar registration — feature not ported.
+ * - no `quarto-hrChanged` CustomEvent — no consumer.
+ *
+ * The announcement bar (`#quarto-announcement`,
+ * bd-website-announcement-w1gtpzki) is Q1's `announceRegister` /
+ * `announceDismiss`, with two q2 changes: a banner marked
+ * `data-announcement-remember="false"` closes for the current page view
+ * only (no localStorage read or write), and registration is keyed off
+ * the banner *element* via the same MutationObserver as the header (see
+ * below), so a banner the preview re-mounts is revealed again.
  *
  * One deliberate q2 EXTENSION over Q1: init is keyed off the header
  * *element*, re-checked via a MutationObserver on `document.body`. Q1
@@ -122,6 +129,61 @@
     updateDocumentOffset(true);
   }
 
+  // --- announcement bar ---------------------------------------------------
+  // The banner ships with class `hidden`; reveal it unless a remembered
+  // dismissal applies. localStorage access is guarded: it throws in some
+  // privacy modes, and the banner must still work there.
+  let currentAnnouncement = null;
+
+  function announcementRemembers(el) {
+    return el.getAttribute("data-announcement-remember") !== "false";
+  }
+
+  function announcementKey(el) {
+    return "quarto-announce-" + el.getAttribute("data-announcement-id");
+  }
+
+  function announcementDismissed(el) {
+    try {
+      return !!window.localStorage.getItem(announcementKey(el));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function dismissAnnouncement(el) {
+    el.remove();
+    if (announcementRemembers(el)) {
+      try {
+        window.localStorage.setItem(announcementKey(el), "true");
+      } catch (e) {
+        // Not persisted; the banner is still closed for this view.
+      }
+    }
+  }
+
+  function registerAnnouncement(el) {
+    if (el === currentAnnouncement) {
+      return;
+    }
+    currentAnnouncement = el;
+    if (!el) {
+      return;
+    }
+    if (announcementRemembers(el) && announcementDismissed(el)) {
+      el.remove();
+      return;
+    }
+    el.classList.remove("hidden");
+    const actionEl = el.querySelector(".quarto-announcement-action");
+    if (actionEl) {
+      actionEl.addEventListener("click", function (e) {
+        e.preventDefault();
+        dismissAnnouncement(el);
+      });
+    }
+  }
+
   // --- header binding -----------------------------------------------------
   // State for the currently-bound header element (see the q2-extension
   // note in the file header).
@@ -212,12 +274,17 @@
     setTimeout(updateDocumentOffsetWithoutAnimation, 250);
   }
 
+  registerAnnouncement(window.document.querySelector("#quarto-announcement"));
   initForHeader(window.document.querySelector("#quarto-header"));
 
-  // Track header element identity: in the hub-client preview the header
-  // mounts after DOMContentLoaded and can be replaced by edits. Cheap
-  // on native pages (one querySelector per mutation batch).
+  // Track header (and announcement) element identity: in the hub-client
+  // preview the header mounts after DOMContentLoaded and can be replaced
+  // by edits. Cheap on native pages (two querySelectors per mutation
+  // batch).
   const headerWatcher = new MutationObserver(() => {
+    registerAnnouncement(
+      window.document.querySelector("#quarto-announcement")
+    );
     const header = window.document.querySelector("#quarto-header");
     if (header !== currentHeader) {
       initForHeader(header);

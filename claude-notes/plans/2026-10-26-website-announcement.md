@@ -306,7 +306,7 @@ since the docs site is also where users will learn the feature.
 - [x] **3. Render transform**, template partial + gate, nav-js predicate,
   pipeline registration, buckets, Pandoc exclusion; unit tests for position
   keys, href rewriting at depth, skip conditions.
-- [ ] **4. JS + SCSS** port.
+- [x] **4. JS + SCSS** port.
 - [ ] **5. llms test**: companion has no banner text.
 - [ ] **6. Smoke-all** fixtures under `crates/quarto/tests/smoke-all/navigation/`
   (website project): banner above navbar on page A, opted out on page B via
@@ -402,3 +402,17 @@ since the docs site is also where users will learn the feature.
     up a pre-existing share-tree drift from `main` (the fig-alt docx
     backport, bd-ykjwiqcc, had not been re-captured); the orphaned share
     tree `60d82cb8f21d33d2` was removed, as the v1.11.6 resync did.
+- **Step 4 (2026-10-26).** `quarto-nav.js` gains the banner logic
+  (reveal unless a remembered dismissal applies; close removes the element
+  and, unless `data-announcement-remember="false"`, stores
+  `quarto-announce-<id>`; localStorage access is try/catch-guarded).
+  **Deviation from D7/D9:** no `window.quartoAnnounceRegister` hook.
+  `quarto-nav.js` already runs a body-wide MutationObserver that rebinds
+  when the preview re-mounts `#quarto-header`; registration is keyed off the
+  `#quarto-announcement` element identity in that same observer, so a
+  re-mounted banner is revealed again with no React-side call. Covered by
+  `ts-packages/preview-renderer/src/q2-preview/quarto-nav-announcement.integration.test.ts`
+  (8 jsdom cases running the real script in a fresh window each). SCSS
+  block added to `_bootstrap-rules.scss` next to `#quarto-draft-alert`, with
+  a button-chrome reset for the `<button>` close control; the dart-sass
+  parity fixtures cover Bootstrap only and need no regeneration.
