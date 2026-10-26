@@ -148,15 +148,17 @@ serving the sandbox until production stops using it.
       (sitemap, llms.txt).
 - [ ] Add a self-unregistering `serviceWorker.js` to the docs output root
       (e.g. `docs/serviceWorker.js` listed under `project.resources`):
-      ```js
-      self.addEventListener('install', () => self.skipWaiting());
-      self.addEventListener('activate', (e) => e.waitUntil((async () => {
-        await self.registration.unregister();
-        for (const c of await self.clients.matchAll({ type: 'window' })) c.navigate(c.url);
-      })()));
-      ```
-      Add a comment explaining why it exists and when it can go (no earlier
-      than ~2027-04).
+
+  ```js
+  self.addEventListener('install', () => self.skipWaiting());
+  self.addEventListener('activate', (e) => e.waitUntil((async () => {
+    await self.registration.unregister();
+    for (const c of await self.clients.matchAll({ type: 'window' })) c.navigate(c.url);
+  })()));
+  ```
+
+  Add a comment explaining why it exists and when it can go (no earlier
+  than about 2027-04).
 - [ ] Add a backup unregister snippet to the docs landing page: on load,
       unregister any `navigator.serviceWorker` registration whose scope is
       `/q2/`.
