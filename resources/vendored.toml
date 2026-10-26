@@ -192,6 +192,11 @@ guards = ["quarto-core test(language_catalog)"]
 procedure = "resources/language/README.md"
 license = "GPL-2.0"
 last_reviewed = "2026-10-21"
+notes = '''
+Carries q2-only keys in _language.yml (listed in the README's "Quarto 2
+additions" table) that a wholesale re-copy drops; re-add them after updating.
+The language_catalog guard test fails until they are back.
+'''
 
 [[asset]]
 id = "highlight-styles"
