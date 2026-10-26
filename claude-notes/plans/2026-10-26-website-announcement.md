@@ -438,7 +438,7 @@ since the docs site is also where users will learn the feature.
   sidebar entry after "Header pinning", and the site-wide announcement in
   `docs/_quarto.yml` (`type: warning`, `icon: info-circle`,
   `remember-dismissal: false`). No page opts out yet: which pages count as
-  reviewed is the docs owners' call. `q2 render docs` emits the same 33
+  reviewed is for the docs owners to decide. `q2 render docs` emits the same 33
   pre-existing warnings with and without these changes; no `.md`/`.txt`
   llms output contains the banner text. Checked visually with headless
   Chrome at 1280px and 500px: revealed, above the navbar, page padded,
