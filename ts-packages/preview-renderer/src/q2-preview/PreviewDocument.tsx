@@ -13,6 +13,7 @@ import * as Custom from './custom';
 import {
     SkipLinkSlot,
     DraftAlertSlot,
+    AnnouncementSlot,
     NavbarSlot,
     SecondaryNavSlot,
     SidebarSlot,
@@ -93,6 +94,15 @@ export const PreviewDocument = ({
     );
     const secondaryNavHtml = extractMetaString(
         getMetaPath(meta, ['rendered', 'navigation', 'secondary-nav']),
+    );
+    // Announcement banner (bd-website-announcement-w1gtpzki): at most one
+    // of the two position keys is set. Either opens the header, like the
+    // template gate and `transforms::HEADER_CONTENT_KEYS`.
+    const announcementAboveHtml = extractMetaString(
+        getMetaPath(meta, ['rendered', 'navigation', 'announcement-above']),
+    );
+    const announcementBelowHtml = extractMetaString(
+        getMetaPath(meta, ['rendered', 'navigation', 'announcement-below']),
     );
     // `draft: true` pages: the localized banner label from
     // `DraftAlertTransform` (bd-3cpv7dah). Absent on non-draft pages.
@@ -346,8 +356,9 @@ export const PreviewDocument = ({
             {draftAlertText ? <DraftAlertSlot text={draftAlertText} /> : null}
 
             {/* The site header lives BEFORE quarto-content, wrapping
-                the navbar and the narrow-viewport secondary nav
-                (template.rs QUARTO_HEADER_PARTIAL + its call-site gate).
+                the announcement banner, the navbar and the narrow-viewport
+                secondary nav (template.rs QUARTO_HEADER_PARTIAL + its
+                call-site gate).
                 The <header> element is React-owned — NOT part of the
                 dangerouslySetInnerHTML chrome — so a live Headroom
                 instance (entry.tsx injects headroom.min.js +
@@ -356,7 +367,10 @@ export const PreviewDocument = ({
                 Classes mirror the template: `headroom fixed-top`
                 unconditionally (Q1 parity — also under pinned:), plus
                 `quarto-banner` in banner mode. */}
-            {navbarHtml || secondaryNavHtml ? (
+            {navbarHtml ||
+            secondaryNavHtml ||
+            announcementAboveHtml ||
+            announcementBelowHtml ? (
                 <header
                     id="quarto-header"
                     className={`headroom fixed-top${bannerTitleBlock ? ' quarto-banner' : ''}`}
@@ -375,9 +389,15 @@ export const PreviewDocument = ({
                         ? { 'data-headroom-pinned': 'true' }
                         : {})}
                 >
+                    {announcementAboveHtml ? (
+                        <AnnouncementSlot html={announcementAboveHtml} />
+                    ) : null}
                     {navbarHtml ? <NavbarSlot html={navbarHtml} /> : null}
                     {secondaryNavHtml ? (
                         <SecondaryNavSlot html={secondaryNavHtml} />
+                    ) : null}
+                    {announcementBelowHtml ? (
+                        <AnnouncementSlot html={announcementBelowHtml} />
                     ) : null}
                 </header>
             ) : null}
