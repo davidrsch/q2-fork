@@ -20,15 +20,18 @@ Main app:   https://your-hub-domain.com/
             ├─ Serves the main React app (owns WASM + VFS)
             └─ Q2SandboxedPreviewIframe (parent side of the protocol)
 
-Sandbox:    https://quarto-dev.github.io/q2/          (GitHub Pages)
+Sandbox:    https://quarto-dev.github.io/q2-sandbox/  (GitHub Pages, quarto-dev/q2-sandbox)
             ├─ index.html + q2-preview-assets/* (renderer bundle, KaTeX fonts)
             ├─ serviceWorker.js (asset proxy)
             └─ Communicates ONLY via postMessage
 ```
 
-- Deployment: `.github/workflows/deploy-sandboxed-preview.yml` publishes
-  `hub-client/quarto-hub-sandboxed-preview/dist/` to GitHub Pages (see
-  `.github/workflows/github-pages.md`).
+- Deployment: `.github/workflows/deploy-q2-sandbox.yml` builds
+  `hub-client/quarto-hub-sandboxed-preview/dist/` and pushes it to the
+  `gh-pages` branch of `quarto-dev/q2-sandbox` (see
+  `.github/workflows/github-pages.md`). Until 2026-10 it was served from
+  `/q2/`, which now belongs to the Q2 docs (bd-73lilznv). The origin is
+  still shared with other `quarto-dev.github.io` sites (bd-gotwa715).
 - Local dev fallback: the build also copies dist/ to
   `hub-client/public/q2-sandboxed-preview/` (gitignored); point
   `VITE_Q2_SANDBOXED_PREVIEW_URL=q2-sandboxed-preview/index.html` at it.

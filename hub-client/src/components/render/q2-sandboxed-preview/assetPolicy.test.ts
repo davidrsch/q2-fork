@@ -17,7 +17,7 @@ import {
   rewriteThemeCssUrls,
 } from '../../../../quarto-hub-sandboxed-preview/src/assetPolicy';
 
-const PAGES_SCOPE = 'https://quarto-dev.github.io/q2/';
+const PAGES_SCOPE = 'https://quarto-dev.github.io/q2-sandbox/';
 const LOCAL_SCOPE = 'http://127.0.0.1:8081/';
 
 describe('pageRelativeUrlForVfsPath / vfsPathForRequestUrl', () => {
@@ -74,6 +74,10 @@ describe('pageRelativeUrlForVfsPath / vfsPathForRequestUrl', () => {
   it('returns null for URLs outside the scope', () => {
     expect(vfsPathForRequestUrl('https://other.example/pic.png', PAGES_SCOPE)).toBeNull();
     expect(vfsPathForRequestUrl('https://quarto-dev.github.io/other/pic.png', PAGES_SCOPE)).toBeNull();
+    // Sibling Pages sites on the same origin (the Q2 docs at /q2/) are
+    // out of scope even though '/q2' is a string prefix of '/q2-sandbox'.
+    expect(vfsPathForRequestUrl('https://quarto-dev.github.io/q2/pic.png', PAGES_SCOPE)).toBeNull();
+    expect(vfsPathForRequestUrl('https://quarto-dev.github.io/q2-sandboxx/pic.png', PAGES_SCOPE)).toBeNull();
   });
 
   it('works under a nested same-origin scope (public/ fallback copy)', () => {
@@ -110,7 +114,7 @@ describe('mimeTypeFor', () => {
 
 describe('rewriteThemeCssUrls', () => {
   const dir = '.quarto/project-artifacts';
-  const base = 'https://quarto-dev.github.io/q2/';
+  const base = 'https://quarto-dev.github.io/q2-sandbox/';
 
   it('rewrites relative url() refs to absolute page URLs resolved against the CSS dir', () => {
     // Absolute because the theme is applied through a blob: stylesheet,

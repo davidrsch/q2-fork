@@ -59,12 +59,12 @@ interface Q2SandboxedPreviewIframeProps {
   onAstRendered?: () => void;
 }
 
-// The sandboxed preview is served from a separate origin (GitHub Pages) so the
-// iframe gets real cross-origin isolation; see
+// The sandboxed preview is served from a separate origin (GitHub Pages, via the
+// quarto-dev/q2-sandbox repo) so the iframe gets real cross-origin isolation; see
 // .github/workflows/github-pages.md. Set
 // VITE_Q2_SANDBOXED_PREVIEW_URL to override (e.g.
 // 'q2-sandboxed-preview/index.html' for the same-origin copy in public/).
-const Q2_SANDBOXED_PREVIEW_URL = import.meta.env.VITE_Q2_SANDBOXED_PREVIEW_URL || 'https://quarto-dev.github.io/q2/';
+const Q2_SANDBOXED_PREVIEW_URL = import.meta.env.VITE_Q2_SANDBOXED_PREVIEW_URL || 'https://quarto-dev.github.io/q2-sandbox/';
 
 /**
  * The sandbox origin, derived from the (possibly relative) iframe URL —

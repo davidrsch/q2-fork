@@ -35,7 +35,7 @@ bd-4b7f1hr7). Snyk bumps only surface 2 — every katex Snyk PR arrives red.
 a committed single-file bundle with KaTeX inlined (the surface PR #571 missed,
 repaired in PR #573). Since `5684cfead` (2026-09-01) the sandboxed preview
 builds into the gitignored `hub-client/public/q2-sandboxed-preview/` and is
-deployed by `.github/workflows/deploy-sandboxed-preview.yml`, so there is no
+deployed by `.github/workflows/deploy-q2-sandbox.yml`, so there is no
 committed bundle to regenerate. If a committed copy ever reappears, add it back
 here.
 

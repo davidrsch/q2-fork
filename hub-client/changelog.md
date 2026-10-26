@@ -23,6 +23,10 @@ WASM rebuild is needed for a changelog-only edit.
 
 -->
 
+### 2026-10-26
+
+- [`be6300e0f`](https://github.com/quarto-dev/q2/commits/be6300e0f): The `q2-sandboxed-preview` iframe now loads from `https://quarto-dev.github.io/q2-sandbox/` instead of `https://quarto-dev.github.io/q2/`, which will host the Quarto 2 documentation.
+
 ### 2026-10-23
 
 - [`ed9fbe476`](https://github.com/quarto-dev/q2/commits/ed9fbe476): The replay drawer is redesigned: it's now called "Version history", the history waveform follows the theme with the unreplayed portion faded and a clear playhead, transport buttons are proper icons with keyboard shortcuts in their tooltips, and restoring an older state is a prominent "Restore this version" button.
