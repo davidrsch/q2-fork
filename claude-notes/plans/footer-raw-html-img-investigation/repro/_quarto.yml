@@ -1,0 +1,15 @@
+project:
+  type: website
+website:
+  title: "Raw img repro"
+  navbar:
+    left:
+      - text: '<img src="/images/navbar-raw.svg" alt="navbar raw">'
+        href: index.qmd
+  page-footer:
+    center: '<img src="/images/center-raw.svg" alt="center raw"> ![md](/images/md-control.svg) <img src="/images/missing-raw.svg" alt="missing">'
+    left:
+      - text: '<img src="/images/item-raw.svg" alt="item raw">'
+        href: index.qmd
+    right:
+      - '<img src="/_extensions/demo/assets/ext-raw.svg" alt="ext raw"> <img src="/images/bare-raw.svg" alt="bare raw">'

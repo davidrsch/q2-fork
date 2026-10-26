@@ -1,0 +1,5 @@
+---
+title: Home
+---
+
+Body raw: <img src="images/body-raw.svg" alt="body raw">
