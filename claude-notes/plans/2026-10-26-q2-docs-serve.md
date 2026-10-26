@@ -2,7 +2,7 @@
 title: '`q2 docs serve`: browse the embedded documentation site offline'
 date: 2026-10-26
 description: 'Assessment and plan for a human-facing counterpart to `q2 docs llms`: a local web server that serves exactly the Quarto 2 documentation the running binary was built from.'
-status: draft  # Design decisions recorded 2026-10-26 (see Decisions); awaiting the go-ahead to implement.
+status: in-review  # Implemented and verified on braid/bd-x248xpyh-q2-docs-serveopen-human (2026-10-26); not pushed. See Implementation notes.
 braid:
   strand: bd-x248xpyh
   priority: P3
@@ -178,7 +178,7 @@ lazily into a path → bytes map, and serve that map from memory.
 Unpack the archive once into `dirs::cache_dir()/q2/docs/<commit>/` and point
 the existing `static_mode` server at it (with reload disabled).
 
-- This reuses `static_mode`'s path handling, directory redirects, and MIME
+- This reuses the path handling in `static_mode`, directory redirects, and MIME
   types without any refactor.
 - But it writes 59 MB to the user's disk and needs cache GC across versions.
   The mcp-launcher cache shows that GC has real Windows sharp edges
@@ -200,8 +200,8 @@ separate xtask), extract them to a temp dir, run `render_once`, and serve with
   also compressed, against A-unified's ~2.9 MB total. B saves about 1.5 MB,
   roughly 0.9% of the binary.
 - **Startup:** ~1 s plus extraction on a fast machine, more on slow laptops,
-  with a 700 MB memory spike. Adding a render cache brings back A′'s cache-dir
-  problems.
+  with a 700 MB memory spike. Adding a render cache brings back the cache-dir
+  problems of A′.
 - **Fidelity:** the output depends on the user's machine. Their env vars, the
   `QUARTO_*` settings, a future docs page that needs an engine or Typst, and
   the 33 render warnings the docs currently emit all leak in. A render bug in
@@ -319,7 +319,7 @@ staleness story:
 
 A small dedicated in-memory server, **not** a refactor of `static_mode`:
 
-- `static_mode`'s value is the reload/watch/lazy-execution behaviour, and a
+- The value of `static_mode` is the reload/watch/lazy-execution behaviour, and a
   docs viewer wants none of it. Making its root polymorphic would put a
   memory-vs-disk abstraction into the preview's hot path for one consumer.
 - The docs server needs GET/HEAD only: percent-decode with the same `..`/`\`/NUL
@@ -358,33 +358,71 @@ A small dedicated in-memory server, **not** a refactor of `static_mode`:
   AGENTS.md § "Refreshing the embedded docs", and the `DocsCommands` doc
   comment.
 
-## Work items (pending go-ahead)
+## Work items
 
 - [x] Decide: command name (`serve` = `open`), unify now, rename deferred
       (bd-7tkifpnh), Google Fonts import left as-is (system-font fallback
       offline).
-- [ ] Staging: copy the full `_site` + ledger + embed-info; update xtask
+- [x] Staging: copy the full `_site` + ledger + embed-info; update xtask
       unit tests (stale-file clearing, missing-file errors).
-- [ ] Staging offline check: subresource scanner + allowlist + fixture tests.
-- [ ] `crates/quarto/build.rs`: deterministic llms-first tar.zst of the
+- [x] Staging offline check: subresource scanner + allowlist + fixture tests.
+- [x] `crates/quarto/build.rs`: deterministic llms-first tar.zst of the
       dist, placeholder unchanged; check no-op rebuild; ordering-invariant
       test.
-- [ ] Shared decode helper (lift `decode_embedded_archive` to a reusable
-      spot, or copy it in the crate's style).
-- [ ] `quarto-preview` in-memory site server + route tests (dir redirect,
+- [x] Shared decode helper (`commands/docs_embed.rs`: `decode_llms` /
+      `decode_all`).
+- [x] `quarto-preview` in-memory site server + route tests (dir redirect,
       index, traversal refusal, MIME, 404, HEAD).
-- [ ] `q2 docs serve` CLI: args, page deep-link via `docs_llms`
+- [x] `q2 docs serve` CLI: args, page deep-link via `docs_llms`
       normalization, browser launch, placeholder error; parse tests in
       `main.rs`.
-- [ ] Port `DocsEmbed` to the decoded map (prefix decode); re-measure
+- [x] Port `DocsEmbed` to the decoded map (prefix decode); re-measure
       `docs llms` with hyperfine before and after (budget ≤ 50 ms added);
       drop `include_dir` for docs.
-- [ ] `serve`/`open` alias parse-equivalence test.
-- [ ] Integration test in `crates/quarto/tests/integration/` that works in
+- [x] `serve`/`open` alias parse-equivalence test.
+- [x] Integration test in `crates/quarto/tests/integration/` that works in
       both embed states (like `docs_llms_cli.rs`).
-- [ ] Manual check in a browser **with the network disabled**: navigation,
-      search, example iframes, a reveal.js example; confirm the network panel
-      shows only allowlisted outbound requests.
-- [ ] Docs page, AGENTS.md, release-workflow smoke check.
-- [ ] `cargo xtask verify`; Windows cross-clippy for `quarto` and
-      `quarto-preview`.
+- [x] Manual check in a browser: navigation, search, example iframes, a
+      reveal.js example; only allowlisted outbound requests.
+- [x] Docs page, AGENTS.md, release-workflow smoke check.
+- [x] `cargo xtask verify` (all 14 steps green; 17346 Rust tests);
+      Windows cross-clippy for `quarto` and `quarto-preview`. (xtask cross-checks clean; `quarto` /
+      `quarto-preview` cannot cross-check from macOS because `ring`
+      compiles C for the target. The CI `windows-latest` clippy leg
+      covers them.)
+
+## Implementation notes (2026-10-26)
+
+- **Dist layout.** `agents-docs-dist/{embed-info.json, llms-manifest.json,
+  site/…}`. Keeping the metadata outside `site/` means the server never
+  exposes it as a URL. build.rs treats the dist as real only when both
+  `site/llms.txt` and the ledger exist, so an old-layout dist (llms files
+  at the root) degrades to the placeholder with a cargo warning instead of
+  a confusing half-embed.
+- **Staging clears `docs/_site` first.** `q2 render` does not remove
+  output whose source was deleted, so without the clear a dev checkout
+  would embed stale pages.
+- **Offline scanner scope.** HTML subresource tags plus `<style>` blocks,
+  and CSS files. JavaScript is deliberately not scanned (runtime-built
+  URLs can't be judged statically, and the site's JS is q2's own vendored
+  runtime), so the allowlist has only the two Google Fonts hosts. The
+  `search-insights` loader foreseen in the plan didn't need an entry. On
+  the real site the check passes with only the font imports.
+- **`docs llms` visibility.** It now sees only ledger-listed files, so a
+  user-resource `.md` in the site is invisible to `--list`/`<href>`, the
+  same rule the old ledger-filtered staging enforced.
+- **Server.** `quarto_preview::static_mode::embedded_site` reuses the
+  static server's path decoding, 404, and redirect helpers (now
+  `pub(super)`) and `mime_guess`. The decoded map is leaked for the
+  process lifetime (`&'static`), so bodies are zero-copy.
+- **Measured (release, M-series).** `docs llms <page>` 3.7 → 4.8 ms
+  (+1.1 ms). `docs serve` spawn → first 200 ≈ 19 ms. The archive is
+  3.6 MB for a 73 MB / 1454-file site (the site grew since the first
+  measurement). It replaces ~1.95 MB of raw llms files, so the binary
+  grows by about +1.6 MB.
+- **Browser check (Chrome, real binary).** Navigation, search through the
+  real UI, and reveal.js example iframes all work. The only off-host
+  requests are `fonts.googleapis.com` and `fonts.gstatic.com`.
+- **Release smoke check** runs on non-Windows legs only: backgrounding and
+  killing a native process from Git Bash is unreliable. The embed-info
+  gate still covers Windows.

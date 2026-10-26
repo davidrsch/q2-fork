@@ -1,13 +1,52 @@
 ---
-title: "Embedded documentation for AI agents"
-description: "Read the Quarto 2 documentation straight from the q2 binary, with no network access, using `q2 docs llms`."
+title: "Embedded documentation"
+description: "Read the Quarto 2 documentation straight from the q2 binary, with no network access: in a browser with `q2 docs serve`, or as markdown for AI agents with `q2 docs llms`."
 ---
 
 ## Overview
 
-Every `q2` binary carries a markdown copy of this documentation site
-inside it. AI coding agents — and any tool that prefers plain text to
-rendered HTML — can read it directly from the command line, offline:
+Every `q2` binary carries this documentation site inside it, and it is
+the documentation for **the version of Quarto you are running**, not
+whatever the website currently says. There are two ways to read it,
+both offline:
+
+- `q2 docs serve` opens the full site — navigation, search, and the
+  embedded examples — in your web browser.
+- `q2 docs llms` prints a markdown copy for AI coding agents and other
+  tools that prefer plain text.
+
+## Reading the docs in a browser
+
+```bash
+q2 docs serve
+```
+
+starts a small web server on your machine for the embedded site and
+opens it in your browser. `q2 docs open` does exactly the same thing;
+use whichever name you remember. Press Ctrl-C to stop the server.
+
+To jump straight to a page, name it. Any spelling that
+[`q2 docs llms`](#fetching-a-page) accepts works here too:
+
+```bash
+q2 docs open guides/projects/preview
+q2 docs open errors                     # the error-code index
+```
+
+The server reads everything from the binary; nothing is downloaded.
+(The one exception is cosmetic: if you are online, the browser fetches
+the site's Source Sans Pro font from Google Fonts, just as it would on
+the public website. Offline, text uses your system's sans-serif font.)
+
+Use `--port` to pick the port, `--no-browser` to just print the URL,
+and `--browser` to open a specific browser. `--host` changes the
+network interface; the default, `127.0.0.1`, keeps the server private
+to your machine.
+
+## Documentation for AI agents
+
+AI coding agents — and any tool that prefers plain text to rendered
+HTML — can read the markdown copy directly from the command line:
 
 ```bash
 q2 docs llms
@@ -31,7 +70,7 @@ If you use an AI coding assistant, telling it once that
 discover the pages they need without further help.
 :::
 
-## Fetching a page
+### Fetching a page
 
 Each entry in the index is an href. Pass one to fetch that page's
 markdown:
@@ -52,7 +91,7 @@ q2 docs llms guides/authoring              # the section's index
 If a path doesn't match anything, `q2` suggests near matches and exits
 with an error rather than printing nothing.
 
-## Listing every page
+### Listing every page
 
 ```bash
 q2 docs llms --list
@@ -68,7 +107,7 @@ guides/authoring/tables.md	Tables
 guides/projects/llms-txt.md	llms.txt: a markdown mirror for AI tools
 ```
 
-## Machine-readable JSON
+### Machine-readable JSON
 
 Programs that consume the page list or the provenance report can read
 them as JSON instead of parsing the text forms:
@@ -83,7 +122,7 @@ in the same order as the text form; `--embed-info --json` prints
 `{"placeholder": false, "commit": "...", "dirty": false, "pages": 255}`.
 `--json` works only with `--list` or `--embed-info`.
 
-## The whole corpus at once
+### The whole corpus at once
 
 ```bash
 q2 docs llms --full
@@ -111,7 +150,9 @@ pages: 255
 Released binaries always carry the documentation built from that
 release's source. A `q2` you built yourself may report
 `source: placeholder`, meaning no documentation was embedded; the
-command tells you how to build and embed it.
+command tells you how to build and embed it. `q2 docs serve` and
+`q2 docs llms` read the same embedded snapshot, so this report covers
+both.
 
 ## Related
 

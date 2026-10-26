@@ -6946,7 +6946,6 @@ dependencies = [
  "dunce",
  "flate2",
  "hex",
- "include_dir",
  "inquire",
  "insta",
  "mimalloc",
@@ -6992,6 +6991,7 @@ dependencies = [
  "windows-sys 0.61.2",
  "yaml-rust2",
  "zip",
+ "zstd",
 ]
 
 [[package]]

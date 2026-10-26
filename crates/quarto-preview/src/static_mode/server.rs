@@ -75,7 +75,7 @@ const CLIENT_JS: &str = include_str!("client.js");
 /// The pdf.js tree only changes with the binary, so it may be cached (unlike the output files).
 const PDFJS_CACHE: HeaderValue = HeaderValue::from_static("public, max-age=3600");
 
-const NO_STORE: HeaderValue = HeaderValue::from_static("no-store, max-age=0");
+pub(super) const NO_STORE: HeaderValue = HeaderValue::from_static("no-store, max-age=0");
 const HTML_UTF8: HeaderValue = HeaderValue::from_static("text/html; charset=utf-8");
 const CORS_ANY: HeaderValue = HeaderValue::from_static("*");
 
@@ -325,7 +325,7 @@ fn serve_pdfjs(tree: &PdfjsTree, segments: &[String], is_head: bool) -> Response
 /// `None` when it must be refused: undecodable, a `..` segment (any
 /// spelling, since decoding happened first), a backslash (a separator
 /// on Windows), or a NUL.
-fn decode_segments(raw_path: &str) -> Option<Vec<String>> {
+pub(super) fn decode_segments(raw_path: &str) -> Option<Vec<String>> {
     let decoded = percent_decode_str(raw_path).decode_utf8().ok()?;
     let mut segments = Vec::new();
     for segment in decoded.split('/') {
@@ -476,7 +476,7 @@ async fn not_found(state: &StaticState, is_head: bool) -> Response {
     plain_not_found(is_head)
 }
 
-fn plain_not_found(is_head: bool) -> Response {
+pub(super) fn plain_not_found(is_head: bool) -> Response {
     let body = b"Not Found".to_vec();
     let mut response = Response::builder()
         .status(StatusCode::NOT_FOUND)
@@ -491,7 +491,7 @@ fn plain_not_found(is_head: bool) -> Response {
     response
 }
 
-fn redirect(status: StatusCode, location: &str) -> Response {
+pub(super) fn redirect(status: StatusCode, location: &str) -> Response {
     Response::builder()
         .status(status)
         .header(header::LOCATION, location)

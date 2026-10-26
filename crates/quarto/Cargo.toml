@@ -67,10 +67,11 @@ quarto-brand.workspace = true
 # `q2 use brand <source>`. Shared with `q2 add` when that lands.
 quarto-source-fetch = { path = "../quarto-source-fetch" }
 quarto-test.workspace = true
-# `q2 docs llms`: the docs-site llms.txt artifacts staged by
-# `cargo xtask build-agents-docs` are embedded via `include_dir!`
-# (bd-hwop1zii; see build.rs).
-include_dir.workspace = true
+# `q2 docs llms` / `q2 docs serve`: the docs site staged by `cargo
+# xtask build-agents-docs` is embedded as a tar.zst archive (bd-hwop1zii,
+# bd-x248xpyh; see build.rs) and decoded at runtime.
+tar.workspace = true
+zstd.workspace = true
 serde_yaml.workspace = true
 tempfile = "3"
 # Phase D.1 (bd-kw93.8): auto-open browser tabs on `q2 preview`.
@@ -85,6 +86,11 @@ openssl-sys = { version = "0.9", optional = true }
 [build-dependencies]
 # rerun-if-changed watches that never go permanently stale (bd-7xlph6ki).
 quarto-build-support.workspace = true
+# Archive the staged docs site (see build.rs).
+serde.workspace = true
+serde_json.workspace = true
+tar.workspace = true
+zstd.workspace = true
 
 [features]
 # Release-build knob (plan D4, bd-c6l13j79): samod →

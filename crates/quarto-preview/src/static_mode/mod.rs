@@ -4,16 +4,21 @@
 //! HTML page, and the pure policy that turns a filesystem change into
 //! "ignore / re-render this input / re-render everything".
 //!
+//! `embedded_site` is the same static serving without the preview
+//! machinery, over files held in memory: `q2 docs serve` (bd-x248xpyh).
+//!
 //! Nothing here touches the hub, samod, or the embedded SPA. The
 //! render loop that drives it lives in the `q2` binary
 //! (`crates/quarto/src/commands/preview_static.rs`) because rendering
 //! is dispatched there. Plan:
 //! `claude-notes/plans/2026-09-22-q2-preview-static.md`.
 
+pub mod embedded_site;
 pub mod reload;
 pub mod server;
 pub mod watch_policy;
 
+pub use embedded_site::{SiteFiles, build_embedded_site_router};
 pub use reload::{ReloadEvent, ReloadHub};
 pub use server::{
     CLIENT_PATH, EVENTS_PATH, PDFJS_PREFIX, StaticServerConfig, VIEWER_PATH, build_router, serve,
