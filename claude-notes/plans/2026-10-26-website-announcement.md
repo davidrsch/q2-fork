@@ -308,7 +308,7 @@ since the docs site is also where users will learn the feature.
   keys, href rewriting at depth, skip conditions.
 - [x] **4. JS + SCSS** port.
 - [x] **5. llms test**: companion has no banner text.
-- [ ] **6. Smoke-all** fixtures under `crates/quarto/tests/smoke-all/navigation/`
+- [x] **6. Smoke-all** fixtures under `crates/quarto/tests/smoke-all/navigation/`
   (website project): banner above navbar on page A, opted out on page B via
   front matter, opted out on directory C via `_metadata.yml`, below-navbar
   variant, announcement-only (no navbar) header.
@@ -421,3 +421,14 @@ since the docs site is also where users will learn the feature.
   (real `ProjectPipeline` render): the banner is in `index.html` with the
   configured type, absent from a front-matter opted-out page, and absent from
   `index.md`, `reviewed.md`, `llms.txt`, `llms-full.txt`.
+- **Step 6 (2026-10-26).** Fixtures `smoke-all/navigation/announcement-website/`
+  (banner with type/icon/markdown/`remember-dismissal: false`; `other.qmd`
+  field-wise `type` override; `reviewed.qmd` front-matter opt-out;
+  `reviewed-section/` `_metadata.yml` opt-out; `project-render.qmd`) and
+  `announcement-only-website/` (no navbar, `below-navbar`, not dismissable:
+  header still opens, no close control, no `nav-fixed`). Selectors are
+  descendant-only so they hold in the preview DOM, where each chrome slot
+  sits in a `display: contents` wrapper; above/below ordering is pinned by
+  the template unit tests instead. The per-file smoke render
+  (`render_to_file`) has no project index, so the `.qmd` → `.html` link
+  assertion lives in `project-render.qmd` with `render-project: true`.

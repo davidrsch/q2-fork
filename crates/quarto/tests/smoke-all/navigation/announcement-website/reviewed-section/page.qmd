@@ -1,0 +1,12 @@
+---
+title: Section page
+_quarto:
+  tests:
+    html:
+      noErrorsOrWarnings: true
+      ensureHtmlElements:
+        - - 'header#quarto-header nav.navbar'
+        - - '#quarto-announcement'
+---
+
+A page whose directory opts out via `_metadata.yml`.

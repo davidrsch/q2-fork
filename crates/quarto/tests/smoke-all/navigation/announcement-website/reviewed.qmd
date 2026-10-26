@@ -1,0 +1,14 @@
+---
+title: Reviewed
+website:
+  announcement: false
+_quarto:
+  tests:
+    html:
+      noErrorsOrWarnings: true
+      ensureHtmlElements:
+        - - 'header#quarto-header nav.navbar'
+        - - '#quarto-announcement'
+---
+
+A page that opts out of the announcement in its front matter.

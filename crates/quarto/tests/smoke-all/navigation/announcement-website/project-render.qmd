@@ -1,0 +1,18 @@
+---
+title: Project render
+_quarto:
+  # The per-file smoke render has no project index, so `.qmd` links in
+  # site chrome stay unresolved there; assert link resolution on a
+  # whole-project render instead.
+  render-project: true
+  tests:
+    html:
+      noErrorsOrWarnings: true
+      ensureHtmlElements:
+        -
+          - '#quarto-announcement .quarto-announcement-content a[href="other.html"]'
+        - []
+---
+
+Link targets in the announcement content are project-root relative and
+resolve to the page's output URL.

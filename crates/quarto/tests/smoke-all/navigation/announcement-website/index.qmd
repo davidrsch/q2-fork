@@ -1,0 +1,24 @@
+---
+title: Home
+_quarto:
+  tests:
+    html:
+      noErrorsOrWarnings: true
+      ensureHtmlElements:
+        -
+          # Inside the fixed header, with the configured type and icon.
+          # Descendant selectors only: the preview wraps each chrome slot
+          # in a `display: contents` div. Placement relative to the
+          # navbar is pinned by the template unit tests.
+          - 'header#quarto-header #quarto-announcement.alert.alert-warning'
+          - '#quarto-announcement[data-announcement-remember="false"]'
+          - '#quarto-announcement i.bi.bi-info-circle.quarto-announcement-icon'
+          # Content is markdown (link resolution: see project-render.qmd).
+          - '#quarto-announcement .quarto-announcement-content strong'
+          - '#quarto-announcement .quarto-announcement-content a'
+          # The close control is a labelled button (q2 change from Q1's <i>).
+          - '#quarto-announcement button.quarto-announcement-action[type="button"][aria-label="Close announcement"]'
+        - []
+---
+
+A page that shows the site announcement.

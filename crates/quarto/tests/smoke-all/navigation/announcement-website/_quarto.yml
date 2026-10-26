@@ -1,0 +1,17 @@
+project:
+  type: website
+website:
+  title: Announcement site
+  # bd-website-announcement-w1gtpzki: configured once, merged into every
+  # page; pages and directories opt out with `announcement: false`.
+  announcement:
+    content: "Not yet **reviewed**. See [the other page](other.qmd)."
+    type: warning
+    icon: info-circle
+    remember-dismissal: false
+  navbar:
+    left:
+      - index.qmd
+      - other.qmd
+      - reviewed.qmd
+      - reviewed-section/page.qmd
