@@ -1,0 +1,365 @@
+
+/* Ported from quarto-web (_extensions/quartoorg/scss/partials/_home.scss).
+   Selectors are rescoped from `body.quarto-home` to a `.quarto-home` wrapper
+   div: Q2 keeps a user-supplied `body-classes` wholesale and skips its own
+   compose (nav-fixed, quarto-light/-dark, sidebar classes), so the landing
+   page cannot set a body class without losing those. Color-mode rules read
+   `body.quarto-light` / `body.quarto-dark` and descend into `.quarto-home`. */
+
+/* Q2 has no `page-layout: custom` yet (template.rs only distinguishes
+   `full`); the value still lands as a class on #quarto-content. Until Q2
+   implements it, give the custom layout Q1 semantics here: no page grid,
+   no padding, the page owns the full width. */
+#quarto-content.page-layout-custom {
+  display: block;
+  padding: 0;
+}
+
+#quarto-content.page-layout-custom > main.content {
+  padding: 0;
+  max-width: none;
+  margin: 0;
+}
+
+/* Q1 renders no title block under the custom layout. Q2 emits one whenever
+   title-block metadata exists (here: `description`, kept for <meta> but
+   hidden with `hide-description`), which leaves an empty <header>. */
+#quarto-content.page-layout-custom > main.content > #title-block-header {
+  display: none;
+}
+
+/* Q1 pads #quarto-content > *; pass that padding through to the hero */
+@media (min-width: 992px) {
+#quarto-content.page-layout-custom > main.content > .quarto-home > * {
+  padding-top: 14px;
+}
+}
+
+.quarto-home .content-block {
+  padding-top: 20px;
+  padding-bottom: 10px;
+  margin-left: 30px;
+  margin-right: 30px;
+}
+
+
+@media(min-width: 900px) {
+.quarto-home .content-block {
+  margin-left: 50px;
+  margin-right: 50px;
+}
+}
+
+@media (min-width: 1200px) {
+.quarto-home .content-block {
+  max-width: 1100px;
+  margin-left: auto;
+  margin-right: auto;
+}
+}
+
+.quarto-home .hero-banner {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+body.quarto-light .quarto-home .hero-banner {
+  background-color: rgb(240,245,249);
+}
+
+body.quarto-dark .quarto-home .hero-banner {
+  background-color: #1C2F3D;
+}
+
+.quarto-home .hero-banner h1 {
+  font-size: 2.5rem;
+}
+
+body.quarto-light .quarto-home .hero-banner h1 {
+  color: #39729E;
+}
+
+body.quarto-dark .quarto-home .hero-banner h1 {
+  color: #b9d2eE;
+}
+
+.quarto-home .hero-banner .hero-image {
+  position: absolute;
+  display: none;
+  height: auto;
+}
+
+.quarto-home .hero-banner .content-block {
+  display: flex;
+  flex-direction: row;
+}
+
+.quarto-home .hero-banner .content-block .hero-text {
+  width: 65%;
+}
+
+.quarto-home .hero-banner .content-block .hero-animation {
+  margin-left: 40px;
+  margin-top: 45px;
+  width: 350px;
+  height: 455px;
+}
+
+.quarto-home .hero-banner .content-block .hero-animation video {
+  width: 350px;
+  height: 455px;
+}
+
+@media (min-width: 1000px) {
+.quarto-home .hero-banner .hero-image {
+  display: initial;
+  width: 270px;
+}
+}
+
+@media (min-width: 1200px) {
+.quarto-home .hero-banner .hero-image {
+  width: 340px;
+}
+}
+
+@media (min-width: 1400px) {
+.quarto-home .hero-banner .hero-image {
+  width: 440px;
+}
+}
+
+.quarto-home .hero-banner .hero-image p {
+  margin-bottom: 0;
+}
+
+.quarto-home .hero-banner .hero-image-left {
+  left: 0;
+  bottom: 0;
+}
+
+.quarto-home .hero-banner .hero-image-right {
+  right: 0;
+  bottom: 0;
+}
+
+
+.quarto-home .hero-banner .content-block {
+  z-index: 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quarto-home .hero-banner .content-block {
+    max-width: 660px;
+  }
+  .quarto-home .hero-banner .content-block .hero-text {
+    width: 100%;
+  }
+  
+  .quarto-home .hero-banner .content-block .hero-animation {
+    display: none;
+  }
+}
+
+@media (max-width: 1200px)  {
+  .quarto-home .hero-banner .content-block {
+    max-width: 660px;
+  }
+  .quarto-home .hero-banner .content-block .hero-text {
+    width: 100%;
+  }
+  
+  .quarto-home .hero-banner .content-block .hero-animation {
+    display: none;
+  }
+}
+
+
+.quarto-home .hero-banner a:not(.btn) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.quarto-home .hero-banner .h3 {
+  margin-top: 1.3rem;
+  margin-bottom: 1.3rem;
+}
+
+.quarto-home .hero-banner h4 {
+  margin-top: 0;
+}
+
+.quarto-home .hero-banner a[role="button"] {
+  margin-bottom: 0;
+}
+
+.quarto-home .hero-banner ul {
+  padding-inline-start: 21px;
+  font-size: 1.1rem;
+}
+
+.quarto-home .hero-banner ul li {
+  padding-bottom: 0.4rem;
+}
+
+
+body.quarto-light .quarto-home .alt-background {
+  background-color: rgb(247,249,251);
+  border-top: 1px solid #dee2e6;
+  border-bottom: 1px solid #dee2e6;
+}
+
+body.quarto-dark .quarto-home .alt-background {
+    background-color: #17212B;
+  border-top: 1px solid #151515;
+  border-bottom: 1px solid #151515;
+}
+
+.quarto-home .hello-quarto {
+  padding-bottom: 1rem;
+}
+
+/* "Hello, Quarto" is an h2 (the page has one h1) styled as the h1 it used to be.
+   section > h2:first-child matches the specificity of Quarto's
+   #quarto-content section:first-of-type h2:first-of-type, and wins by order. */
+#quarto-content .quarto-home .hello-quarto-banner section > h2:first-child {
+  font-size: calc(1.325rem + 0.9vw);
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+@media (min-width: 1200px) {
+#quarto-content .quarto-home .hello-quarto-banner section > h2:first-child {
+  font-size: 2rem;
+}
+}
+
+@media (min-width: 715px) {
+.quarto-home .hello-quarto-banner {
+  display: inline-flex;
+}
+
+.quarto-home .hello-quarto-banner h2 {
+  margin-right: 40px;
+}
+}
+
+.quarto-home .hello-quarto-banner .nav-pills .nav-link.active, .quarto-home .nav-pills .show>.nav-link {
+  border: none;
+  border-bottom: 2px solid #39729E;
+  color: #39729E;
+  background-color: transparent;
+}
+
+.quarto-home .hello-quarto-banner .nav-pills button {
+  width: 125px;
+}
+@media (max-width: 560px) { 
+  .quarto-home .hello-quarto-banner .nav-pills button {
+    width: unset;
+  }
+}
+.quarto-home .hello-quarto .tab-content {
+  border: none;
+  padding: 0;
+}
+
+body.quarto-light .quarto-home .hello-quarto .tab-content {
+  color: rgb(84, 85, 85);
+}
+
+body.quarto-dark .quarto-home .hello-quarto .tab-content {
+  color: rgb(200, 200, 200);
+}
+
+.quarto-home .hello-quarto .tab-content p {
+  font-size: 1.1em;
+}
+
+/* Q2 emits the markdown samples as a bare <pre class="markdown">; Q1 wraps them in div.sourceCode */
+body.quarto-light .quarto-home .hello-quarto div.sourceCode,
+body.quarto-light .quarto-home .hello-quarto pre.markdown {
+  background-color: white;
+  border: 1px solid #dee2e6;
+}
+
+body.quarto-dark .quarto-home .hello-quarto div.sourceCode,
+body.quarto-dark .quarto-home .hello-quarto pre.markdown {
+  background-color: #151515;
+  border: 1px solid #3b3f47;
+}
+
+.quarto-home .features {
+  padding-bottom: 2em;
+}
+
+.quarto-home .feature {
+  margin-top: 20px;
+}
+
+@media (min-width: 800px) { 
+.quarto-home .features {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  margin: 0 0 0 -30px;
+  width: calc(100% + 30px);
+}
+.quarto-home .feature {
+  width: calc(33% - 30px);
+  margin: 20px 0 0 30px;
+}
+}
+
+/* Feature titles are h2s styled as the h3s they used to be (selector as above) */
+#quarto-content .quarto-home section.feature > h2:first-child {
+  font-size: calc(1.27rem + 0.24vw);
+  opacity: 0.9;
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+@media (min-width: 1200px) {
+#quarto-content .quarto-home section.feature > h2:first-child {
+  font-size: 1.45rem;
+}
+}
+
+.quarto-home .feature p:first-of-type {
+  margin-bottom: 0.2rem;
+}
+
+body.quarto-light .quarto-home .feature p:first-of-type {
+  color: rgb(84, 85, 85);
+}
+
+body.quarto-dark .quarto-home .feature p:first-of-type {
+  color: rgb(200, 200, 200);
+}
+
+.quarto-home .get-started {
+   text-align: center;
+}
+
+.quarto-home .get-started h3 {
+   margin-top: 1rem;
+   margin-bottom: 2rem;
+}
+
+.quarto-home nav.page-navigation {
+  display: none;
+}
+
+body:has(.quarto-home) .nav-footer {
+  border-top: none !important; 
+}
+
+.quarto-home .nav-pills .nav-link.active, .quarto-home .nav-pills .show>.nav-link {
+  color: #fff;
+  background-color: #ff7518;
+}

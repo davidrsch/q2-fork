@@ -1,0 +1,13 @@
+// Site rules shared by the light and dark themes. Ported from quarto-web's
+// `_extensions/quartoorg/scss/partials/_site.scss`; partials that only serve
+// Quarto 1 site features are not carried over: downloads (release table),
+// tools-tabset / tool-links / page-chooser (editor-chooser widgets backed by
+// Lua filters), color-box (Lua filter), announcement (Q1 forces its banner
+// blue; this site uses the `type: warning` banner for unreviewed pages).
+@import "navbar";
+@import "content";
+@import "embeds";
+@import "cards";
+@import "buttons";
+@import "figures";
+@import "home";

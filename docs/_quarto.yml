@@ -13,6 +13,7 @@ website:
   title: "Quarto 2"
   description: "Documentation for Quarto 2, the Rust-based rewrite of the Quarto publishing system"
   logo: quarto.png
+  favicon: assets/images/favicon.png
   llms-txt: true
   # Preliminary docs: pages that have had a human review opt out with
   # `website: {announcement: false}` in their front matter (or a
@@ -500,8 +501,12 @@ website:
 
 format:
   html:
+    # Theme ported from quarto.org (quarto-web/_extensions/quartoorg); see
+    # theme/partials/_site.scss for what was and was not carried over.
     theme:
-      - cosmo
-      # - brand
+      light: [cosmo, theme/quartoorg.scss]
+      dark: [cosmo, theme/quartoorg-dark.scss]
+    respect-user-color-scheme: true
+    highlight-style: a11y
     css: styles.css
     toc: true
