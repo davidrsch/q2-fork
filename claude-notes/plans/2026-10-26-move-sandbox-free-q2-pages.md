@@ -101,42 +101,42 @@ serving the sandbox until production stops using it.
 
 ### Phase 2: Repoint hub-client (q2 PR)
 
-- [ ] `hub-client/src/components/render/q2-sandboxed-preview/Q2SandboxedPreviewIframe.tsx:67`:
+- [x] `hub-client/src/components/render/q2-sandboxed-preview/Q2SandboxedPreviewIframe.tsx:67`:
       change the default to `https://quarto-dev.github.io/q2-sandbox/` and
       update the comment above it.
-- [ ] `assetPolicy.test.ts`: update `PAGES_SCOPE` (line 20) and `base` (line
+- [x] `assetPolicy.test.ts`: update `PAGES_SCOPE` (line 20) and `base` (line
       113). Check for any other `/q2/` literals the tests depend on.
-- [ ] Docs and notes: rewrite `.github/workflows/github-pages.md` to cover
+- [x] Docs and notes: rewrite `.github/workflows/github-pages.md` to cover
       the new split (q2 Pages = docs, q2-sandbox = sandbox). Update
       `claude-notes/designs/q2-sandboxed-preview-separate-domain.md`
       (architecture diagram and deployment bullet) and
       `.claude/skills/snyk-pr/references/katex.md` (workflow name). Leave
       the historical 2026-09-01 port plan as it is.
-- [ ] Add a `hub-client/changelog.md` entry.
-- [ ] Origin pinning doesn't change: `sandboxTargetOrigin()` derives
+- [x] Add a `hub-client/changelog.md` entry.
+- [x] Origin pinning doesn't change: `sandboxTargetOrigin()` derives
       `https://quarto-dev.github.io` from both URLs.
-- [ ] Tests: `npm run test` in hub-client (assetPolicy unit tests) and the
+- [x] Tests: `npm run test` in hub-client (assetPolicy unit tests) and the
       `q2-sandboxed-preview` e2e spec, which uses the same-origin copy and
       should be unaffected.
-- [ ] Merge to `main`. *(Push and PR only with explicit go-ahead.)*
+- [x] Merge to `main`. *(Push and PR only with explicit go-ahead.)*
 
 ### Phase 3: Production cutover
 
-- [ ] Trigger a quarto-hub.com rebuild from `quarto-hub-deployment` so it
+- [x] Trigger a quarto-hub.com rebuild from `quarto-hub-deployment` so it
       picks up the new default from q2 `main`. *(Confirm before triggering
       a production deploy.)*
-- [ ] Verify the live bundle contains `quarto-dev.github.io/q2-sandbox/` and
+- [x] Verify the live bundle contains `quarto-dev.github.io/q2-sandbox/` and
       no longer contains `quarto-dev.github.io/q2/`, using the same
       curl-and-grep against `https://quarto-hub.com/` as before.
-- [ ] Smoke test: open a `format: q2-sandboxed-preview` doc on quarto-hub.com.
+- [x] Smoke test: open a `format: q2-sandboxed-preview` doc on quarto-hub.com.
       The iframe should load from `/q2-sandbox/`, an image asset should
       render through the SW proxy, and the console should be clean.
 
 ### Phase 4: Retire the old workflow and publish docs at `/q2/`
 
-- [ ] Delete `.github/workflows/deploy-sandboxed-preview.yml`. Leave Pages
+- [x] Delete `.github/workflows/deploy-sandboxed-preview.yml`. Leave Pages
       on `quarto-dev/q2` in GitHub Actions mode.
-- [ ] Add a docs deploy workflow (e.g. `.github/workflows/deploy-docs.yml`)
+- [x] Add a docs deploy workflow (e.g. `.github/workflows/deploy-docs.yml`)
       that builds q2, runs `cargo xtask stage-doc-examples`, renders `docs/`
       with **Q2** (`q2 render docs/`, not Q1), and deploys `docs/_site/` via
       `upload-pages-artifact` + `deploy-pages` to the existing
@@ -146,7 +146,7 @@ serving the sandbox until production stops using it.
       renderer for CI; the release pipeline's docs-embed step is prior art.
       Set `site-url: https://quarto-dev.github.io/q2/` if the site needs it
       (sitemap, llms.txt).
-- [ ] Add a self-unregistering `serviceWorker.js` to the docs output root
+- [x] Add a self-unregistering `serviceWorker.js` to the docs output root
       (e.g. `docs/serviceWorker.js` listed under `project.resources`):
 
   ```js
@@ -159,10 +159,11 @@ serving the sandbox until production stops using it.
 
   Add a comment explaining why it exists and when it can go (no earlier
   than about 2027-04).
-- [ ] Add a backup unregister snippet to the docs landing page: on load,
-      unregister any `navigator.serviceWorker` registration whose scope is
-      `/q2/`.
-- [ ] Verification: in a browser profile, open the **old** sandbox page at
+- [x] ~~Add a backup unregister snippet to the docs landing page.~~ Dropped:
+      while the old worker is active it answers the landing page itself with
+      a 502, so the snippet never runs; once the kill switch has run there
+      is nothing left to unregister.
+- [x] Verification (done locally, see the progress log): in a browser profile, open the **old** sandbox page at
       `/q2/` top-level before the docs deploy, so its worker registers.
       Deploy the docs, then visit a docs subpage. Expect at most one 502
       followed by recovery, or none if the landing page is visited first.
@@ -197,3 +198,42 @@ serving the sandbox until production stops using it.
   reference, and marked `deploy-sandboxed-preview.yml` TRANSITIONAL. It
   keeps running until Phase 4. hub-client `npm run test` passes
   (1686/1686) and `tsc -b` is clean.
+- **2026-10-26: Phase 2 merged, Phase 3 done.** PR #919 merged as
+  `d1522ac09`. The first CI run of `deploy-q2-sandbox.yml` pushed
+  `gh-pages` ("Deploy quarto-dev/q2@d1522ac09"). quarto-hub-deployment built
+  from `d1522ac09` (which also brings in #917, the samod 0.16 rewire;
+  user-approved) and `quarto-hub-deploy` ran at 22:07Z. The live bundle
+  references `quarto-dev.github.io/q2-sandbox/`, the hub logs were clean,
+  and the user confirmed a sandboxed-preview document works on
+  quarto-hub.com. Rollback target: `main-20261016-161148`.
+- **2026-10-27: Phase 4 on branch `braid/bd-73lilznv-docs-pages`.** Deleted
+  `deploy-sandboxed-preview.yml`. Added `deploy-docs.yml`: a source-built
+  dev-profile q2 (the same approach as the release pipeline's docs-embed
+  step), `stage-doc-examples`, `q2 render docs`, then
+  upload-pages-artifact and deploy-pages. PRs touching `docs/` or
+  `examples/` run the build job only. Added the kill switch as
+  `docs/serviceWorker.js` under `project.resources`. `site-url` is not set:
+  nothing in the render needs it, and setting it would also change the
+  `q2 docs` embed.
+  Verified locally:
+  - The docs render (391 pages).
+  - `serviceWorker.js` is at the site root.
+  - A link check of the site served under `/q2/` turns up only problems
+    that predate this change and don't depend on the base path: missing
+    figure images on `guides/authoring/{figures,brand}` and links to Q1
+    `/docs/...` pages.
+  - Kill switch, end to end in an isolated Chrome profile, with the old
+    sandbox `dist/` and then the docs `_site` served at `/q2/`:
+    - With the old worker registered, a docs subpage first showed the old
+      "VFS proxy timeout" error.
+    - The update check then installed the kill switch, which unregistered
+      itself and reloaded the page into the real docs page (no controller,
+      0 registrations).
+    - Python's `http.server` answers the update check with 304 when the
+      new file's mtime is older; GitHub Pages uses ETags, so this does not
+      happen there.
+  - Found along the way: run from a worktree,
+    `cargo xtask stage-doc-examples` stages into the **main** checkout
+    (`repo_root()` follows `--git-common-dir`). It also rewrites the
+    tracked `examples/lmd/10-project/index.html`. Neither affects CI's
+    fresh checkout.

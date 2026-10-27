@@ -5,6 +5,9 @@ project:
   # gitignored; this copies it into `_site/examples/` so the iframes resolve.
   resources:
     - examples
+    # Kill switch for the sandboxed-preview service worker that used to
+    # live at this site's URL; see the comment in the file (bd-73lilznv).
+    - serviceWorker.js
 
 website:
   title: "Quarto 2"

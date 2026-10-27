@@ -1,0 +1,76 @@
+name: Deploy Q2 docs to GitHub Pages
+
+# Renders docs/ with q2 built from this commit and publishes docs/_site to
+# this repo's Pages site, https://quarto-dev.github.io/q2/. Pull requests
+# that touch the docs run the build job only, so a docs change that fails to
+# render is caught before merge; only main deploys. See github-pages.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'examples/**'
+      - '.github/workflows/deploy-docs.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'examples/**'
+      - '.github/workflows/deploy-docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; don't cancel an in-progress one. PR builds get
+# their own group so they never queue behind a deploy.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('docs-pr-{0}', github.event.pull_request.number) || 'pages' }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: github.repository == 'quarto-dev/q2'
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v6
+
+      - name: Set up Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "docs-pages"
+          # Only main's cache is worth keeping; PR builds restore it.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # `docs/examples/` is a gitignored resource the docs declare
+      # (`project.resources`); `q2 render docs` fails hard without it. The
+      # xtask builds the same dev-profile q2 the render below reuses.
+      - name: Stage example projects
+        run: cargo xtask stage-doc-examples
+
+      - name: Render docs
+        run: cargo run --bin q2 -- render docs
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/_site
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
