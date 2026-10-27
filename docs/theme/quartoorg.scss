@@ -23,6 +23,12 @@ $body-secondary: $text-muted;
 // darker (#eef1f4) drops the worst token (red #d91e18) below 4.5:1.
 $code-block-bg: #eff2f5;
 
+// quarto.org sets `navbar.background: light` in its config and Quarto 1
+// turns that into this variable. Quarto 2 only emits the `bg-light` class
+// and leaves the compiled theme on $primary with white text, so set the
+// variable here until Q2 threads navbar.background into the SCSS (bd-57kue1fs).
+$navbar-bg: #f8f9fa; // cosmo $light ($gray-100); the variable is not defined yet in this layer
+
 /*-- scss:rules --*/
 @import "partials/light-rules";
 @import "partials/site";
