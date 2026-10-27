@@ -23,6 +23,10 @@ WASM rebuild is needed for a changelog-only edit.
 
 -->
 
+### 2026-10-27
+
+- [`f25064aa0`](https://github.com/quarto-dev/q2/commits/f25064aa0): The version history drawer labels steps with no recorded author "anonymous" and steps with no recorded timestamp "unknown", instead of rendering a bare `0`.
+
 ### 2026-10-26
 
 - [`be6300e0f`](https://github.com/quarto-dev/q2/commits/be6300e0f): The `q2-sandboxed-preview` iframe now loads from `https://quarto-dev.github.io/q2-sandbox/` instead of `https://quarto-dev.github.io/q2/`, which will host the Quarto 2 documentation.
