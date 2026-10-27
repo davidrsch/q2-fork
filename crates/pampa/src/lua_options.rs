@@ -12,10 +12,54 @@
 //! Feature-independent (like `dialect.rs`) so `unified_filter` can carry it
 //! whether or not the `lua-filter` feature is on.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::dialect::SourceDialect;
+
+/// What the host knows about the document and project a Lua script runs
+/// for: everything Quarto 1 surfaced through `quarto.project`,
+/// `quarto.doc.input_file` / `quarto.doc.output_file`, `PANDOC_STATE`,
+/// and the environment `os.getenv` reads (GH #939, #940). All optional:
+/// pampa's own tests and the Lua conformance suite run without a host,
+/// and then these registrations produce the Quarto 1 "outside a project"
+/// shape (nil directory, empty profile list).
+#[derive(Clone, Debug, Default)]
+pub struct HostContext {
+    /// Absolute path of the input being rendered → `quarto.doc.input_file`.
+    pub input_file: Option<PathBuf>,
+    /// Absolute path of the output → `quarto.doc.output_file`.
+    pub output_file: Option<PathBuf>,
+    /// `None` for single-file renders (Q1: `quarto.project.directory` is
+    /// nil outside a project).
+    pub project: Option<HostProject>,
+    /// Active profile names → `quarto.project.profile` (a `pandoc.List`).
+    pub profiles: Vec<String>,
+    /// The environment `os.getenv` answers from: a snapshot the host took
+    /// on its own thread before any script ran (the real environment,
+    /// then file-defined `_environment` values for keys the real one
+    /// lacks, then `QUARTO_PROFILE` forced to the active list). `None`
+    /// means "no host": `os.getenv` is left to the stdlib on native and
+    /// to the runtime on WASM. A snapshot keeps the stdlib's libc
+    /// `getenv` off filter worker threads, where it would race any
+    /// `setenv` elsewhere in the process.
+    pub env: Option<Arc<HashMap<String, String>>>,
+}
+
+/// The project a document renders inside, as `quarto.project` reports it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostProject {
+    /// Project root, absolute.
+    pub directory: PathBuf,
+    /// Resolved output directory, absolute (the project root itself when
+    /// the project declares no `output-dir`).
+    pub output_directory: PathBuf,
+    /// Relative path from the document's directory back to the project
+    /// root, forward slashes, `"."` when they coincide — Q1's
+    /// `projectOffset`.
+    pub offset: String,
+}
 
 /// A directory `require("<name>/module")` and `quarto.include` may resolve
 /// into by name: an extension's directory, addressed by the extension's
@@ -61,6 +105,8 @@ pub struct LuaOptions {
     /// rasterizes with it, bd-gebcr1sa). `None` when there is none, which
     /// is always the case in WASM.
     pub typst: Option<PathBuf>,
+    /// The document, project, and environment the scripts run for.
+    pub host: HostContext,
 }
 
 impl LuaOptions {
@@ -70,6 +116,7 @@ impl LuaOptions {
             dialects,
             module_roots: ModuleRoots::default(),
             typst: None,
+            host: HostContext::default(),
         }
     }
 }
@@ -87,6 +134,7 @@ impl std::fmt::Debug for LuaOptions {
             )
             .field("module_roots", &self.module_roots)
             .field("typst", &self.typst)
+            .field("host", &self.host)
             .finish()
     }
 }

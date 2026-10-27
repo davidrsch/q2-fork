@@ -208,6 +208,9 @@ pub fn create_filter_environment_with(
     // Register quarto.doc namespace (is_format, add_html_dependency, etc.)
     super::quarto_doc::register_quarto_doc(&lua)?;
 
+    // quarto.project and the host's environment for os.getenv (GH #939).
+    super::host_context::register_host_context(&lua, &options.host)?;
+
     // Push script dir for quarto.utils.resolve_path
     let script_dir = script_path
         .parent()

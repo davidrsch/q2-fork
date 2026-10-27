@@ -316,6 +316,43 @@ pub fn load_project_environment(
     env_map
 }
 
+/// The map [`snapshot_environment`] produces: what `SystemRuntime::env_all`
+/// returns, so no re-hashing between the two.
+pub type EnvSnapshot = std::collections::HashMap<String, String>;
+
+/// The environment Lua scripts see through `os.getenv` (GH #939): one
+/// map, taken on the host's thread before any script runs, so the
+/// stdlib's libc `getenv` never has to run on a filter worker thread
+/// (where it would race any `setenv` elsewhere in the process) and every
+/// script in a render sees the same environment. Layers, lowest first:
+///
+/// 1. `real_env` — the process environment as the runtime reports it
+///    (`SystemRuntime::env_all`, so a preview server's `--profile`
+///    override is included);
+/// 2. file-defined `_environment` pairs for keys the real environment
+///    lacks — the same filter [`env_for_subprocess`] applies, so the
+///    real environment keeps winning;
+/// 3. `QUARTO_PROFILE` forced to `quarto_profile` when profiles are
+///    active — the one deliberate exception
+///    ([`crate::project::project_profile::quarto_profile_env_value`]):
+///    Q1 wrote the normalized active list back into its environment.
+pub fn snapshot_environment(
+    mut real_env: EnvSnapshot,
+    project_env: &LinkedHashMap<String, String>,
+    quarto_profile: Option<&str>,
+) -> EnvSnapshot {
+    for (k, v) in project_env {
+        real_env.entry(k.clone()).or_insert_with(|| v.clone());
+    }
+    if let Some(profile) = quarto_profile {
+        real_env.insert(
+            super::project_profile::QUARTO_PROFILE_VAR.to_string(),
+            profile.to_string(),
+        );
+    }
+    real_env
+}
+
 /// The subset of the project env map to pass to a spawned subprocess:
 /// every pair whose key is **not** set in the real process environment.
 /// Children inherit the real environment on spawn, so applying these
@@ -879,6 +916,30 @@ fn resolve_name(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshot_layers_real_env_file_values_and_profile() {
+        let mut real = std::collections::HashMap::new();
+        real.insert("SHADOWED".to_string(), "real".to_string());
+        real.insert("QUARTO_PROFILE".to_string(), "stale".to_string());
+        let mut files = LinkedHashMap::new();
+        files.insert("SHADOWED".to_string(), "file".to_string());
+        files.insert("ONLY_IN_FILE".to_string(), "file".to_string());
+
+        let snap = snapshot_environment(real.clone(), &files, Some("drafts,release"));
+        assert_eq!(snap["SHADOWED"], "real", "real environment wins");
+        assert_eq!(snap["ONLY_IN_FILE"], "file", "file fills the gap");
+        assert_eq!(
+            snap["QUARTO_PROFILE"], "drafts,release",
+            "the active list replaces an inherited QUARTO_PROFILE"
+        );
+
+        let snap = snapshot_environment(real, &files, None);
+        assert_eq!(
+            snap["QUARTO_PROFILE"], "stale",
+            "no active profiles: the inherited value stands"
+        );
+    }
 
     fn no_lookup(_: &str) -> Option<String> {
         None

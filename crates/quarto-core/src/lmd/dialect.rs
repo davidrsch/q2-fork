@@ -19,7 +19,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use pampa::dialect::{DialectError, SourceDialect};
-use pampa::lua_options::{ExtensionRoot, LuaOptions, ModuleRoots};
+use pampa::lua_options::{ExtensionRoot, HostContext, HostProject, LuaOptions, ModuleRoots};
 
 use super::desugar::{DesugarOptions, EmitMode, LmdError, desugar_lua_with};
 
@@ -88,12 +88,87 @@ pub fn lua_options(
                 .collect(),
         },
         typst: crate::render::find_typst(runtime),
+        host: HostContext::default(),
     }
+}
+
+/// [`lua_options`] plus what the scripts of one document may ask about
+/// where they run: `quarto.project`, `quarto.doc.input_file` /
+/// `output_file`, `PANDOC_STATE`, and the environment `os.getenv`
+/// answers from (GH #939, #940). `env_snapshot` is
+/// [`crate::stage::StageContext::env_snapshot`]; `None` leaves `os.getenv`
+/// to the stdlib.
+pub fn lua_options_for_document(
+    project: &crate::project::ProjectContext,
+    runtime: &dyn quarto_system_runtime::SystemRuntime,
+    document: &crate::project::DocumentInfo,
+    output_file: std::path::PathBuf,
+    env_snapshot: Option<Arc<crate::project::environment::EnvSnapshot>>,
+) -> LuaOptions {
+    let mut options = lua_options(project, runtime);
+    options.host = HostContext {
+        input_file: Some(document.input.clone()),
+        output_file: Some(output_file),
+        project: host_project(project, &document.input),
+        profiles: project
+            .config
+            .active_config_profiles
+            .iter()
+            .map(|p| p.name.clone())
+            .collect(),
+        env: env_snapshot,
+    };
+    options
+}
+
+/// `quarto.project`'s paths for `input`, or `None` for a single-file
+/// render (Q1: `quarto.project.directory` is nil outside a project).
+/// `offset` is Q1's `projectOffset`: the relative path from the input's
+/// directory back to the project root, forward slashes, `"."` when
+/// they coincide.
+fn host_project(project: &crate::project::ProjectContext, input: &Path) -> Option<HostProject> {
+    if project.is_single_file {
+        return None;
+    }
+    let input_dir = input.parent().unwrap_or(Path::new("."));
+    let offset = pathdiff::diff_paths(&project.dir, input_dir)
+        .filter(|p| !p.as_os_str().is_empty())
+        .map_or_else(|| ".".to_string(), |p| quarto_util::to_forward_slashes(&p));
+    Some(HostProject {
+        directory: project.dir.clone(),
+        output_directory: project.output_dir.clone(),
+        offset,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_project_offset_is_q1_project_offset() {
+        let dir = std::path::PathBuf::from("/proj");
+        let project = crate::project::ProjectContext {
+            dir: dir.clone(),
+            output_dir: dir.join("_site"),
+            is_single_file: false,
+            ..Default::default()
+        };
+        let root = host_project(&project, &dir.join("index.qmd")).unwrap();
+        assert_eq!(root.offset, ".");
+        assert_eq!(root.directory, dir);
+        assert_eq!(root.output_directory, dir.join("_site"));
+        let nested = host_project(&project, &dir.join("a").join("b").join("p.qmd")).unwrap();
+        assert_eq!(nested.offset, "../..", "forward slashes on every platform");
+
+        let single = crate::project::ProjectContext {
+            dir: dir.clone(),
+            output_dir: dir.clone(),
+            is_single_file: true,
+            ..Default::default()
+        };
+        assert!(host_project(&single, &dir.join("doc.qmd")).is_none());
+    }
 
     #[test]
     fn compiles_a_module_keeping_its_lines() {

@@ -235,8 +235,15 @@ impl PipelineStage for UserFiltersStage {
             .parent()
             .map_or_else(|| std::path::PathBuf::from("."), |p| p.to_path_buf());
         // The lmd dialect and the project's module roots, for the filters'
-        // `require` (bd-76ogq4ew).
-        let lua_options = crate::lmd::lua_options(&ctx.project, ctx.runtime.as_ref());
+        // `require` (bd-76ogq4ew), plus this document's place in the
+        // project for quarto.project / quarto.doc.input_file (GH #939, #940).
+        let lua_options = crate::lmd::lua_options_for_document(
+            &ctx.project,
+            ctx.runtime.as_ref(),
+            &ctx.document,
+            ctx.output_path(),
+            Some(ctx.env_snapshot.clone()),
+        );
 
         // The Lua filter future is !Send (mlua::Lua is !Send), but this
         // pipeline stage runs under #[async_trait] which requires Send on native.

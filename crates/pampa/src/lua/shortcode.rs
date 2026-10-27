@@ -144,6 +144,10 @@ impl LuaShortcodeEngine {
         // Register quarto.doc namespace (is_format, add_html_dependency, etc.)
         super::quarto_doc::register_quarto_doc(&lua).map_err(LuaShortcodeError::LuaError)?;
 
+        // quarto.project and the host's environment for os.getenv (GH #939).
+        super::host_context::register_host_context(&lua, &options.host)
+            .map_err(LuaShortcodeError::LuaError)?;
+
         lua.globals()
             .set("FORMAT", target_format)
             .map_err(LuaShortcodeError::LuaError)?;

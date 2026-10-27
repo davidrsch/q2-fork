@@ -349,7 +349,11 @@ impl SystemRuntime for NativeRuntime {
     }
 
     fn env_all(&self) -> RuntimeResult<HashMap<String, String>> {
-        let mut vars: HashMap<String, String> = std::env::vars().collect();
+        // `vars_os`, not `vars`: the latter panics on a non-UTF-8 entry,
+        // and this now runs for every rendered document (GH #939).
+        let mut vars: HashMap<String, String> = std::env::vars_os()
+            .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
+            .collect();
         vars.extend(self.env_overrides.iter().cloned());
         Ok(vars)
     }
