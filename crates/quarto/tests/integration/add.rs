@@ -18,20 +18,22 @@
 //!   sha256 per file; replacing an extension whose files changed since
 //!   needs `--force`.
 //! - **Trust.** A remote source needs `--trust` when the command cannot
-//!   prompt, and is refused *before any request*.
+//!   prompt, and is refused *before any request* — in a dry run too,
+//!   since a dry run still downloads. `--trust` combines with
+//!   `--dry-run`; `--force` does not.
 //! - **It works.** An installed custom project type renders.
 //!
 //! The key gates were checked against deliberately broken code (no
 //! edit check, no trust gate, merge instead of replace) and fail there.
 
-use std::io::{Read, Write};
-use std::net::TcpListener;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
 
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
+
+use crate::archive_server::{TestServer, tar_gz};
 
 const Q2_BIN: &str = env!("CARGO_BIN_EXE_q2");
 
@@ -126,26 +128,6 @@ fn read(path: &Path) -> String {
 
 fn record(dir: &Path) -> serde_yaml::Value {
     serde_yaml::from_str(&read(&dir.join(".quarto-source.yml"))).unwrap()
-}
-
-/// `.tar.gz` bytes for `files`, each under `prefix` (`""` for none).
-fn tar_gz(prefix: &str, files: &[(&str, &str)]) -> Vec<u8> {
-    let mut buf = Vec::new();
-    {
-        let encoder = flate2::write::GzEncoder::new(&mut buf, flate2::Compression::default());
-        let mut builder = tar::Builder::new(encoder);
-        for (name, content) in files {
-            let mut header = tar::Header::new_gnu();
-            header.set_entry_type(tar::EntryType::Regular);
-            header.set_mode(0o644);
-            header.set_size(content.len() as u64);
-            header.set_path(format!("{prefix}{name}")).unwrap();
-            header.set_cksum();
-            builder.append(&header, content.as_bytes()).unwrap();
-        }
-        builder.into_inner().unwrap().finish().unwrap();
-    }
-    buf
 }
 
 fn demo_files(version: &str) -> Vec<(&'static str, String)> {
@@ -585,63 +567,6 @@ fn a_symlink_inside_the_extension_is_refused() {
 // Remote sources, against a localhost server
 // ====================================================================
 
-/// Serves `body` at `/archive.tar.gz`, 404 elsewhere, recording paths.
-struct TestServer {
-    base_url: String,
-    requests: Arc<Mutex<Vec<String>>>,
-    _thread: std::thread::JoinHandle<()>,
-}
-
-impl TestServer {
-    fn start(body: Vec<u8>) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind localhost");
-        let base_url = format!("http://{}", listener.local_addr().unwrap());
-        let requests = Arc::new(Mutex::new(Vec::new()));
-        let seen = Arc::clone(&requests);
-        let thread = std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(mut stream) = stream else { break };
-                let mut buf = [0u8; 2048];
-                let Ok(n) = stream.read(&mut buf) else {
-                    continue;
-                };
-                let request = String::from_utf8_lossy(&buf[..n]).into_owned();
-                let path = request
-                    .lines()
-                    .next()
-                    .and_then(|l| l.split_whitespace().nth(1))
-                    .unwrap_or("/")
-                    .to_string();
-                seen.lock().unwrap().push(path.clone());
-                if path == "/archive.tar.gz" {
-                    let header = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/gzip\r\n\
-                         Content-Length: {}\r\nConnection: close\r\n\r\n",
-                        body.len()
-                    );
-                    let _ = stream.write_all(header.as_bytes());
-                    let _ = stream.write_all(&body);
-                } else {
-                    let _ = stream.write_all(
-                        b"HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\
-                          Connection: close\r\n\r\nnot found",
-                    );
-                }
-                let _ = stream.flush();
-            }
-        });
-        Self {
-            base_url,
-            requests,
-            _thread: thread,
-        }
-    }
-
-    fn url(&self) -> String {
-        format!("{}/archive.tar.gz", self.base_url)
-    }
-}
-
 #[test]
 fn a_remote_source_without_trust_is_refused_before_any_request() {
     let server = TestServer::start(tar_gz("repo-main/", &as_refs(&demo_files("1.0.0"))));
@@ -649,10 +574,51 @@ fn a_remote_source_without_trust_is_refused_before_any_request() {
     let out = run_q2_add(proj.path(), &["--no-prompt", &server.url()]);
     assert_failed(&out, "--trust");
     assert!(
+        !stderr_str(&out).contains("--dry-run"),
+        "the hint is for a real run, not a preview:\n{}",
+        stderr_str(&out)
+    );
+    assert!(
         server.requests.lock().unwrap().is_empty(),
         "nothing may be fetched"
     );
     assert!(!proj.path().join("_extensions").exists());
+}
+
+#[test]
+fn a_remote_dry_run_without_trust_is_refused_before_any_request() {
+    // A dry run still downloads the archive to compute the table, so
+    // the fetch needs consent in this mode too.
+    let server = TestServer::start(tar_gz("repo-main/", &as_refs(&demo_files("1.0.0"))));
+    let proj = project();
+    let out = run_q2_add(proj.path(), &["--no-prompt", "--dry-run", &server.url()]);
+    assert_failed(&out, "--dry-run --trust");
+    assert!(
+        server.requests.lock().unwrap().is_empty(),
+        "nothing may be fetched"
+    );
+    assert!(!proj.path().join("_extensions").exists());
+}
+
+#[test]
+fn a_trusted_remote_dry_run_shows_the_table_and_writes_nothing() {
+    let server = TestServer::start(tar_gz("repo-main/", &as_refs(&demo_files("1.0.0"))));
+    let proj = project();
+    let out = run_q2_add(
+        proj.path(),
+        &["--no-prompt", "--dry-run", "--trust", &server.url()],
+    );
+    assert_succeeded(&out);
+    let stdout = stdout_str(&out);
+    assert!(
+        stdout.contains("[Install]") && stdout.contains("nothing was written"),
+        "{stdout}"
+    );
+    assert!(!proj.path().join("_extensions").exists());
+    assert_eq!(
+        server.requests.lock().unwrap().as_slice(),
+        ["/archive.tar.gz"]
+    );
 }
 
 #[test]

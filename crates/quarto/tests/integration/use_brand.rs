@@ -21,7 +21,8 @@
 //! - **`--dry-run` reports the full plan and writes nothing.**
 //! - **`--force` and `--trust` are distinct.** `--force` overrides the
 //!   local-state gates; `--trust` waives the remote trust prompt.
-//!   Neither implies the other.
+//!   Neither implies the other. `--trust` combines with `--dry-run`
+//!   (the preview still downloads); `--force` does not.
 //!
 //! TDD note: written before the implementation, and observed failing
 //! (the command returned "not implemented") before Phase 2.
@@ -30,6 +31,8 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use tempfile::TempDir;
+
+use crate::archive_server::{TestServer, tar_gz};
 
 const Q2_BIN: &str = env!("CARGO_BIN_EXE_q2");
 
@@ -442,11 +445,47 @@ fn force_with_dry_run_is_rejected() {
     assert!(!out.status.success(), "--force --dry-run must be rejected");
 }
 
+/// A remote brand source: a GitHub-style archive holding `_brand.yml`.
+fn brand_archive_server() -> TestServer {
+    TestServer::start(tar_gz(
+        "repo-main/",
+        &[("_brand.yml", "color:\n  primary: \"#123456\"\n")],
+    ))
+}
+
 #[test]
-fn trust_with_dry_run_is_rejected() {
+fn trust_with_dry_run_previews_a_remote_source_and_writes_nothing() {
+    // Unlike --force, --trust has a job in a dry run: the preview still
+    // downloads the source, and --trust is what authorizes the fetch.
+    let server = brand_archive_server();
     let tmp = project_with_config(MINIMAL_CONFIG);
-    let out = run_q2_use(tmp.path(), &["brand", "--trust", "--dry-run"]);
-    assert!(!out.status.success(), "--trust --dry-run must be rejected");
+    let out = run_q2_use(
+        tmp.path(),
+        &["brand", "--trust", "--dry-run", &server.url()],
+    );
+    assert_succeeded(&out);
+    let stdout = stdout_str(&out);
+    assert!(stdout.contains("_brand.yml"), "{stdout}");
+    assert!(stdout.contains("nothing was written"), "{stdout}");
+    assert_no_brand_files(tmp.path());
+    assert_eq!(read(&tmp.path().join("_quarto.yml")), MINIMAL_CONFIG);
+    assert_eq!(
+        server.requests.lock().unwrap().as_slice(),
+        ["/archive.tar.gz"]
+    );
+}
+
+#[test]
+fn a_remote_dry_run_without_trust_is_refused_before_any_request() {
+    let server = brand_archive_server();
+    let tmp = project_with_config(MINIMAL_CONFIG);
+    let out = run_q2_use(tmp.path(), &["brand", "--dry-run", &server.url()]);
+    assert_failed(&out, "--dry-run --trust");
+    assert!(
+        server.requests.lock().unwrap().is_empty(),
+        "nothing may be fetched"
+    );
+    assert_no_brand_files(tmp.path());
 }
 
 // ====================================================================

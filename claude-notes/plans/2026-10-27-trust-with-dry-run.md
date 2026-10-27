@@ -2,7 +2,7 @@
 title: 'q2 add / q2 use brand: allow --trust with --dry-run (bd-cjqhcaz6)'
 date: 2026-10-27
 description: 'A non-interactive dry run of a remote source is impossible because --trust is rejected with --dry-run; allow the pairing in both commands while still rejecting --force with --dry-run.'
-status: ready  # Design aligned with user 2026-10-27
+status: done  # Implemented 2026-10-27
 braid:
   strand: bd-cjqhcaz6
 ---
@@ -80,7 +80,11 @@ The symptom is reproducible by reading: no code path between the guard and `conf
 - **Phase 4 — Docs.**
   - `docs/guides/authoring/extensions.qmd:53`: a non-interactive dry run of a remote source needs `--trust`. Add the note that an interactive dry run asks the trust question, because previewing still downloads the source.
   - `docs/guides/authoring/brand.qmd`: the same two points in "Trusting a remote source" (and/or "Previewing changes"). Extend the "`--force` and `--trust` are different permissions" callout: `--trust` combines with `--dry-run`, `--force` does not.
-- **Phase 5 — Verify.** `cargo xtask verify`, plus a changelog entry if user-facing CLI changes are tracked there.
+- **Phase 5 — Verify.** `cargo xtask verify`. No changelog entry: the only changelog in the repo is `hub-client/changelog.md`.
+
+## Implementation notes
+
+All phases landed as planned. The shared helper is `crates/quarto/tests/integration/archive_server.rs`. The new and rewritten tests were observed failing before the guard and hint changes, and passing after. Docs also gained an example of the non-interactive form (`--dry-run --trust --no-prompt`).
 
 ## Risks / tradeoffs (draft)
 
