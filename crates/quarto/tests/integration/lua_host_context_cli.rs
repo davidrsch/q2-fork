@@ -36,6 +36,10 @@ function Pandoc(doc)
     line("Q2_TEST_REAL", os.getenv("Q2_TEST_REAL")),
     line("Q2_TEST_FILE_ONLY", os.getenv("Q2_TEST_FILE_ONLY")),
     line("Q2_TEST_UNSET", os.getenv("Q2_TEST_UNSET")),
+    line("input_file", quarto.doc.input_file),
+    line("output_file", quarto.doc.output_file),
+    line("state_input", PANDOC_STATE.input_files[1]),
+    line("state_output", PANDOC_STATE.output_file),
   }
   doc.blocks:insert(pandoc.CodeBlock(table.concat(lines, "\n"), pandoc.Attr("probe")))
   return doc
@@ -180,6 +184,26 @@ fn website_pages_see_project_paths_profiles_and_environment() {
     assert_eq!(index["Q2_TEST_FILE_ONLY"], "file");
     assert_eq!(index["Q2_TEST_UNSET"], "nil");
 
+    // quarto.doc.input_file / output_file and the minimal PANDOC_STATE:
+    // absolute, per page, consistent with quarto.project. Built with
+    // Path::join, never literal separators (Windows).
+    let dir = Path::new(&index["directory"]);
+    assert_eq!(Path::new(&index["input_file"]), dir.join("index.qmd"));
+    assert_eq!(
+        Path::new(&sub["input_file"]),
+        dir.join("sub").join("page.qmd")
+    );
+    assert_eq!(
+        Path::new(&index["output_file"]),
+        dir.join("_site").join("index.html")
+    );
+    assert_eq!(
+        Path::new(&sub["output_file"]),
+        dir.join("_site").join("sub").join("page.html")
+    );
+    assert_eq!(sub["state_input"], sub["input_file"]);
+    assert_eq!(sub["state_output"], sub["output_file"]);
+
     // The shortcode environment sees the same things.
     assert!(
         index_html.contains("SC-OFFSET=.;SC-PROFILE=drafts"),
@@ -214,4 +238,12 @@ fn single_file_render_has_q1_nils_and_no_profiles() {
     assert_eq!(doc["Q2_TEST_REAL"], "real");
     // No project, no `_environment`: file-only variables do not exist.
     assert_eq!(doc["Q2_TEST_FILE_ONLY"], "nil");
+    // Paths are still known outside a project.
+    let input = Path::new(&doc["input_file"]);
+    assert!(input.is_absolute() && input.ends_with("doc.qmd"), "{input:?}");
+    assert_eq!(
+        Path::new(&doc["output_file"]),
+        input.with_file_name("doc.html")
+    );
+    assert_eq!(doc["state_input"], doc["input_file"]);
 }

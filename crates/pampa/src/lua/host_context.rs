@@ -10,7 +10,10 @@
  *   profile list always present);
  * - `os.getenv` — answered from the host's environment snapshot when it
  *   supplied one, so the stdlib's libc `getenv` never runs on a filter
- *   worker thread and `--profile` is visible as `QUARTO_PROFILE`.
+ *   worker thread and `--profile` is visible as `QUARTO_PROFILE`;
+ * - `quarto.doc.input_file` / `quarto.doc.output_file` — the absolute
+ *   paths Quarto 1 gave, and the minimal `PANDOC_STATE` (`input_files`,
+ *   `output_file`) built from the same two values.
  *
  * Registered after `quarto` and `os` exist, in both the filter and the
  * shortcode environments.
@@ -23,7 +26,51 @@ use crate::lua_options::HostContext;
 /// Register everything the host context contributes to the environment.
 pub fn register_host_context(lua: &Lua, host: &HostContext) -> Result<()> {
     register_quarto_project(lua, host)?;
+    register_quarto_doc_paths(lua, host)?;
+    register_pandoc_state(lua, host)?;
     install_os_getenv(lua, host)?;
+    Ok(())
+}
+
+/// `quarto.doc.input_file` / `quarto.doc.output_file`: absolute paths, as
+/// in Quarto 1 (`init.lua`'s `inputFile()` / `outputFile()`). Absent (nil)
+/// without a host, never a relative or placeholder path.
+fn register_quarto_doc_paths(lua: &Lua, host: &HostContext) -> Result<()> {
+    let quarto: Table = lua.globals().get("quarto")?;
+    let doc: Table = quarto.get("doc")?;
+    if let Some(input) = &host.input_file {
+        doc.set("input_file", input.to_string_lossy().to_string())?;
+    }
+    if let Some(output) = &host.output_file {
+        doc.set("output_file", output.to_string_lossy().to_string())?;
+    }
+    Ok(())
+}
+
+/// The minimal `PANDOC_STATE`: `input_files` (a `pandoc.List` of the one
+/// input, empty without a host) and `output_file`. Pandoc's `output_file`
+/// is the writer's output *name* as given on its command line; Quarto 1
+/// joined it with the output directory before any filter saw it
+/// (`init.lua`'s `outputFile()`), so the absolute path is what Q1 filters
+/// ended up with. The other pandoc fields (`resource_path`, `source_url`,
+/// `user_data_dir`, `request_headers`, `verbosity`, `log`, `trace`) have
+/// no q2 equivalent and stay nil, so a filter that needs one fails at its
+/// own line rather than reading a plausible wrong default.
+fn register_pandoc_state(lua: &Lua, host: &HostContext) -> Result<()> {
+    let state = lua.create_table()?;
+    let inputs: Vec<String> = host
+        .input_file
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+    state.set(
+        "input_files",
+        super::list::create_string_list_table(lua, &inputs)?,
+    )?;
+    if let Some(output) = &host.output_file {
+        state.set("output_file", output.to_string_lossy().to_string())?;
+    }
+    lua.globals().set("PANDOC_STATE", state)?;
     Ok(())
 }
 
@@ -88,6 +135,9 @@ mod tests {
         )
         .unwrap();
         super::super::quarto_api::register_quarto_api(&lua).unwrap();
+        // Production order: quarto.doc exists before the host context
+        // adds its path fields to it.
+        super::super::quarto_doc::register_quarto_doc(&lua).unwrap();
         register_host_context(&lua, host).unwrap();
         lua
     }
@@ -138,6 +188,47 @@ mod tests {
             &lua,
             "return quarto.project.profile:includes('drafts') and #quarto.project.profile == 2"
         ));
+    }
+
+    #[test]
+    fn doc_paths_and_pandoc_state_without_a_host() {
+        let lua = lua_with(&HostContext::default());
+        assert!(eval::<bool>(&lua, "return quarto.doc.input_file == nil"));
+        assert!(eval::<bool>(&lua, "return quarto.doc.output_file == nil"));
+        assert_eq!(eval::<i64>(&lua, "return #PANDOC_STATE.input_files"), 0);
+        assert!(eval::<bool>(&lua, "return PANDOC_STATE.output_file == nil"));
+    }
+
+    #[test]
+    fn doc_paths_and_pandoc_state_with_a_host() {
+        let input = PathBuf::from("/proj").join("sub").join("page.qmd");
+        let output = PathBuf::from("/proj").join("_site").join("sub").join("page.html");
+        let host = HostContext {
+            input_file: Some(input.clone()),
+            output_file: Some(output.clone()),
+            ..Default::default()
+        };
+        let lua = lua_with(&host);
+        assert_eq!(
+            eval::<String>(&lua, "return quarto.doc.input_file"),
+            input.to_string_lossy()
+        );
+        assert_eq!(
+            eval::<String>(&lua, "return quarto.doc.output_file"),
+            output.to_string_lossy()
+        );
+        assert!(eval::<bool>(
+            &lua,
+            "return #PANDOC_STATE.input_files == 1 and PANDOC_STATE.input_files[1] == quarto.doc.input_file"
+        ));
+        assert!(eval::<bool>(
+            &lua,
+            "return PANDOC_STATE.output_file == quarto.doc.output_file"
+        ));
+        assert_eq!(
+            eval::<String>(&lua, "return pandoc.utils.type(PANDOC_STATE.input_files)"),
+            "List"
+        );
     }
 
     #[test]
