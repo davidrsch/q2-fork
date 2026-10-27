@@ -2,7 +2,7 @@
 title: 'hub-client `useEffect` audit: phased refactor'
 date: 2026-10-24
 description: 'Phased refactor of the refactor-worthy useEffect sites in hub-client: stale-dep fixes, useSyncExternalStore conversions, derived-state elimination, then measured wide-dep performance work.'
-status: in-progress  # Phases 1–3 done and open as stacked PRs (#924, #925, #931). Phases 4–5 not started.
+status: in-progress  # Phases 1–4 done; 1–3 open as stacked PRs (#924, #925, #931), 4 on refactor/useeffect-phase4 (bd-wfhd0dg5). Phase 5 not started.
 ---
 
 ## Overview
@@ -276,6 +276,90 @@ characterization-test setup with the Phase 4 and Phase 5 `Editor.tsx` items.
 
 ## Phase 4 — Wide-dependency performance (measure first)
 
+**Done 2026-10-27 (bd-wfhd0dg5); on `refactor/useeffect-phase4`.** Findings
+that shaped the landing:
+
+- The instrumentation helper landed as `src/utils/perfCounters.ts`: enabled
+  by `QUARTO_PERF_STATS=1` (Node drivers), `localStorage.quartoPerfStats=1`,
+  or `?perf=1`, read once at startup; recording is one cached-boolean
+  branch when off. Dumps are cumulative, machine-readable
+  (`perf.<gauge> runs=N total_ms=X avg_ms=Y max_ms=Z [k=v ...]`), every
+  5 s and via `window.quartoPerfDump()` in the browser. All seven sites
+  below are instrumented and the gauges stay in the tree (same pattern as
+  the Rust `perf.intern` counters).
+- Measurement ran in throwaway Node drivers (tsx + jsdom +
+  `@testing-library/react`, per the TS section of the profiling playbook)
+  with the **real hooks**, a **real Automerge doc** behind `getFileContent`
+  and the **real WASM `vfs_add_file`** behind the VFS shim. Monaco is
+  emulated: `getValue()` returns a fresh O(n) string copy (an upper bound
+  on the real piece-tree concat), `executeEdits` applies in O(1). The
+  keystroke scenario is local typing on main: splice lands in the CRDT,
+  Monaco already shows the char, React commits a fresh `fileContents` Map.
+- **Verdict: no wide-dep fix is warranted anywhere.** Numbers below; the
+  constraint on `Preview`/`ReactPreview` is moot since nothing is narrowed.
+
+Reconcile effect (`useAutomergeSync`), per-keystroke avg vs document size
+(40 keystrokes per scale after warmup):
+
+| doc size | effect total | monaco seg | vfs seg | AM read |
+|---|---|---|---|---|
+| 20 KiB | 0.073 ms | 0.047 | 0.023 | ~0 |
+| 41 KiB | 0.127 | 0.086 | 0.039 | ~0 |
+| 82 KiB | 0.274 | 0.182 | 0.090 | ~0 |
+| 163 KiB | 0.535 | 0.380 | 0.151 | ~0 |
+| 327 KiB | 1.023 | 0.720 | 0.299 | ~0 |
+
+O(n) confirmed (each doubling ~doubles the cost) with a small constant:
+≤ 0.27 ms/keystroke at realistic sizes (≤ 82 KiB ≈ 2000 lines). The
+Automerge read is ~free because the sync client materializes the text for
+its own change callback, so the effect\'s `getFileContent` hits the
+same-version cache. The VFS write *is* fully redundant on main (the sync
+client\'s `onFileChanged` writes the same path first — bd-4jjckvwt), but at
+≤ 0.3 ms even for a 327 KiB document, the branch-transition-tracking needed
+to skip it safely is not worth the correctness risk.
+
+Project search (`useProjectSearch`), per-keystroke avg vs project size:
+
+| files | corpus rebuild | sync (1 changed file) | total |
+|---|---|---|---|
+| 25 | 0.006 ms | 0.902 | 0.911 |
+| 100 | 0.008 | 0.686 | 0.696 |
+| 400 | 0.030 | 0.790 | 0.828 |
+
+The wide-dep cost (corpus-map rebuild) is ≤ 30 µs at 400 files. The
+~0.7–0.9 ms is MiniSearch reindexing the single changed 10 KiB file —
+intrinsic to a live index and independent of dep shape (as the plan
+predicted: no fix needed).
+
+Trivial-body class (route-nav, replay-VFS restore, both preview schedulers,
+the intelligence refresh): five such effects together cost 0.036 ms per
+keystroke *including* the React commit; bodies ≤ 1 µs each, size-independent
+by inspection. `Preview`/`ReactPreview` also gain no extra effect fires
+from the wide dep for active-file typing: `content` and `fileContents`
+update in the same commit, so the effect runs once either way; sibling-edit
+fires are the load-bearing intent (bd-4jjckvwt). No fix anywhere in this
+class.
+
+Two items resolved without measurement:
+
+- `useSectionThumbnails` turned out to be **dead code** — no caller in the
+  tree; `OutlinePanel` imported only its `ThumbnailMap` type, and the live
+  thumbnail path (`useSlideThumbnails`, used by `Editor`) already has the
+  100 ms debounce. Deleted the hook and retargeted the type import —
+  closes the item more definitively than adding a debounce to dead code.
+- `Editor.tsx:743` (now :759) `refreshIntelligence`: `useIntelligence`\'s
+  `refresh` already debounces at 300 ms internally (`refreshTimeoutRef`),
+  so the per-keystroke cost is one `clearTimeout`+`setTimeout` — the
+  trivial-body class. No fold-in needed.
+
+Verification: `npm run test:ci` all three legs green (1736 unit +
+229 integration + 434 WASM, 28 skipped); `npm run build` green; eslint on
+touched files at exact parity with the Phase 3 tip (9 errors / 7 warnings,
+all pre-existing react-hooks v6 complaints against untouched code). Not
+browser-smoked: the only behavior change is a dead-code deletion; the
+instrumentation is inert unless enabled. The counters can be exercised in
+any dev session via `localStorage.quartoPerfStats = '1'`.
+
 Five effects depend on the whole `fileContents` map and therefore rerun on
 every keystroke in any file. Per the performance-profiling workflow: build a
 representative fixture, scale geometrically, add gated counters with a
@@ -293,24 +377,22 @@ recompiles theme CSS (bd-4jjckvwt). Never narrow those two to the current
 file content; the only valid directions there are relevant-change detection
 or moving invalidation into the sync-service callback.
 
-- [ ] Instrument the body and early-out path of each wide-dep effect:
-  `src/hooks/useAutomergeSync.ts:221`, `src/components/Editor.tsx:777`,
+- [x] Instrument the body and early-out path of each wide-dep effect:
+  `src/hooks/useAutomergeSync.ts:221`, `src/components/Editor.tsx:777`
+  (re-located to :789, the route-nav effect),
   `src/components/render/Preview.tsx:367`,
   `src/components/render/ReactPreview.tsx:789`,
-  `src/services/search/useProjectSearch.ts:43`. Measure per-keystroke cost at
-  increasing document sizes. (`useProjectSearch` already delta-detects via
-  its `indexedRef`; its residual cost is the per-keystroke corpus-map
-  rebuild, so measurement may conclude no fix is needed there.)
-- [ ] If measurement confirms the cost: narrow deps from the `fileContents`
-  map to the current file content string where the wide dep is incidental
-  (never `Preview`/`ReactPreview` — see the constraint above), or move the
-  work into the sync-service callback where the change actually originates
-  (event response, not render response).
-- [ ] `src/hooks/useSectionThumbnails.ts:129` — add the 100 ms debounce that
-  `useSlideThumbnails` already has.
-- [ ] `src/components/Editor.tsx:743` — `refreshIntelligence` runs on every
-  content change; confirm whether it shares the sync debounce path and fold
-  it in if not.
+  `src/services/search/useProjectSearch.ts:43`. Measured per-keystroke cost
+  at increasing document sizes — see findings above.
+- [x] ~~If measurement confirms the cost: narrow deps~~ — measurement did
+  *not* confirm a significant cost at any site (see tables), so no dep was
+  narrowed and no work was moved; the counters remain for future
+  verification.
+- [x] `src/hooks/useSectionThumbnails.ts:129` — hook was dead code; deleted
+  (the debounce item is moot). `OutlinePanel`\'s `ThumbnailMap` import
+  retargeted to `useSlideThumbnails`.
+- [x] `src/components/Editor.tsx:743` — confirmed `refreshIntelligence`
+  debounces at 300 ms inside `useIntelligence`; no fold-in needed.
 
 ## Phase 5 — `useEffectEvent` sweep (optional, low priority)
 

@@ -38,6 +38,7 @@ import { diffToMonacoEdits } from '../utils/diffToMonacoEdits';
 import { diffToEditorChanges } from '@quarto/preview-runtime';
 import { registerEditorTextProvider } from '../services/editorDebugRegistry';
 import { getBranchText, applyBranchEdits } from '../services/branchService';
+import { perfNow, perfSegment, perfMark } from '../utils/perfCounters';
 
 interface UseAutomergeSyncOptions {
   /** Current file being edited (null if none selected) */
@@ -219,19 +220,32 @@ export function useAutomergeSync({
   // closure value) and reconciles Monaco. For ongoing remote edits this
   // is usually a no-op since the real-time callback above already handled it.
   useEffect(() => {
-    if (!currentFile) return;
-    if (replayIsActive) return;
+    const fxT0 = perfNow();
+    if (!currentFile) {
+      perfMark('effect.automerge-reconcile.early-out');
+      return;
+    }
+    if (replayIsActive) {
+      perfMark('effect.automerge-reconcile.early-out');
+      return;
+    }
 
     // On a local branch, reconcile from the branch doc instead of main.
+    const readT0 = perfNow();
     const automergeContent = activeBranchId !== null
       ? getBranchText(currentFile.path, activeBranchId)
       : getFileContent(currentFile.path);
-    if (automergeContent === null) return;
+    if (automergeContent === null) {
+      perfMark('effect.automerge-reconcile.early-out');
+      return;
+    }
+    const readT1 = perfNow();
 
     // Keep the VFS in step with whatever the editor displays, so the
     // preview renders the same state (covers branch switches in both
     // directions — the sync client only maintains the VFS for main edits).
     vfsAddFile(currentFile.path, automergeContent);
+    const vfsT1 = perfNow();
 
     const model = editorRef.current?.getModel();
     const monacoContent = model?.getValue();
@@ -239,6 +253,9 @@ export function useAutomergeSync({
     // If Monaco isn't ready yet, just sync React state for preview
     if (monacoContent === undefined) {
       setContent(automergeContent);
+      perfSegment('effect.automerge-reconcile.read', readT0, readT1);
+      perfSegment('effect.automerge-reconcile.vfs', readT1, vfsT1);
+      perfSegment('effect.automerge-reconcile', fxT0);
       return;
     }
 
@@ -250,8 +267,13 @@ export function useAutomergeSync({
         applyingRemoteRef.current = false;
       }
     }
+    const monacoT1 = perfNow();
 
     setContent(automergeContent);
+    perfSegment('effect.automerge-reconcile.read', readT0, readT1);
+    perfSegment('effect.automerge-reconcile.vfs', readT1, vfsT1);
+    perfSegment('effect.automerge-reconcile.monaco', vfsT1, monacoT1);
+    perfSegment('effect.automerge-reconcile', fxT0);
   }, [currentFile, fileContents, replayIsActive, editorMountGen, activeBranchId]);
 
   // ── Monaco → Automerge ───────────────────────────────────────────────

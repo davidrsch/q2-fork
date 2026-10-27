@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { FileEntry } from '@quarto/preview-renderer/types/project';
 import { InMemorySearchProvider } from './inMemorySearchProvider';
 import type { SearchOptions, SearchResult } from './types';
+import { perfNow, perfSegment, perfExtra } from '../../utils/perfCounters';
 
 /** Async search function handed to the UI. */
 export type SearchFiles = (query: string, opts?: SearchOptions) => Promise<SearchResult[]>;
@@ -41,6 +42,7 @@ export function useProjectSearch(
   const indexedRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
+    const fxT0 = perfNow();
     const provider = providerRef.current!;
     const indexed = indexedRef.current;
     const listed = new Set(files.map((f) => f.path));
@@ -52,22 +54,35 @@ export function useProjectSearch(
         desired.set(path, content);
       }
     }
+    const desiredT1 = perfNow();
 
     // Adds and updates.
+    let changed = 0;
     for (const [path, content] of desired) {
       if (indexed.get(path) !== content) {
         provider.addOrUpdate(path, content);
         indexed.set(path, content);
+        changed++;
       }
     }
+    const syncT1 = perfNow();
 
     // Removals (files deleted, unlisted, or whose content disappeared).
+    let removed = 0;
     for (const path of [...indexed.keys()]) {
       if (!desired.has(path)) {
         provider.remove(path);
         indexed.delete(path);
+        removed++;
       }
     }
+
+    perfSegment('effect.project-search.desired', fxT0, desiredT1);
+    perfSegment('effect.project-search.sync', desiredT1, syncT1);
+    perfExtra('effect.project-search', 'files', listed.size);
+    perfExtra('effect.project-search', 'changed', changed);
+    perfExtra('effect.project-search', 'removed', removed);
+    perfSegment('effect.project-search', fxT0);
   }, [files, fileContents]);
 
   return useCallback<SearchFiles>(

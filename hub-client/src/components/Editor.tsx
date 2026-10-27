@@ -48,6 +48,7 @@ import { setActiveBranch, createBranch, mergeBranchToMain, deleteBranch } from '
 import BranchBar from './BranchBar';
 import { diffToMonacoEdits } from '../utils/diffToMonacoEdits';
 import { diagnosticsToMarkers } from '../utils/diagnosticToMonaco';
+import { perfNow, perfSegment, perfMark } from '../utils/perfCounters';
 import EphemeralSessionBanner from './EphemeralSessionBanner';
 import FileSidebar from './FileSidebar';
 import NewFileDialog from './NewFileDialog';
@@ -739,10 +740,12 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
   // and React state, but doesn't re-write VFS unless fileContents changed.
   const prevReplayActiveRef = useRef(false);
   useEffect(() => {
+    const fxT0 = perfNow();
     const wasActive = prevReplayActiveRef.current;
     prevReplayActiveRef.current = replayState.isActive;
 
     if (wasActive && !replayState.isActive) {
+      perfMark('effect.editor-replay-vfs.restored');
       prevReplayContentRef.current = '';
       prevReplayIndexRef.current = 0;
       if (currentFile && isWasmReady()) {
@@ -752,12 +755,14 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
         }
       }
     }
+    perfSegment('effect.editor-replay-vfs', fxT0);
   }, [replayState.isActive, currentFile, fileContents]);
 
   // Refresh intelligence (outline) when content changes
   // VFS is updated via Automerge callbacks, so we trigger refresh after content changes
   useEffect(() => {
     refreshIntelligence();
+    perfMark('effect.editor-intelligence');
   }, [content, refreshIntelligence]);
 
   // Unlocated diagnostics are derived state: computed during render, so the
@@ -787,12 +792,14 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
     route.type === 'file' ? route.filePath : undefined
   );
   useEffect(() => {
+    const fxT0 = perfNow();
     const prevFilePath = prevRouteFilePathRef.current;
     const newFilePath = route.type === 'file' ? route.filePath : undefined;
     prevRouteFilePathRef.current = newFilePath;
 
     // Only handle if file path actually changed (browser navigation)
     if (newFilePath && newFilePath !== prevFilePath) {
+      perfMark('effect.editor-route-nav.handled');
       const targetFile = files.find(f => f.path === newFilePath);
       if (targetFile && targetFile.path !== currentFile?.path) {
         // Don't switch to binary files that have no viewer (images do)
@@ -804,6 +811,7 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
         }
       }
     }
+    perfSegment('effect.editor-route-nav', fxT0);
   }, [route, files, fileContents, currentFile]);
 
   // Configure Monaco before mount (for TypeScript diagnostics)

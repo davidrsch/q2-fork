@@ -11,7 +11,7 @@ import { useState, useCallback } from 'react';
 import Tooltip from './Tooltip';
 import { outline } from '../strings';
 import type { Symbol, SymbolKind } from '@quarto/preview-renderer/types/intelligence';
-import type { ThumbnailMap } from '../hooks/useSectionThumbnails';
+import type { ThumbnailMap } from '../hooks/useSlideThumbnails';
 import './OutlinePanel.css';
 
 /**
