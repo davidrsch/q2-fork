@@ -415,8 +415,8 @@ Quarto 1.
 Three ways to stop, from gentlest to bluntest:
 
 - `quarto.error(message, element)` reports an error diagnostic pointing at
-  `element`'s source location. The document fails; the rest of the project
-  still renders.
+  the source location of `element`. The document fails; the rest of the
+  project still renders.
 - `error(message)` fails the document with a plain Lua error. The rest of
   the project still renders and the summary lists the failure.
 - `os.exit(code)` also fails the document. Quarto 1 filters use it because
