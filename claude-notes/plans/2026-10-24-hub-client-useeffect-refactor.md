@@ -2,7 +2,7 @@
 title: 'hub-client `useEffect` audit: phased refactor'
 date: 2026-10-24
 description: 'Phased refactor of the refactor-worthy useEffect sites in hub-client: stale-dep fixes, useSyncExternalStore conversions, derived-state elimination, then measured wide-dep performance work.'
-status: in-progress  # Phases 1–3 done; 1–2 open as stacked PRs (#924, #925), 3 on refactor/useeffect-phase3 pending push. Phases 4–5 not started.
+status: in-progress  # Phases 1–3 done and open as stacked PRs (#924, #925, #931). Phases 4–5 not started.
 ---
 
 ## Overview
@@ -212,7 +212,7 @@ existing in-repo template.
 
 ## Phase 3 — Derived state out of effects
 
-**Done 2026-10-27 (bd-cp9wzu6o); on `refactor/useeffect-phase3`, stacked on the Phase 2 branch.** Findings that shaped the landing:
+**Done 2026-10-27 (bd-cp9wzu6o); open as PR #931, stacked on #925.** Findings that shaped the landing:
 
 - `Editor.tsx` had zero direct test coverage, so the phase starts with a
   characterization harness: `src/components/Editor.characterization.test.tsx`
