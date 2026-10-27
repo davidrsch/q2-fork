@@ -2,13 +2,13 @@
 title: 'q2 add / q2 use brand: allow --trust with --dry-run (bd-cjqhcaz6)'
 date: 2026-10-27
 description: 'A non-interactive dry run of a remote source is impossible because --trust is rejected with --dry-run; allow the pairing in both commands while still rejecting --force with --dry-run.'
-status: draft  # Investigation — pending design alignment with user; do not implement before the go-ahead
+status: ready  # Design aligned with user 2026-10-27
 braid:
   strand: bd-cjqhcaz6
 ---
 
 **Branch:** `braid/bd-cjqhcaz6-trust-with-dry-run` (topic branch in the main checkout, based on `main` @ `85f19da7f`)
-**Do not start implementation until the user gives the go-ahead.**
+**Design questions resolved 2026-10-27; see Design decisions.**
 
 Pre-flight `cargo xtask verify --skip-hub-build` is green at `85f19da7f`. The first run hit a one-off failure in `marimo_engine_e2e::sc8` (a uv client-cache rename race in `~/.cache/uv`). The test passed when run alone, and the full rerun passed.
 
@@ -58,24 +58,29 @@ Docs:
 
 The symptom is reproducible by reading: no code path between the guard and `confirm_trust` could make the pairing work. No separate repro fixture was needed.
 
-## Proposed phases (draft)
+## Design decisions (2026-10-27, with the user)
 
-- **Phase 0 — Tests first.**
-  - `add.rs`: `--no-prompt --dry-run --trust <server url>` succeeds, prints the `[Install]` table, leaves `_extensions/` absent, and the server saw exactly one `/archive.tar.gz` request. `--dry-run --force` stays rejected (already covered).
-  - `add.rs`: `--no-prompt --dry-run <server url>` (no `--trust`) is refused before any request.
-  - `use_brand.rs`: replace `trust_with_dry_run_is_rejected` with a remote `--trust --dry-run` that previews and writes nothing (needs a localhost server; see Q2). Add `force_with_dry_run_is_rejected` if not already covered.
-  - `use_brand.rs`: no-TTY `--dry-run` without `--trust` on a remote target is refused before any request.
-- **Phase 1 — Guards.** Reduce both loops to a single `--force` check; rewrite the comments so they explain why `--trust` is allowed (it authorizes the fetch, which a dry run performs).
-- **Phase 2 — Hints.** Reword the two no-prompter refusals so they are correct in dry-run mode (see Q1).
-- **Phase 3 — Docs.** `extensions.qmd` bullet; `brand.qmd` trust section and/or callout. Check `q2 add --help` / `q2 use --help` text for any "cannot be combined" wording.
-- **Phase 4 — Verify.** `cargo xtask verify`; changelog entry if the project tracks user-facing CLI changes there.
+1. **Hint wording: mode-aware.** The no-prompter refusal tells a dry-run caller to re-run with `--dry-run --trust`, and a normal caller to re-run with `--trust`. Cost is low: both `confirm_trust` functions already take `req`, and both `AddRequest` and `BrandRequest` carry `dry_run`, so no new parameter is threaded.
+2. **Test server: shared helper.** `TestServer` and `tar_gz` move out of `add.rs` into a shared module under `crates/quarto/tests/integration/`, used by both `add.rs` and `use_brand.rs`.
+3. **Consent for the fetch in every mode.** A dry run of a remote source still needs trust (prompt or `--trust`). Letting a dry run fetch without trust stays rejected.
+4. **Interactive dry run keeps prompting.** With a terminal, a remote `--dry-run` still asks the trust question before downloading. The docs get a note explaining why a preview can ask a question.
 
-## Open design questions for the user
+## Phases
 
-1. **Hint wording.** Should the no-prompter refusal mention `--dry-run` only when the current run *is* a dry run (e.g. "Re-run with `--dry-run --trust` to preview after confirming you trust …"), or use one static sentence for both modes (the strand suggests "Re-run with --trust (it also works with --dry-run)…")? Mode-aware is more precise but threads `dry_run` into both `confirm_trust` functions.
-2. **Test server placement.** `use_brand.rs` needs the localhost archive server that lives inline in `add.rs`. Move `TestServer` (and `tar_gz`) into a shared helper module under `tests/integration/` used by both, or duplicate it into `use_brand.rs`?
-3. **Confirm the alternative stays rejected.** The strand rejects "let a dry run fetch without trust" because the download itself is the sensitive step. Agree we keep consent required for the fetch in every mode, including dry runs?
-4. **Interactive dry run.** With a TTY, a remote `--dry-run` today prompts for trust before downloading. Keep that (consistent: the fetch needs consent), or is a prompt during a "preview" surprising enough to note in the docs?
+- **Phase 0 — Shared test helper.** Move `TestServer` and `tar_gz` (plus whatever `tar_gz` needs) from `tests/integration/add.rs` into a new module, e.g. `tests/integration/archive_server.rs`, registered alphabetically in `main.rs`. `add.rs` imports from it. No behavior change; `add` tests stay green.
+- **Phase 1 — Failing tests.**
+  - `add.rs`: `--no-prompt --dry-run --trust <server url>` succeeds, prints the `[Install]` table, leaves `_extensions/` absent, and the server saw exactly one `/archive.tar.gz` request.
+  - `add.rs`: `--no-prompt --dry-run <server url>` (no `--trust`) is refused before any request, and the hint names `--dry-run --trust`. The existing non-dry-run refusal test checks that its hint does not mention `--dry-run`.
+  - `use_brand.rs`: replace `trust_with_dry_run_is_rejected` with a remote `--trust --dry-run` against the shared server that previews and writes nothing (no brand files, `_quarto.yml` unchanged, one request).
+  - `use_brand.rs`: `--no-prompt --dry-run <remote>` without `--trust` is refused before any request, with the dry-run hint.
+  - Both: `--force --dry-run` stays rejected (add already covers it; add a `use brand` case if missing).
+  - Unit tests in `add/resolve.rs` and `use_cmd/brand.rs` near the existing `confirm_trust` tests, for the two hint variants.
+- **Phase 2 — Guards.** Reduce both loops in `add/mod.rs` and `use_cmd/mod.rs` to a single `--force` check. Rewrite the comments: `--trust` is allowed because it authorizes the fetch, which a dry run performs; `--force` is not because it authorizes an overwrite, which a dry run never does.
+- **Phase 3 — Mode-aware hints.** In both `confirm_trust` functions, pick the re-run sentence from `req.dry_run`.
+- **Phase 4 — Docs.**
+  - `docs/guides/authoring/extensions.qmd:53`: a non-interactive dry run of a remote source needs `--trust`. Add the note that an interactive dry run asks the trust question, because previewing still downloads the source.
+  - `docs/guides/authoring/brand.qmd`: the same two points in "Trusting a remote source" (and/or "Previewing changes"). Extend the "`--force` and `--trust` are different permissions" callout: `--trust` combines with `--dry-run`, `--force` does not.
+- **Phase 5 — Verify.** `cargo xtask verify`, plus a changelog entry if user-facing CLI changes are tracked there.
 
 ## Risks / tradeoffs (draft)
 
