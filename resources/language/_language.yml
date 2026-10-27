@@ -84,6 +84,10 @@ toggle-dark-mode: "Toggle dark mode"
 toggle-reader-mode: "Toggle reader mode"
 toggle-navigation: "Toggle navigation"
 
+# Quarto 2 addition (not in Quarto 1; see README.md, "Quarto 2 additions"):
+# accessible name of the website announcement banner's close button.
+announcement-close: "Close announcement"
+
 # Landmark labels. Two rules for translators:
 # 1. Do not include the word "navigation". Screen readers announce the role after
 #    the label (https://www.w3.org/WAI/ARIA/apg/practices/landmark-regions/).

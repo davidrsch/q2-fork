@@ -11,6 +11,16 @@ website:
   description: "Documentation for Quarto 2, the Rust-based rewrite of the Quarto publishing system"
   logo: quarto.png
   llms-txt: true
+  # Preliminary docs: pages that have had a human review opt out with
+  # `website: {announcement: false}` in their front matter (or a
+  # directory's `_metadata.yml`). See guides/projects/announcement.qmd.
+  announcement:
+    content: "This page has not yet been reviewed by a human. It may contain errors."
+    type: warning
+    icon: info-circle
+    # Closing hides it on the current page only, so the notice still
+    # appears on every other unreviewed page.
+    remember-dismissal: false
   navbar:
     left:
       - href: index.qmd
@@ -38,6 +48,7 @@ website:
             - guides/projects/listing-templates.qmd
             - guides/projects/navbar-logo.qmd
             - guides/projects/header-scrolling.qmd
+            - guides/projects/announcement.qmd
             - guides/projects/breadcrumbs.qmd
             - guides/projects/repo-actions.qmd
             - guides/projects/render-list.qmd
@@ -286,6 +297,9 @@ website:
             - errors/navigation/Q-13-12.qmd
             - errors/navigation/Q-13-13.qmd
             - errors/navigation/Q-13-14.qmd
+            - errors/navigation/Q-13-15.qmd
+            - errors/navigation/Q-13-16.qmd
+            - errors/navigation/Q-13-17.qmd
         - section: "template"
           contents:
             - errors/template/Q-10-1.qmd

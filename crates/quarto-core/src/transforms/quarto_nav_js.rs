@@ -13,12 +13,15 @@
 //! ## Predicate
 //!
 //! The template emits `<header id="quarto-header" class="headroom
-//! fixed-top">` when `rendered.navigation.navbar` or
-//! `rendered.navigation.secondary-nav` is non-empty
-//! (`template.rs::QUARTO_HEADER_PARTIAL` and its `$if$` gate). This
-//! transform ships the JS **iff that header ships** — same signal, read
-//! after the navbar / secondary-nav render transforms have run (this
+//! fixed-top">` when any of `rendered.navigation.{navbar, secondary-nav,
+//! announcement-above, announcement-below}` is non-empty
+//! (`template.rs::QUARTO_HEADER_PARTIAL` and its `$if$` gate;
+//! [`page_has_header`] holds the key list). This transform ships the JS
+//! **iff that header ships** — same signal, read after the navbar /
+//! secondary-nav / announcement render transforms have run (this
 //! transform must be registered after them in the Navigation phase).
+//! `quarto-nav.js` also reveals and dismisses the announcement banner
+//! (bd-website-announcement-w1gtpzki).
 //! Without a fixed header the script would be inert, so no
 //! `ProjectKind` gate is needed: a standalone document that renders a
 //! navbar gets (and needs) the same JS.
@@ -66,10 +69,8 @@ use crate::Result;
 use crate::artifact::{Artifact, ArtifactScope, ArtifactStore};
 use crate::render::RenderContext;
 use crate::transform::{AstTransform, TransformPhase};
-use crate::transforms::config::rendered_navigation_non_empty;
-// `page_has_navbar` via the `transforms` re-export, matching
-// `sidebar_render.rs`; `rendered_navigation_non_empty` is not re-exported.
-use crate::transforms::page_has_navbar;
+// Via the `transforms` re-export, matching `sidebar_render.rs`.
+use crate::transforms::page_has_header;
 
 /// headroom.js v0.12.0 (MIT), byte-identical to Q1's vendored copy.
 /// Version contract: `resources/js/README.md` § `headroom/`.
@@ -99,11 +100,10 @@ struct NavJsDecision {
 /// without a `RenderContext`.
 fn decide(meta: &ConfigValue) -> NavJsDecision {
     // Same signal as the template's header gate: a non-empty rendered
-    // navbar or secondary nav means `#quarto-header.fixed-top` ships.
-    // `page_has_navbar` (shared with the sidebar-title predicate) covers
-    // the `navbar` half; `secondary-nav` has no other consumer yet, so it
-    // reads the same shared `rendered.navigation.<key>` helper directly.
-    let has_header = page_has_navbar(meta) || rendered_navigation_non_empty(meta, "secondary-nav");
+    // navbar, secondary nav, or announcement means
+    // `#quarto-header.fixed-top` ships. The announcement also needs the
+    // script for its show/dismiss logic.
+    let has_header = page_has_header(meta);
     if !has_header {
         return NavJsDecision {
             ship_nav: false,
@@ -212,6 +212,26 @@ mod tests {
                 ship_headroom: true
             }
         );
+    }
+
+    #[test]
+    fn ships_both_when_only_an_announcement_rendered() {
+        // Announcement-only page (bd-website-announcement-w1gtpzki): the
+        // header exists, and the script also reveals/dismisses the banner.
+        for key in ["announcement-above", "announcement-below"] {
+            let meta = meta_with(&[(
+                &["rendered", "navigation", key],
+                s("<div id=\"quarto-announcement\">A</div>"),
+            )]);
+            assert_eq!(
+                decide(&meta),
+                NavJsDecision {
+                    ship_nav: true,
+                    ship_headroom: true
+                },
+                "{key}"
+            );
+        }
     }
 
     #[test]

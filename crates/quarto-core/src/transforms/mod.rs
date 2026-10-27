@@ -16,6 +16,8 @@
 //! - [`EditorialMarksOoxmlTransform`] - Renders editorial marks to Word and PowerPoint (docx, pptx)
 //! - [`FooterGenerateTransform`] - Resolves `page-footer:` YAML into `navigation.footer`
 //! - [`FooterRenderTransform`] - Renders `navigation.footer` to HTML
+//! - [`AnnouncementGenerateTransform`] - Resolves `website.announcement` into `navigation.announcement`
+//! - [`AnnouncementRenderTransform`] - Renders `navigation.announcement` to HTML
 //! - [`FootnotesTransform`] - Resolves footnote refs/defs into native `Inline::Note`s
 //! - [`FootnotesResolveTransform`] - Resolves `Inline::Note`s into HTML footnote chrome
 //! - [`MetadataNormalizeTransform`] - Normalizes document metadata (adds pagetitle, etc.)
@@ -50,6 +52,8 @@
 /// id and are never deduped) skip this marker entirely.
 pub(crate) const FOOTNOTE_REF_ID_MARKER_FORMAT: &str = "quarto-internal-footnote-ref-id";
 
+mod announcement_generate;
+mod announcement_render;
 mod appendix;
 mod attribution_generate;
 mod attribution_render;
@@ -141,6 +145,8 @@ mod website_canonical_url;
 mod website_favicon;
 mod website_title_prefix;
 
+pub use announcement_generate::AnnouncementGenerateTransform;
+pub use announcement_render::AnnouncementRenderTransform;
 pub use appendix::AppendixStructureTransform;
 pub use attribution_generate::AttributionGenerateTransform;
 pub use attribution_render::AttributionRenderTransform;
@@ -159,8 +165,8 @@ pub use code_block_render::CodeBlockRenderTransform;
 pub use components_resolve::ComponentsResolveTransform;
 pub use conditional_content::ConditionalContentTransform;
 pub use config::{
-    AppendixStyle, ReferenceLocation, TitleBlockStyle, is_feature_disabled, page_has_navbar,
-    resolve_website_bool,
+    AppendixStyle, HEADER_CONTENT_KEYS, ReferenceLocation, TitleBlockStyle, is_feature_disabled,
+    page_has_header, page_has_navbar, resolve_website_bool,
 };
 pub use config_markdown::{ConfigMarkdownTransform, apply_markdown_config_paths};
 pub use crossref_index::CrossrefIndexTransform;

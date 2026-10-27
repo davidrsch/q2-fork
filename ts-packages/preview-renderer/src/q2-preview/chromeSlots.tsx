@@ -105,6 +105,24 @@ export const NavbarSlot = memo(({ html }: SlotProps) => (
 NavbarSlot.displayName = 'NavbarSlot';
 
 /**
+ * Announcement banner HTML — emitted by `AnnouncementRenderTransform`
+ * into `meta.rendered.navigation.announcement-above` or
+ * `…announcement-below` (bd-website-announcement-w1gtpzki). Renders
+ * INSIDE the `<header id="quarto-header">` wrapper, before the navbar or
+ * after the secondary nav (per template.rs QUARTO_HEADER_PARTIAL).
+ *
+ * The banner arrives with class `hidden`; quarto-nav.js (injected by
+ * entry.tsx) reveals it, keyed off the `#quarto-announcement` element in
+ * its body MutationObserver — so when this slot's HTML changes and React
+ * replaces the element, the new one is revealed again. A dismissal
+ * removes the element; the memo keeps it removed until the HTML changes.
+ */
+export const AnnouncementSlot = memo(({ html }: SlotProps) => (
+    <div style={TRANSPARENT} dangerouslySetInnerHTML={{ __html: html }} />
+));
+AnnouncementSlot.displayName = 'AnnouncementSlot';
+
+/**
  * Narrow-viewport secondary-nav HTML — emitted by
  * `SecondaryNavRenderTransform` into
  * `meta.rendered.navigation.secondary-nav` (bd-ersobfbt lifted that

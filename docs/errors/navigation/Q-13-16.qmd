@@ -1,0 +1,55 @@
+---
+title: "Announcement has no content"
+description: "website.announcement is set to true, or to a value with no content, so no banner is rendered."
+code: Q-13-16
+subsystem: navigation
+status: complete
+since: "99.9.9"
+categories:
+  - navigation
+  - websites
+---
+
+# `Q-13-16` — Announcement has no content
+
+> `website.announcement` is set, but there is no text to show, so no
+> banner is rendered.
+
+## What this means
+
+An announcement banner needs content. It can be given as a string,
+
+```yaml
+website:
+  announcement: "This site is in beta."
+```
+
+or as the `content` key of a map that also sets options:
+
+```yaml
+website:
+  announcement:
+    content: "This site is in beta."
+    type: warning
+```
+
+This warning fires when the value has no usable content: it is
+`true`, a map with no `content` key, or a blank string.
+
+## Why this happens
+
+- **`announcement: true`** — the option is not an on/off switch; the
+  value is the content itself.
+- **A map without `content`** — for example only `type:` and `icon:`
+  were set, or the key was misspelled (`text:`, `message:`).
+- **An empty string**, often left behind while editing.
+
+## How to fix
+
+Give the announcement text, as a string or as `content:`. To turn
+the banner off, for the whole site or for one page, set
+`announcement: false` instead; that is silent.
+
+## Related
+
+- `Q-13-17` — an announcement option with an unrecognized value.

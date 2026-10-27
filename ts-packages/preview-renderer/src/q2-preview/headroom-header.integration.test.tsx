@@ -109,6 +109,49 @@ describe('q2-preview #quarto-header wrapper (bd-ersobfbt)', () => {
         ).toBeTruthy();
     });
 
+    // bd-website-announcement-w1gtpzki: mirrors template.rs — the banner
+    // sits before the navbar (`announcement-above`) or after the
+    // secondary nav (`announcement-below`), and alone opens the header.
+    const ABOVE_HTML = '<div id="quarto-announcement" class="alert hidden">ABOVE</div>';
+    const BELOW_HTML = '<div id="quarto-announcement" class="alert hidden">BELOW</div>';
+    const follows = (a: Element, b: Element) =>
+        (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+    it('announcement-above → inside the header, before the navbar', () => {
+        const { container } = mount(
+            navMeta({ navbar: ms(NAVBAR_HTML), 'announcement-above': ms(ABOVE_HTML) }),
+        );
+        const header = container.querySelector('header#quarto-header')!;
+        const banner = header.querySelector('#quarto-announcement')!;
+        expect(banner.textContent).toBe('ABOVE');
+        expect(follows(banner, header.querySelector('nav.navbar')!)).toBe(true);
+    });
+
+    it('announcement-below → inside the header, after the secondary nav', () => {
+        const { container } = mount(
+            navMeta({
+                navbar: ms(NAVBAR_HTML),
+                'secondary-nav': ms(SECONDARY_HTML),
+                'announcement-below': ms(BELOW_HTML),
+            }),
+        );
+        const header = container.querySelector('header#quarto-header')!;
+        const banner = header.querySelector('#quarto-announcement')!;
+        expect(banner.textContent).toBe('BELOW');
+        expect(follows(header.querySelector('nav.quarto-secondary-nav')!, banner)).toBe(true);
+    });
+
+    it('announcement only → header exists, no nav-fixed', () => {
+        for (const key of ['announcement-above', 'announcement-below']) {
+            const { container, unmount } = mount(navMeta({ [key]: ms(ABOVE_HTML) }));
+            const header = container.querySelector('header#quarto-header');
+            expect(header, key).not.toBeNull();
+            expect(header!.querySelector('#quarto-announcement'), key).not.toBeNull();
+            expect(document.body.classList.contains('nav-fixed'), key).toBe(false);
+            unmount();
+        }
+    });
+
     it('no navbar and no secondary nav → no header wrapper', () => {
         const { container } = mount({}, [PARA(STR('hello'))]);
         expect(container.querySelector('#quarto-header')).toBeNull();

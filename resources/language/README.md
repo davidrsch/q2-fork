@@ -25,5 +25,16 @@ commit hash above, and run the catalog integrity test
 (`cargo nextest run -p quarto-core -E 'test(language_catalog)'`). Key-level
 compatibility with Quarto 1 is deliberate — do not rename keys.
 
+## Quarto 2 additions
+
+A few keys exist only in q2. A re-copy from `quarto-cli` drops them, so
+re-add them to `_language.yml` after every update (the catalog integrity test
+`base_catalog_contains_keys_consumed_by_transforms` fails until you do).
+Other languages fall back to the English value until a translation lands.
+
+| key | English | consumer |
+|---|---|---|
+| `announcement-close` | Close announcement | `website.announcement` close button (bd-website-announcement-w1gtpzki) |
+
 Design: `claude-notes/plans/2026-07-17-localization-i18n-design.md`
 (braid strand bd-llhlzd7p).

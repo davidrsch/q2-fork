@@ -83,6 +83,31 @@ pub fn page_has_navbar(meta: &ConfigValue) -> bool {
     rendered_navigation_non_empty(meta, "navbar")
 }
 
+/// The `rendered.navigation.*` keys whose content lives inside
+/// `<header id="quarto-header">`. Any one of them, non-empty, means the
+/// header ships. Keep in sync with the template's header gate
+/// (`FULL_HTML_TEMPLATE`, `$quarto-header()$` call site) and the preview's
+/// (`PreviewDocument.tsx`).
+pub const HEADER_CONTENT_KEYS: &[&str] = &[
+    "navbar",
+    "secondary-nav",
+    // bd-website-announcement-w1gtpzki: an announcement alone opens the
+    // header, as in Q1 (`nav.navbar || nav.sidebar || nav.announcement`).
+    "announcement-above",
+    "announcement-below",
+];
+
+/// Returns `true` if the page has a `#quarto-header`: some
+/// [`HEADER_CONTENT_KEYS`] entry is rendered and non-empty.
+///
+/// **Callers must run after every transform that renders one of those
+/// keys** (navbar, secondary nav, announcement).
+pub fn page_has_header(meta: &ConfigValue) -> bool {
+    HEADER_CONTENT_KEYS
+        .iter()
+        .any(|key| rendered_navigation_non_empty(meta, key))
+}
+
 /// Where footnotes/references should be placed.
 ///
 /// Corresponds to the `reference-location` option in Quarto schema.

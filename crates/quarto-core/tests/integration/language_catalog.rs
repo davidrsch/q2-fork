@@ -79,6 +79,9 @@ fn base_catalog_contains_keys_consumed_by_transforms() {
         ("title-block-author-single", "Author"),
         ("title-block-author-plural", "Authors"),
         ("title-block-published", "Published"),
+        // Quarto 2 additions (resources/language/README.md): absent upstream,
+        // so a re-copy from quarto-cli drops them — this fails until re-added.
+        ("announcement-close", "Close announcement"),
     ];
     for (key, value) in expected {
         assert_eq!(

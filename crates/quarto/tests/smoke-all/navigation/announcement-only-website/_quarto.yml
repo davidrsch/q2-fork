@@ -1,0 +1,8 @@
+project:
+  type: website
+website:
+  title: Announcement-only site
+  announcement:
+    content: "Below-navbar banner on a site with no navbar."
+    position: below-navbar
+    dismissable: false

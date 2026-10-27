@@ -5,12 +5,14 @@
 
 //! HTML emission for resolved navigation structures.
 //!
-//! The public surface is two functions:
+//! The main entry points:
 //!
 //! - [`navbar_to_html`] emits a `<nav class="navbar ...">` element.
 //! - [`page_footer_to_html`] emits a `<footer class="footer">` element.
+//! - [`announcement_to_html`] emits the `<div id="quarto-announcement">`
+//!   banner.
 //!
-//! Both produce complete elements ready to paste into the document template.
+//! All produce complete elements ready to paste into the document template.
 //! Class names mirror Quarto 1's Bootstrap 5 conventions so existing themes
 //! and CSS continue to work without changes.
 //!
@@ -23,6 +25,7 @@ use quarto_pandoc_types::config_value::{ConfigValue, ConfigValueKind};
 use quarto_pandoc_types::inline::{Inline, Inlines};
 use quarto_source_map::{By, SourceInfo};
 
+use crate::announcement::Announcement;
 use crate::footer::{FooterBorder, FooterRegion, PageFooter};
 use crate::item::NavigationItem;
 use crate::navbar::{LogoVariant, Navbar, NavbarTitle};
@@ -222,6 +225,84 @@ pub fn page_footer_to_html(footer: &PageFooter) -> String {
     html.push_str("</footer>\n");
 
     html
+}
+
+/// Render the announcement banner (bd-website-announcement-w1gtpzki).
+///
+/// Quarto 1's markup (`nav-before-body.ejs`), with the same id and
+/// classes so Q1 themes and `quarto-nav.js` hooks apply unchanged:
+///
+/// ```html
+/// <div id="quarto-announcement" data-announcement-id="…"
+///      class="alert alert-<type> hidden">
+///   <i class="bi bi-<icon> quarto-announcement-icon" aria-hidden="true"></i>
+///   <div class="quarto-announcement-content">…</div>
+///   <button type="button" class="quarto-announcement-action"
+///           aria-label="…"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+/// </div>
+/// ```
+///
+/// Two deliberate differences from Q1: the close control is a focusable,
+/// labelled `<button>` wrapping the icon (Q1 uses a bare `<i>`), and
+/// `data-announcement-remember="false"` marks a banner whose dismissal
+/// `quarto-nav.js` must not persist. The banner starts `hidden`;
+/// `quarto-nav.js` reveals it unless a remembered dismissal applies.
+///
+/// `close_label` is the localized accessible name of the close button.
+/// Callers rewrite hrefs inside `content` before calling, as for the
+/// footer.
+pub fn announcement_to_html(announcement: &Announcement, close_label: &str) -> String {
+    let mut html = format!(
+        "<div id=\"quarto-announcement\" data-announcement-id=\"{}\"",
+        escape_attr(&announcement.id)
+    );
+    if !announcement.remember_dismissal {
+        html.push_str(" data-announcement-remember=\"false\"");
+    }
+    html.push_str(&format!(
+        " class=\"alert alert-{} hidden\">",
+        announcement.kind.as_str()
+    ));
+    if let Some(ref icon) = announcement.icon {
+        html.push_str(&format!(
+            "<i class=\"bi bi-{} quarto-announcement-icon\" aria-hidden=\"true\"></i>",
+            escape_attr(icon)
+        ));
+    }
+    html.push_str("<div class=\"quarto-announcement-content\">");
+    html.push_str(&render_announcement_content(&announcement.content));
+    html.push_str("</div>");
+    if announcement.dismissable {
+        html.push_str(&format!(
+            "<button type=\"button\" class=\"quarto-announcement-action\" aria-label=\"{}\">\
+             <i class=\"bi bi-x-lg\" aria-hidden=\"true\"></i></button>",
+            escape_attr(close_label)
+        ));
+    }
+    html.push_str("</div>");
+    html
+}
+
+/// Announcement content: inlines render inline (a one-line banner, the
+/// common case); blocks render one `<p>` per text-bearing block, which
+/// matches Q1's rendered-markdown output and the SCSS that zeroes the
+/// paragraph margins. Unlike the footer's [`render_text`], separate
+/// paragraphs stay separate.
+fn render_announcement_content(cv: &ConfigValue) -> String {
+    let ConfigValueKind::PandocBlocks(blocks) = &cv.value else {
+        return render_text(cv);
+    };
+    let mut out = String::new();
+    for block in blocks {
+        let mut inner = String::new();
+        push_blocks_text(&mut inner, std::slice::from_ref(block));
+        if !inner.is_empty() {
+            out.push_str("<p>");
+            out.push_str(&inner);
+            out.push_str("</p>");
+        }
+    }
+    out
 }
 
 /// Render a complete sidebar element.
@@ -3509,6 +3590,118 @@ mod secondary_nav_tests {
         assert!(
             glass > nav_close,
             "glass must be a sibling AFTER the nav, not a child; got: {html}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod announcement_tests {
+    use super::*;
+    use crate::announcement::{AnnouncementPosition, AnnouncementType};
+    use quarto_pandoc_types::block::{Block, Paragraph};
+    use quarto_pandoc_types::inline::{Str, Strong};
+
+    fn str_inline(text: &str) -> Inline {
+        Inline::Str(Str {
+            text: text.to_string(),
+            source_info: SourceInfo::for_test(),
+        })
+    }
+
+    fn announcement(content: ConfigValue) -> Announcement {
+        Announcement {
+            id: "abc123".to_string(),
+            content,
+            dismissable: true,
+            remember_dismissal: true,
+            kind: AnnouncementType::Primary,
+            position: AnnouncementPosition::AboveNavbar,
+            icon: None,
+        }
+    }
+
+    fn s(x: &str) -> ConfigValue {
+        ConfigValue::new_string(x, SourceInfo::for_test())
+    }
+
+    #[test]
+    fn default_markup_matches_q1_with_button_close() {
+        let html = announcement_to_html(&announcement(s("Hello")), "Close announcement");
+        assert_eq!(
+            html,
+            "<div id=\"quarto-announcement\" data-announcement-id=\"abc123\" \
+             class=\"alert alert-primary hidden\">\
+             <div class=\"quarto-announcement-content\">Hello</div>\
+             <button type=\"button\" class=\"quarto-announcement-action\" \
+             aria-label=\"Close announcement\"><i class=\"bi bi-x-lg\" aria-hidden=\"true\"></i>\
+             </button></div>"
+        );
+    }
+
+    #[test]
+    fn icon_type_and_no_dismiss() {
+        let mut a = announcement(s("Hi"));
+        a.icon = Some("info-circle".to_string());
+        a.kind = AnnouncementType::Warning;
+        a.dismissable = false;
+        let html = announcement_to_html(&a, "Close");
+        assert!(html.contains("class=\"alert alert-warning hidden\""));
+        assert!(html.contains(
+            "<i class=\"bi bi-info-circle quarto-announcement-icon\" aria-hidden=\"true\"></i>\
+             <div class=\"quarto-announcement-content\">"
+        ));
+        assert!(!html.contains("<button"));
+    }
+
+    #[test]
+    fn remember_false_adds_data_attribute() {
+        let mut a = announcement(s("Hi"));
+        a.remember_dismissal = false;
+        let html = announcement_to_html(&a, "Close");
+        assert!(html.contains(
+            "data-announcement-id=\"abc123\" data-announcement-remember=\"false\" class="
+        ));
+    }
+
+    #[test]
+    fn plain_string_content_is_escaped_and_label_is_escaped() {
+        let html = announcement_to_html(&announcement(s("A <b> & C")), "Say \"bye\"");
+        assert!(html.contains(">A &lt;b&gt; &amp; C</div>"));
+        assert!(html.contains("aria-label=\"Say &quot;bye&quot;\""));
+    }
+
+    #[test]
+    fn inline_markdown_renders_inline() {
+        let inlines = vec![
+            str_inline("Not "),
+            Inline::Strong(Strong {
+                content: vec![str_inline("reviewed")],
+                source_info: SourceInfo::for_test(),
+            }),
+        ];
+        let cv = ConfigValue::new_inlines(inlines, SourceInfo::for_test());
+        let html = announcement_to_html(&announcement(cv), "Close");
+        assert!(html.contains(
+            "<div class=\"quarto-announcement-content\">Not <strong>reviewed</strong></div>"
+        ));
+    }
+
+    #[test]
+    fn blocks_render_one_paragraph_each() {
+        let para = |t: &str| {
+            Block::Paragraph(Paragraph {
+                content: vec![str_inline(t)],
+                source_info: SourceInfo::for_test(),
+            })
+        };
+        let cv = ConfigValue {
+            value: ConfigValueKind::PandocBlocks(vec![para("One"), para("Two")]),
+            source_info: SourceInfo::for_test(),
+            merge_op: Default::default(),
+        };
+        let html = announcement_to_html(&announcement(cv), "Close");
+        assert!(
+            html.contains("<div class=\"quarto-announcement-content\"><p>One</p><p>Two</p></div>")
         );
     }
 }

@@ -464,5 +464,11 @@
 # bd-2pmjmjmj change: removing the same rules reproduces 4a1515b8…. doc.html
 # hash unchanged: the fixture has no links and sets no `link-external-*`
 # option.
+#
+# Re-captured 2026-10-26 (bd-website-announcement-w1gtpzki):
+# doc_files/styles.css hash updated because the `#quarto-announcement`
+# banner SCSS was ported from Q1's `quarto-nav.scss` into
+# `_bootstrap-rules.scss`. doc.html hash unchanged: a single doc with no
+# `website.announcement` emits no banner.
 doc.html 8bc5f1b52f07aa842a9420d2d08a24243e851ca7f18e3d55a089e5d1ffe84f59
-doc_files/styles.css b3be07a7a0a322141ea5a12fb40c9dda640c9cc85066e8cc31e15acd52488a8c
+doc_files/styles.css 38dd479491382865a74d4ff36a421a5455bb5cfe506cfc36df3bc1fb754f4694

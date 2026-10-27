@@ -201,3 +201,26 @@ function calloutDocx(node)
     return calloutDocxSimple(node, type, hasIcon)
   end
 end
+
+-- QUARTO-PATCH(upstream PR quarto-dev/quarto-cli#15077, c1800b927; not in
+-- any tag through the v1.11.6 pin): backported verbatim. q2 respells a
+-- standalone image's alt text as fig-alt at the Pandoc cut
+-- (pandoc_filters::image_alt_encode, bd-ykjwiqcc) and relies on this fixup
+-- to fold it back for docx.
+-- The DOCX writer uses Image.caption for the picture description. Apply
+-- fig-alt after layout has extracted the visible figure caption.
+function render_docx_fixups()
+  if not _quarto.format.isDocxOutput() then
+    return {}
+  end
+  return {
+    Image = function(image)
+      local alt = image.attributes[kFigAlt] or image.attributes["alt"]
+      if alt ~= nil then
+        image.caption = pandoc.Inlines{pandoc.Str(alt)}
+        image.attributes[kFigAlt] = nil
+        return image
+      end
+    end
+  }
+end

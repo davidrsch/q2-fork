@@ -1,0 +1,20 @@
+---
+title: Other
+website:
+  announcement:
+    type: danger
+_quarto:
+  tests:
+    html:
+      noErrorsOrWarnings: true
+      ensureHtmlElements:
+        -
+          # A front-matter map merges field-wise over the project's: the
+          # type changes, the content and icon are kept.
+          - '#quarto-announcement.alert.alert-danger'
+          - '#quarto-announcement .quarto-announcement-content strong'
+          - '#quarto-announcement i.bi-info-circle'
+        - - '#quarto-announcement.alert-warning'
+---
+
+A page that overrides only the announcement type.

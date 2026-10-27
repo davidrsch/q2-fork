@@ -1,0 +1,20 @@
+---
+title: Home
+_quarto:
+  tests:
+    html:
+      noErrorsOrWarnings: true
+      ensureHtmlElements:
+        -
+          # An announcement alone opens the fixed header (Q1's
+          # `nav.announcement` term), whatever its position.
+          - 'header#quarto-header #quarto-announcement.alert.alert-primary'
+        -
+          - 'nav.navbar'
+          # Not dismissable: no close control.
+          - '#quarto-announcement .quarto-announcement-action'
+          # Q1 adds `nav-fixed` only for a header containing a navbar.
+          - 'body.nav-fixed'
+---
+
+A site whose only header content is the announcement.

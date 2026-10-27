@@ -307,6 +307,10 @@ $if(rendered.navigation.navbar)$
 $quarto-header()$
 $elseif(rendered.navigation.secondary-nav)$
 $quarto-header()$
+$elseif(rendered.navigation.announcement-above)$
+$quarto-header()$
+$elseif(rendered.navigation.announcement-below)$
+$quarto-header()$
 $endif$
 $for(include-before)$
 $include-before$
@@ -655,18 +659,23 @@ $endif$
 "#;
 
 /// The site header: `<header id="quarto-header" class="headroom
-/// fixed-top">` wrapping the navbar and the narrow-viewport secondary
-/// nav (bd-26bf3j1y; fixed + scroll-away since bd-ersobfbt).
+/// fixed-top">` wrapping the navbar, the narrow-viewport secondary nav
+/// (bd-26bf3j1y; fixed + scroll-away since bd-ersobfbt), and the
+/// announcement banner, which sits before the navbar or after the
+/// secondary nav depending on its `position` (Q1 order;
+/// bd-website-announcement-w1gtpzki).
 ///
 /// Q1's equivalent (`nav-before-body.ejs:13-15`) gates on
 /// `nav.navbar || nav.sidebar || nav.announcement`. One deliberate
 /// difference:
 ///
 /// - **Gated on content, not on config.** q2 emits the wrapper when
-///   there is a navbar or a secondary nav to put in it. Q1's extra
-///   `nav.sidebar` term covers the case of a sidebar whose secondary
-///   nav is suppressed, which for q2 would produce an empty header with
-///   no styling consumer.
+///   there is a navbar, a secondary nav, or an announcement to put in
+///   it (`transforms::HEADER_CONTENT_KEYS`; keep the call-site gate, that
+///   list, and the preview's gate in sync). Q1's extra `nav.sidebar`
+///   term covers the case of a sidebar whose secondary nav is
+///   suppressed, which for q2 would produce an empty header with no
+///   styling consumer.
 ///
 /// The `headroom fixed-top` classes are unconditional, matching Q1
 /// (even under `pinned: true`, which only omits headroom.min.js —
@@ -689,17 +698,23 @@ $endif$
 /// The partial holds only the markup; the "is there a header at all?"
 /// gate lives at the **call site** in [`FULL_HTML_TEMPLATE`]. That split
 /// is deliberate: the template language has no boolean `or`, so the
-/// two-way gate has to be an `$if$`/`$elseif$` pair somewhere, and
+/// gate has to be an `$if$`/`$elseif$` chain somewhere, and
 /// putting it around the call keeps the `<header>` markup
 /// single-sourced. It also keeps the no-header case emitting *nothing* —
 /// a bare `$quarto-header()$` line would leave a stray blank line in
 /// every document that has no navbar.
 pub const QUARTO_HEADER_PARTIAL: &str = r#"<header id="quarto-header" class="headroom fixed-top$if(rendered.title-block-banner)$ quarto-banner$endif$">
+$if(rendered.navigation.announcement-above)$
+$rendered.navigation.announcement-above$
+$endif$
 $if(rendered.navigation.navbar)$
 $rendered.navigation.navbar$
 $endif$
 $if(rendered.navigation.secondary-nav)$
 $rendered.navigation.secondary-nav$
+$endif$
+$if(rendered.navigation.announcement-below)$
+$rendered.navigation.announcement-below$
 $endif$
 </header>"#;
 
@@ -3082,6 +3097,73 @@ mod tests {
             "no navbar → no nav-fixed body class; got: {}",
             &html[..html.len().min(800)]
         );
+    }
+
+    /// bd-website-announcement-w1gtpzki: an announcement alone opens the
+    /// `#quarto-header` (Q1's `nav.announcement` gate term), at either
+    /// position. Like the secondary-nav-only case, no navbar means no
+    /// `nav-fixed` (Q1's postprocessor keys on `nav.navbar`).
+    #[test]
+    fn test_full_template_announcement_alone_opens_header() {
+        let template = full_html_template().unwrap();
+        for key in ["announcement-above", "announcement-below"] {
+            let mut meta = ConfigValue::null(dummy_source_info());
+            meta.insert_path(
+                &["rendered", "navigation", key],
+                ConfigValue::new_string(
+                    "<div id=\"quarto-announcement\">A</div>",
+                    dummy_source_info(),
+                ),
+            );
+
+            let (html, _diags) =
+                render_with_compiled_template(&template, "<p>Content</p>", &meta, &[], &[])
+                    .unwrap();
+
+            assert!(
+                html.contains("<header id=\"quarto-header\" class=\"headroom fixed-top\">\n<div id=\"quarto-announcement\">A</div>\n</header>"),
+                "{key}: announcement alone gets the header wrapper; got: {}",
+                &html[..html.len().min(1200)]
+            );
+            assert!(
+                !html.contains("nav-fixed"),
+                "{key}: no navbar → no nav-fixed"
+            );
+        }
+    }
+
+    /// bd-website-announcement-w1gtpzki: Q1 order inside the header —
+    /// `above` before the navbar, `below` after the secondary nav.
+    #[test]
+    fn test_full_template_announcement_positions_around_navbar() {
+        let template = full_html_template().unwrap();
+        let mut meta = ConfigValue::null(dummy_source_info());
+        for (key, html) in [
+            ("navbar", "<nav class=\"navbar\">N</nav>"),
+            (
+                "secondary-nav",
+                "<nav class=\"quarto-secondary-nav\">S</nav>",
+            ),
+            ("announcement-above", "<div>ABOVE</div>"),
+            ("announcement-below", "<div>BELOW</div>"),
+        ] {
+            meta.insert_path(
+                &["rendered", "navigation", key],
+                ConfigValue::new_string(html, dummy_source_info()),
+            );
+        }
+
+        let (html, _diags) =
+            render_with_compiled_template(&template, "<p>Content</p>", &meta, &[], &[]).unwrap();
+
+        let pos = |needle: &str| {
+            html.find(needle)
+                .unwrap_or_else(|| panic!("{needle} missing in {html}"))
+        };
+        assert!(pos("<header id=\"quarto-header\"") < pos("ABOVE"));
+        assert!(pos("ABOVE") < pos("<nav class=\"navbar\">"));
+        assert!(pos("<nav class=\"quarto-secondary-nav\">") < pos("BELOW"));
+        assert!(pos("BELOW") < pos("</header>"));
     }
 
     /// bd-ersobfbt: an explicit user-supplied top-level `body-classes`

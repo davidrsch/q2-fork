@@ -19,6 +19,7 @@
 //! HTML rendering of resolved structures lives in [`render_html`]. The
 //! `quarto-core` crate owns the AST transforms that call into this crate.
 
+pub mod announcement;
 pub mod footer;
 pub mod item;
 pub mod navbar;
@@ -27,6 +28,9 @@ pub mod render_html;
 pub mod repo_actions;
 pub mod sidebar;
 
+pub use announcement::{
+    Announcement, AnnouncementPosition, AnnouncementType, AnnouncementWarning, resolve_announcement,
+};
 pub use footer::{FooterBorder, FooterRegion, PageFooter, resolve_page_footer};
 pub use item::{BareScalar, NavigationItem};
 pub use navbar::{
