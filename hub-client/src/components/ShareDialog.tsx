@@ -29,19 +29,14 @@ export default function ShareDialog({
   onCopied,
   variant = 'project',
 }: ShareDialogProps) {
+  // Parents mount this dialog only while it is open, so every open is a
+  // fresh mount and `copied` starts false — no reset effect (bd-cp9wzu6o).
   const [copied, setCopied] = useState(false);
   // The input is tracked as state (not a ref) because it mounts a commit
   // after the dialog does — ModalDialog resolves its portal target from a
   // hidden marker first — so an effect keyed only on `isOpen` would run
   // before the input exists and never select (bd-lsf2v5n0).
   const [urlInput, setUrlInput] = useState<HTMLInputElement | null>(null);
-
-  // Reset copied state when dialog opens
-  useEffect(() => {
-    if (isOpen) {
-      setCopied(false);
-    }
-  }, [isOpen]);
 
   // Select all text shortly after the dialog opens; the timeout is
   // cleared on close/unmount so it can't fire twice across a rapid

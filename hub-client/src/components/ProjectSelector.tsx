@@ -983,12 +983,15 @@ export default function ProjectSelector({
           <button onClick={handleExport}>Export to JSON</button>
         </div>
 
-        <ShareDialog
-          isOpen={showLinkDialog}
-          shareableUrl={projectSetLinkUrl}
-          onClose={() => setShowLinkDialog(false)}
-          variant="projectSet"
-        />
+        {/* Mounted only while open, so every open is a fresh dialog (bd-cp9wzu6o) */}
+        {showLinkDialog && (
+          <ShareDialog
+            isOpen
+            shareableUrl={projectSetLinkUrl}
+            onClose={() => setShowLinkDialog(false)}
+            variant="projectSet"
+          />
+        )}
 
         <div className="version-info">
           <span className="commit-hash" title={`Built: ${__BUILD_TIME__}\nCommit date: ${__GIT_COMMIT_DATE__}`}>

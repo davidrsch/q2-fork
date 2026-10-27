@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { useState } from 'react';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import NewAssetDialog from './NewAssetDialog';
 
@@ -93,6 +94,56 @@ describe('NewAssetDialog', () => {
 
       fireEvent.click(screen.getAllByRole('menuitem').find((el) => el.textContent === 'icons')!);
       expect(screen.getByRole('button', { name: 'Choose folder' })).toHaveTextContent('images/icons');
+    });
+  });
+
+  describe('state reset (remount-per-open contract, bd-cp9wzu6o)', () => {
+    // Real parents mount the dialog only while it is open, so every open is
+    // a fresh mount: previews from a previous session are gone and the
+    // destination re-seeds from defaultDestination.
+    function StatefulHarness({ initialFiles }: { initialFiles?: File[] }) {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>Open dialog</button>
+          {open && (
+            <NewAssetDialog
+              {...defaultProps}
+              isOpen
+              folders={['images']}
+              initialFiles={initialFiles}
+              onClose={() => setOpen(false)}
+            />
+          )}
+        </>
+      );
+    }
+
+    it('reopens without the previous session\'s previews', () => {
+      const { rerender } = render(<StatefulHarness initialFiles={[makeFile('foo.png')]} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }));
+      expect(screen.getByDisplayValue('foo.png')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      rerender(<StatefulHarness />);
+      fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }));
+      expect(screen.queryByDisplayValue('foo.png')).not.toBeInTheDocument();
+    });
+
+    it('re-seeds the destination from defaultDestination on each open', () => {
+      render(<StatefulHarness />);
+      fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }));
+
+      // Move the destination off the default.
+      fireEvent.click(screen.getByRole('button', { name: 'Choose folder' }));
+      fireEvent.click(screen.getAllByRole('menuitem').find((el) => el.textContent === 'images')!);
+      expect(screen.getByRole('button', { name: 'Choose folder' })).toHaveTextContent('images');
+
+      // Close and reopen: back to the default (project root).
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }));
+      expect(screen.getByRole('button', { name: 'Choose folder' })).toHaveTextContent('(project root)');
     });
   });
 

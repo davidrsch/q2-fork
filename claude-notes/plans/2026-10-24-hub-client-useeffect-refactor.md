@@ -2,7 +2,7 @@
 title: 'hub-client `useEffect` audit: phased refactor'
 date: 2026-10-24
 description: 'Phased refactor of the refactor-worthy useEffect sites in hub-client: stale-dep fixes, useSyncExternalStore conversions, derived-state elimination, then measured wide-dep performance work.'
-status: in-progress  # Phases 1–2 done and open as stacked PRs (#924, #925); Phases 3–5 not started.
+status: in-progress  # Phases 1–3 done; 1–2 open as stacked PRs (#924, #925), 3 on refactor/useeffect-phase3 pending push. Phases 4–5 not started.
 ---
 
 ## Overview
@@ -212,27 +212,66 @@ existing in-repo template.
 
 ## Phase 3 — Derived state out of effects
 
+**Done 2026-10-27 (bd-cp9wzu6o); on `refactor/useeffect-phase3`, stacked on the Phase 2 branch.** Findings that shaped the landing:
+
+- `Editor.tsx` had zero direct test coverage, so the phase starts with a
+  characterization harness: `src/components/Editor.characterization.test.tsx`
+  (Monaco, the preview router, and the sync/presence/intelligence hooks
+  mocked; BranchBar and the banner real) pinning the three refactored
+  behaviors. Phases 4 and 5 extend it rather than building their own.
+- The dialog resets landed as **conditional mounts at the call sites**
+  (`{open && <Dialog … />}`) instead of a `key` counter — same
+  fresh-mount-per-open semantics with no extra parent state. Call sites
+  updated: Editor (all three dialogs), ProjectSelector and ProjectsHome
+  (ShareDialog), and the DevHarness stateful NewFileDialog harness. The
+  remount contract is pinned by open/dirty/close/reopen tests in each
+  dialog\'s suite.
+- `NewFileDialog` seeds from `initialFilename` in lazy `useState`
+  initializers; `NewAssetDialog` ingests `initialFiles` in an initializer
+  and keeps only a mount-only effect for the async FileReader thumbnails
+  (shared with `ingestFiles` via `loadImagePreviews`) — the `:79`
+  exhaustive-deps suppression is gone, closing the Phase 1 leftover.
+- `ReactAstSlideRenderer`: uncontrolled mode self-corrects `internalSlide`
+  during render; **controlled mode is display-clamped only** — the parent
+  owns the index and self-corrects on the next navigation. The clamp effect
+  is deleted, so a stale controlled index can no longer commit a `3 / 2`
+  counter; pinned by a failing-first test (red before, green after).
+- Editor diagnostics: `unlocatedErrors` is a `useMemo` over `diagnostics`;
+  the effect keeps only the Monaco marker write, and the four
+  `setDiagnostics([])` file-switch clear-sites no longer pair a
+  `setUnlocatedErrors([])`.
+- Default file selection, `comparingWithMain`, and ProjectsHome\'s
+  `openingId` all use the React-docs render-adjust pattern (conditional
+  setState during render, prev-value tracking where a transition matters).
+- eslint on the touched files went from 23 errors / 7 warnings at the
+  Phase 2 tip to 13 / 6 — every remaining issue pre-exists this branch
+  (react-hooks v6 rules against untouched code).
+- Verification: `npm run test:ci` all three legs green (1728 unit +
+  229 integration + 434 WASM, 28 skipped); `npm run build` green. Not
+  browser-smoked: no browser session was run (pure refactor behind
+  characterization tests; no sync/preview-path behavior change).
+
 Effects that compute state from other state cause an extra render pass and
 can surface stale intermediate UI. Move the computation to `useMemo`, to
 render-time adjustment, or to `key` remounts. Per the Conventions batching
 rule, the `Editor.tsx` items here share one branch and one
 characterization-test setup with the Phase 4 and Phase 5 `Editor.tsx` items.
 
-- [ ] `src/components/Editor.tsx:748` — split the diagnostics effect:
+- [x] `src/components/Editor.tsx:748` — split the diagnostics effect:
   `unlocatedErrors` becomes a `useMemo` over `diagnostics`; the effect keeps
   only the Monaco marker write. Eliminates a two-render derived-state chain.
-- [ ] `src/components/Editor.tsx:765` — default file selection: adjust state
+- [x] `src/components/Editor.tsx:765` — default file selection: adjust state
   during render (the prev-value-tracking pattern) instead of
   setState-in-effect; `currentFile` stays user-settable state.
-- [ ] `src/components/render/ReactAstSlideRenderer.tsx:90` — clamp the slide
+- [x] `src/components/render/ReactAstSlideRenderer.tsx:90` — clamp the slide
   index during render (adjust-state-during-render pattern).
-- [ ] `src/components/Editor.tsx:334` — `setComparingWithMain(false)` on
+- [x] `src/components/Editor.tsx:334` — `setComparingWithMain(false)` on
   file/branch switch: `key` remount or render-time adjust.
-- [ ] Dialog form resets via `key` remounts: `NewFileDialog.tsx:108`,
+- [x] Dialog form resets via `key` remounts: `NewFileDialog.tsx:108`,
   `NewAssetDialog.tsx:66` (also deletes the `:79` exhaustive-deps
   suppression — one change closes two Phase 1 items), `ShareDialog.tsx:36`
   (same pass as the Phase 1 timeout cleanup).
-- [ ] `src/components/ProjectsHome.tsx:697` — clearing the opening spinner on
+- [x] `src/components/ProjectsHome.tsx:697` — clearing the opening spinner on
   `connectionError`: render-adjust candidate.
 
 ## Phase 4 — Wide-dependency performance (measure first)

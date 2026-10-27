@@ -86,12 +86,15 @@ export function SlideAst({ astJson, currentFilePath, onNavigateToDocument, curre
   // Parse blocks into slides
   const slides = parseSlides(ast);
 
-  // Clamp slide index if it's out of bounds (e.g., slides were removed during editing)
-  useEffect(() => {
-    if (currentSlide >= slides.length && slides.length > 0) {
-      setCurrentSlide(slides.length - 1);
-    }
-  }, [slides.length, currentSlide]);
+  // Clamp the slide index during render (bd-cp9wzu6o): an edit can shrink
+  // the deck out from under the current slide, and an out-of-bounds index
+  // must never commit. Uncontrolled mode also self-corrects the stored
+  // index during render; in controlled mode the parent owns the value (it
+  // self-corrects on the next navigation), so only the display clamps here.
+  const clampedSlide = slides.length > 0 ? Math.min(currentSlide, slides.length - 1) : currentSlide;
+  if (controlledSlide === undefined && internalSlide !== clampedSlide) {
+    setInternalSlide(clampedSlide);
+  }
 
   // Keyboard navigation
   useEffect(() => {
@@ -134,7 +137,7 @@ export function SlideAst({ astJson, currentFilePath, onNavigateToDocument, curre
           }}
         >
           {slides.length > 0
-            ? renderSlide(slides[Math.min(currentSlide, slides.length - 1)], currentFilePath, onNavigateToDocument)
+            ? renderSlide(slides[clampedSlide], currentFilePath, onNavigateToDocument)
             : null}
         </div>
       </AspectRatioScaler>
@@ -151,7 +154,7 @@ export function SlideAst({ astJson, currentFilePath, onNavigateToDocument, curre
         }}>
           <button
             onClick={goToPrevSlide}
-            disabled={currentSlide === 0}
+            disabled={clampedSlide === 0}
             style={{
               padding: '10px 15px',
               fontSize: '18px',
@@ -167,7 +170,7 @@ export function SlideAst({ astJson, currentFilePath, onNavigateToDocument, curre
           </button>
           <button
             onClick={goToNextSlide}
-            disabled={currentSlide === slides.length - 1}
+            disabled={clampedSlide === slides.length - 1}
             style={{
               padding: '10px 15px',
               fontSize: '18px',
@@ -194,7 +197,7 @@ export function SlideAst({ astJson, currentFilePath, onNavigateToDocument, curre
           fontSize: '14px',
           fontFamily: 'sans-serif'
         }}>
-          {currentSlide + 1} / {slides.length}
+          {clampedSlide + 1} / {slides.length}
         </div>
       )}
     </div>

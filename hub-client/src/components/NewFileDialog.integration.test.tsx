@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { useState } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import NewFileDialog from './NewFileDialog';
 
@@ -283,8 +284,29 @@ describe('NewFileDialog', () => {
     });
   });
 
-  describe('state reset', () => {
-    it('resets template selection when dialog closes', async () => {
+  describe('state reset (remount-per-open contract, bd-cp9wzu6o)', () => {
+    // Real parents mount the dialog only while it is open, so every open is
+    // a fresh mount with pristine form state; there is no in-place reset to
+    // test. These tests pin the contract through the same open/close cycle a
+    // user drives.
+    function StatefulHarness({ initialFilename }: { initialFilename?: string }) {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>Open dialog</button>
+          {open && (
+            <NewFileDialog
+              {...defaultProps}
+              isOpen
+              initialFilename={initialFilename}
+              onClose={() => setOpen(false)}
+            />
+          )}
+        </>
+      );
+    }
+
+    it('reopens with pristine form state', async () => {
       mockDiscoverTemplates.mockResolvedValue([
         {
           path: '/project/_quarto-hub-templates/article.qmd',
@@ -293,28 +315,38 @@ describe('NewFileDialog', () => {
         },
       ]);
 
-      const { rerender } = render(<NewFileDialog {...defaultProps} />);
+      render(<StatefulHarness />);
+      fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }));
 
       await waitFor(() => {
         expect(screen.getByLabelText('Template:')).toBeInTheDocument();
       });
 
-      // Select a template
-      const select = screen.getByLabelText('Template:') as HTMLSelectElement;
-      fireEvent.change(select, {
+      // Dirty the form: pick a template, type a filename.
+      fireEvent.change(screen.getByLabelText('Template:'), {
         target: { value: '/project/_quarto-hub-templates/article.qmd' },
       });
+      fireEvent.change(screen.getByLabelText('Filename:'), {
+        target: { value: 'dirty.qmd' },
+      });
 
-      // Close dialog
-      rerender(<NewFileDialog {...defaultProps} isOpen={false} />);
-
-      // Reopen dialog
-      rerender(<NewFileDialog {...defaultProps} isOpen={true} />);
+      // Close and reopen.
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }));
 
       await waitFor(() => {
-        const newSelect = screen.getByLabelText('Template:') as HTMLSelectElement;
-        expect(newSelect.value).toBe('');
+        expect(screen.getByLabelText('Template:')).toBeInTheDocument();
       });
+      expect((screen.getByLabelText('Template:') as HTMLSelectElement).value).toBe('');
+      expect((screen.getByLabelText('Filename:') as HTMLInputElement).value).toBe('');
+    });
+
+    it('seeds folder and filename from initialFilename on open', async () => {
+      render(<StatefulHarness initialFilename="notes/draft.qmd" />);
+      fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }));
+
+      expect((screen.getByLabelText('Filename:') as HTMLInputElement).value).toBe('draft');
+      expect(screen.getByRole('button', { name: 'Choose folder' })).toHaveTextContent('notes');
     });
   });
 

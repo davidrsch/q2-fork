@@ -37,6 +37,16 @@ vi.mock('@quarto/preview-runtime', () => ({
 // onUserConsoleLog was pending".
 vi.mock('../services/projectStorage', () => ({
   listProjects: vi.fn().mockResolvedValue([]),
+  getProjectByIndexDocId: vi.fn().mockResolvedValue(null),
+  addProject: vi.fn().mockResolvedValue({
+    id: 'local-1',
+    indexDocId: 'automerge:proj1',
+    syncServer: 'wss://sync.example.com',
+    description: 'Quarterly report',
+    createdAt: '2026-01-15T00:00:00.000Z',
+    lastAccessed: '2026-01-15T00:00:00.000Z',
+  }),
+  touchProject: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../services/userSettings', () => ({
@@ -243,5 +253,41 @@ describe('ProjectsHome share link', () => {
       expect(preview.projects[0].fileCount).toBe(0);
       expect(preview.projects[0].name).toBe('No summary yet');
     }
+  });
+});
+
+/**
+ * The "opening..." marker beside a project card is cleared when a
+ * connection error surfaces (success unmounts this whole view). Pinned
+ * before the render-time-adjust refactor of bd-cp9wzu6o: the clear must
+ * happen without a visible intermediate commit.
+ */
+describe('ProjectsHome opening marker', () => {
+  it('clears "opening..." when a connection error arrives', async () => {
+    const props = {
+      onSelectProject: vi.fn(),
+      onTouchProject: vi.fn(),
+      projectSetStatus: 'connected' as const,
+      projectSetEntries: [],
+      collections: [rootSet, teamDocs],
+    };
+    const { rerender } = render(
+      <ThemeProvider>
+        <ProjectsHome {...props} />
+      </ThemeProvider>,
+    );
+
+    // The project shows in both the card grid and the list; either opens it.
+    const cards = await screen.findAllByRole('button', { name: /Quarterly report/ });
+    fireEvent.click(cards[0]);
+    expect((await screen.findAllByText('opening...')).length).toBeGreaterThan(0);
+
+    rerender(
+      <ThemeProvider>
+        <ProjectsHome {...props} error="Could not reach the sync server" />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => expect(screen.queryAllByText('opening...')).toHaveLength(0));
   });
 });

@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { useState } from 'react';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import ShareDialog from './ShareDialog';
 
@@ -24,6 +25,15 @@ const defaultProps = {
   isOpen: true,
   shareableUrl: 'https://hub.example.com/p/abc#key',
   onClose: vi.fn(),
+};
+
+const stubClipboard = () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText },
+    configurable: true,
+  });
+  return writeText;
 };
 
 describe('ShareDialog accessibility', () => {
@@ -106,15 +116,6 @@ describe('ShareDialog Enter handling (GH #635 hardening)', () => {
   // the button's own activation. ShareDialog's close is deferred 500ms
   // so the reopen bug can't bite today; these tests keep it that way if
   // the delay ever goes away.
-  const stubClipboard = () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText },
-      configurable: true,
-    });
-    return writeText;
-  };
-
   it('copies on Enter in the URL input and prevents the default action', () => {
     const writeText = stubClipboard();
     render(<ShareDialog {...defaultProps} />);
@@ -135,5 +136,33 @@ describe('ShareDialog Enter handling (GH #635 hardening)', () => {
     fireEvent.keyDown(closeButton, { key: 'Enter' });
 
     expect(writeText).not.toHaveBeenCalled();
+  });
+});
+
+describe('ShareDialog copied state (remount-per-open contract, bd-cp9wzu6o)', () => {
+  // Real parents mount the dialog only while it is open, so every open is a
+  // fresh mount and the success state from a previous copy is gone.
+  function StatefulHarness() {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button onClick={() => setOpen(true)}>Open dialog</button>
+        {open && <ShareDialog {...defaultProps} isOpen onClose={() => setOpen(false)} />}
+      </>
+    );
+  }
+
+  it('reopens without the previous session\'s copied state', async () => {
+    stubClipboard();
+    render(<StatefulHarness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
+    expect(await screen.findByRole('button', { name: 'Copied!' })).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }));
+
+    expect(screen.getByRole('button', { name: 'Copy link' })).toBeDefined();
   });
 });

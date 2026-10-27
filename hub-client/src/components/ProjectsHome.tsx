@@ -694,9 +694,13 @@ export default function ProjectsHome({
   // Success unmounts this view; failure surfaces connectionError, which
   // clears the marker below.
   const [openingId, setOpeningId] = useState<string | null>(null);
-  useEffect(() => {
+  // Clear the marker when a connection error surfaces — adjusted during
+  // render so a stale marker never commits (bd-cp9wzu6o).
+  const [prevConnectionError, setPrevConnectionError] = useState(connectionError);
+  if (connectionError !== prevConnectionError) {
+    setPrevConnectionError(connectionError);
     if (connectionError) setOpeningId(null);
-  }, [connectionError]);
+  }
 
   const handleOpen = useCallback(async (item: ProjectItem) => {
     setOpeningId(item.indexDocId);
@@ -2386,12 +2390,15 @@ export default function ProjectsHome({
         </ModalDialog>
       )}
 
-      <ShareDialog
-        isOpen={showLinkDialog}
-        shareableUrl={projectSetLinkUrl}
-        onClose={() => setShowLinkDialog(false)}
-        variant="projectSet"
-      />
+      {/* Mounted only while open, so every open is a fresh dialog (bd-cp9wzu6o) */}
+      {showLinkDialog && (
+        <ShareDialog
+          isOpen
+          shareableUrl={projectSetLinkUrl}
+          onClose={() => setShowLinkDialog(false)}
+          variant="projectSet"
+        />
+      )}
 
       <footer className="qh-footer">
         <Tooltip content={`Built: ${__BUILD_TIME__} · Commit date: ${__GIT_COMMIT_DATE__}`}>
