@@ -292,7 +292,7 @@ fn ensure_examples_resource(checkout_root: &Path, corpus: &str) -> Result<()> {
     if examples_dir.is_dir() {
         return Ok(());
     }
-    let main_repo = crate::create_worktree::repo_root()?;
+    let main_repo = crate::create_worktree::main_checkout_root()?;
     let reference = main_repo.join(corpus).join("examples");
     if !reference.is_dir() {
         bail!(

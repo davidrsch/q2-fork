@@ -17,7 +17,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::create_worktree::repo_root;
+use crate::switch_task::current_worktree_root;
 
 /// Path to the committed backup snapshot, relative to the repo root.
 /// Deliberately under `.braid/` (a committed directory) — distinct from the
@@ -27,7 +27,7 @@ pub fn snapshot_path(root: &Path) -> PathBuf {
 }
 
 pub fn run() -> Result<()> {
-    let root = repo_root()?;
+    let root = current_worktree_root()?;
     let out_path = snapshot_path(&root);
 
     let output = Command::new("braid")

@@ -14,7 +14,7 @@ const OVERRIDES: &str = "crates/quarto-math/spec/overrides.json";
 const OUTPUT: &str = "crates/quarto-math/spec/commands.json";
 
 pub fn run(check: bool) -> Result<()> {
-    let root = crate::create_worktree::repo_root()?;
+    let root = crate::switch_task::current_worktree_root()?;
     let read = |rel: &str| {
         std::fs::read_to_string(root.join(rel)).with_context(|| format!("reading {rel}"))
     };

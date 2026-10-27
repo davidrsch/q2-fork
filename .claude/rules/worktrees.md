@@ -34,12 +34,14 @@ the *shape* of the work, not on the strand boundary.
   cargo xtask switch-task bd-yxqt --from feature/q2-preview-command
   ```
 
-  That switches the current worktree to `feature/q2-preview-command`,
-  fast-forward-pulls (so any sibling sub-tasks that merged in the
-  meantime show up), creates a fresh `braid/bd-yxqt-<slug>` topic
-  branch off the new tip, marks the braid strand `in_progress` (via
-  `braid update`), and rewrites the `CLAUDE.local.md` context block.
-  Omit `--from` to branch off the current HEAD.
+  That fetches `origin/feature/q2-preview-command` and creates a fresh
+  `braid/bd-yxqt-<slug>` topic branch off the newer of it and the local
+  branch, so any sibling sub-tasks that merged in the meantime show up
+  even when the integration branch is checked out in another worktree.
+  (If the two have diverged it stops and asks you to reconcile them.)
+  It then marks the braid strand `in_progress` (via `braid update`) and
+  rewrites the `CLAUDE.local.md` context block. Omit `--from` to branch
+  off the current HEAD.
 
 The two commands are siblings — `create-worktree` does *more* (it
 adds a worktree); `switch-task` does *less* (it stays in place). Use
@@ -60,8 +62,8 @@ git push origin feature/q2-preview-command
 The `--no-ff` preserves the sub-task as a single merge commit, so
 the integration branch's history reads as one entry per sub-task.
 This is what `switch-task --from <branch>` expects to find when it
-fast-forward-pulls — a clean integration line with all ready work
-already merged in.
+branches off the integration line's tip — a clean integration line
+with all ready work already merged in.
 
 ## Directory Convention
 
