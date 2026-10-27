@@ -60,10 +60,17 @@ export default function NewFileDialog({
   onCreateTextFile,
   initialFilename,
 }: NewFileDialogProps) {
-  const [filename, setFilename] = useState('');
-  const [folder, setFolder] = useState('');
-  const [fileType, setFileType] = useState<FileTypeChoice>('qmd');
-  const [customExtension, setCustomExtension] = useState('');
+  // Parents mount this dialog only while it is open, so every open is a
+  // fresh mount: the form seeds once from initialFilename here, and no
+  // reset-on-close effect is needed (bd-cp9wzu6o).
+  const [seed] = useState(() =>
+    initialFilename ? splitInitial(initialFilename) : { folder: '', name: '', ext: '' }
+  );
+  const seedChoice: FileTypeChoice = seed.ext ? choiceForExtension(seed.ext) : 'qmd';
+  const [filename, setFilename] = useState(seed.name);
+  const [folder, setFolder] = useState(seed.folder);
+  const [fileType, setFileType] = useState<FileTypeChoice>(seedChoice);
+  const [customExtension, setCustomExtension] = useState(seedChoice === 'other' ? seed.ext : '');
   const [error, setError] = useState<string | null>(null);
 
   // Template state
@@ -72,21 +79,7 @@ export default function NewFileDialog({
   const [loadingTemplates, setLoadingTemplates] = useState(false);
 
 
-  // Seed the folder picker and filename input on open.
-  useEffect(() => {
-    if (isOpen && initialFilename) {
-      const { folder: f, name, ext } = splitInitial(initialFilename);
-      setFolder(f);
-      setFilename(name);
-      if (ext) {
-        const choice = choiceForExtension(ext);
-        setFileType(choice);
-        setCustomExtension(choice === 'other' ? ext : '');
-      }
-    }
-  }, [isOpen, initialFilename]);
-
-  // Load templates when the dialog opens.
+  // Load templates when the dialog opens (once per mount).
   useEffect(() => {
     if (isOpen) {
       setLoadingTemplates(true);
@@ -101,20 +94,6 @@ export default function NewFileDialog({
         .finally(() => {
           setLoadingTemplates(false);
         });
-    }
-  }, [isOpen]);
-
-  // Reset state when the dialog closes.
-  useEffect(() => {
-    if (!isOpen) {
-      setFilename('');
-      setFolder('');
-      setFileType('qmd');
-      setCustomExtension('');
-      setError(null);
-      setTemplates([]);
-      setSelectedTemplate(null);
-      setLoadingTemplates(false);
     }
   }, [isOpen]);
 

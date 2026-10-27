@@ -48,6 +48,7 @@ import { setActiveBranch, createBranch, mergeBranchToMain, deleteBranch } from '
 import BranchBar from './BranchBar';
 import { diffToMonacoEdits } from '../utils/diffToMonacoEdits';
 import { diagnosticsToMarkers } from '../utils/diagnosticToMonaco';
+import { perfNow, perfSegment, perfMark } from '../utils/perfCounters';
 import EphemeralSessionBanner from './EphemeralSessionBanner';
 import FileSidebar from './FileSidebar';
 import NewFileDialog from './NewFileDialog';
@@ -284,6 +285,14 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
   }, [files, route]);
 
   const [currentFile, setCurrentFile] = useState<FileEntry | null>(getInitialFile);
+  // Select the default file as soon as the project has files and nothing is
+  // selected (files typically arrive a render or two after mount, when the
+  // initial useState above still saw an empty list). Adjusted during render
+  // so the empty-selection state never commits (bd-cp9wzu6o).
+  if (!currentFile && files.length > 0) {
+    const defaultFile = selectDefaultFile(files);
+    if (defaultFile) setCurrentFile(defaultFile);
+  }
   // Image files open in the ImageViewer instead of Monaco. Their bytes live
   // in a binary Automerge doc, so the text-oriented hooks (sync, presence,
   // intelligence, replay, branches) are bound to `textFile`, which is null
@@ -331,9 +340,19 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
   // "Compare with main" diff view — session-only, leaves when the branch
   // or file changes (merge/delete reset activeBranchId, so those too).
   const [comparingWithMain, setComparingWithMain] = useState(false);
-  useEffect(() => {
-    setComparingWithMain(false);
-  }, [activeBranchId, currentFile?.path]);
+  // Leave the diff view on a file/branch switch — adjusted during render so
+  // a stale comparison never commits (bd-cp9wzu6o).
+  const [prevCompareContext, setPrevCompareContext] = useState({
+    branch: activeBranchId,
+    path: currentFile?.path,
+  });
+  if (
+    prevCompareContext.branch !== activeBranchId ||
+    prevCompareContext.path !== currentFile?.path
+  ) {
+    setPrevCompareContext({ branch: activeBranchId, path: currentFile?.path });
+    if (comparingWithMain) setComparingWithMain(false);
+  }
 
   // Presence for collaborative cursors — disabled while on a local branch
   // (the branch doc is invisible to peers, so cursors would be misleading)
@@ -382,7 +401,6 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
 
   // Diagnostics state for Monaco markers
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
-  const [unlocatedErrors, setUnlocatedErrors] = useState<Diagnostic[]>([]);
 
   // WASM status (from Preview component)
   const [wasmStatus, setWasmStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -587,7 +605,6 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
     setContent(fileContent ?? '');
     // Clear diagnostics when switching files
     setDiagnostics([]);
-    setUnlocatedErrors([]);
     // Update URL with history entry (link navigation)
     onNavigateToFile(file.path, { anchor, replace: false });
   }, [fileContents, onNavigateToFile]);
@@ -723,10 +740,12 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
   // and React state, but doesn't re-write VFS unless fileContents changed.
   const prevReplayActiveRef = useRef(false);
   useEffect(() => {
+    const fxT0 = perfNow();
     const wasActive = prevReplayActiveRef.current;
     prevReplayActiveRef.current = replayState.isActive;
 
     if (wasActive && !replayState.isActive) {
+      perfMark('effect.editor-replay-vfs.restored');
       prevReplayContentRef.current = '';
       prevReplayIndexRef.current = 0;
       if (currentFile && isWasmReady()) {
@@ -736,13 +755,22 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
         }
       }
     }
+    perfSegment('effect.editor-replay-vfs', fxT0);
   }, [replayState.isActive, currentFile, fileContents]);
 
   // Refresh intelligence (outline) when content changes
   // VFS is updated via Automerge callbacks, so we trigger refresh after content changes
   useEffect(() => {
     refreshIntelligence();
+    perfMark('effect.editor-intelligence');
   }, [content, refreshIntelligence]);
+
+  // Unlocated diagnostics are derived state: computed during render, so the
+  // banner never lags one commit behind the markers (bd-cp9wzu6o).
+  const { markers: diagnosticMarkers, unlocatedDiagnostics: unlocatedErrors } = useMemo(
+    () => diagnosticsToMarkers(diagnostics),
+    [diagnostics]
+  );
 
   // Apply Monaco markers when diagnostics change
   useEffect(() => {
@@ -755,19 +783,8 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
       return;
     }
 
-    const { markers, unlocatedDiagnostics } = diagnosticsToMarkers(diagnostics);
-    monacoRef.current.editor.setModelMarkers(model, 'quarto', markers);
-    setUnlocatedErrors(unlocatedDiagnostics);
-  }, [diagnostics]);
-
-  // Update currentFile when files list changes (e.g., on initial load)
-  // Note: setState in effect is intentional - syncing with external file list
-  useEffect(() => {
-    if (!currentFile && files.length > 0) {
-
-      setCurrentFile(selectDefaultFile(files));
-    }
-  }, [files, currentFile]);
+    monacoRef.current.editor.setModelMarkers(model, 'quarto', diagnosticMarkers);
+  }, [diagnosticMarkers]);
 
   // Handle browser back/forward navigation for file changes
   // Note: setState in effect is intentional - syncing with external route state
@@ -775,12 +792,14 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
     route.type === 'file' ? route.filePath : undefined
   );
   useEffect(() => {
+    const fxT0 = perfNow();
     const prevFilePath = prevRouteFilePathRef.current;
     const newFilePath = route.type === 'file' ? route.filePath : undefined;
     prevRouteFilePathRef.current = newFilePath;
 
     // Only handle if file path actually changed (browser navigation)
     if (newFilePath && newFilePath !== prevFilePath) {
+      perfMark('effect.editor-route-nav.handled');
       const targetFile = files.find(f => f.path === newFilePath);
       if (targetFile && targetFile.path !== currentFile?.path) {
         // Don't switch to binary files that have no viewer (images do)
@@ -789,10 +808,10 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
           const fileContent = fileContents.get(targetFile.path);
           setContent(fileContent ?? '');
           setDiagnostics([]);
-          setUnlocatedErrors([]);
         }
       }
     }
+    perfSegment('effect.editor-route-nav', fxT0);
   }, [route, files, fileContents, currentFile]);
 
   // Configure Monaco before mount (for TypeScript diagnostics)
@@ -1010,7 +1029,6 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
     setContent(fileContent ?? '');
     // Clear diagnostics when switching files
     setDiagnostics([]);
-    setUnlocatedErrors([]);
     // Update URL without adding history entry (sidebar navigation)
     onNavigateToFile(file.path, { replace: true });
   }, [fileContents, onNavigateToFile, replayState.isActive]);
@@ -1532,7 +1550,6 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
         setCurrentFile({ path: result.qmdPath, docId: result.qmdDocId });
         setContent(result.qmd);
         setDiagnostics([]);
-        setUnlocatedErrors([]);
         onNavigateToFile(result.qmdPath, { replace: true });
       }
       return result;
@@ -1927,18 +1944,21 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
         </div>
       </div>
 
-      {/* New text-file dialog */}
-      <NewFileDialog
-        isOpen={showNewFileDialog}
-        existingPaths={files.map(f => f.path)}
-        folders={allFolders}
-        onClose={() => {
-          handleDialogClose();
-          setNewFileInitialName(''); // Clear on close
-        }}
-        onCreateTextFile={handleCreateTextFile}
-        initialFilename={newFileInitialName}
-      />
+      {/* New text-file dialog — mounted only while open, so every open is a
+          fresh form (bd-cp9wzu6o) */}
+      {showNewFileDialog && (
+        <NewFileDialog
+          isOpen
+          existingPaths={files.map(f => f.path)}
+          folders={allFolders}
+          onClose={() => {
+            handleDialogClose();
+            setNewFileInitialName(''); // Clear on close
+          }}
+          onCreateTextFile={handleCreateTextFile}
+          initialFilename={newFileInitialName}
+        />
+      )}
 
       {/* Search files dialog */}
       <SearchFilesDialog
@@ -1979,23 +1999,28 @@ export default function Editor({ project, files, folders, fileContents, binaryFi
         onCreateFolder={handleCreateFolder}
       />
 
-      {/* Asset upload dialog */}
-      <NewAssetDialog
-        isOpen={showNewAssetDialog}
-        existingPaths={files.map(f => f.path)}
-        defaultDestination={assetDestination}
-        folders={allFolders}
-        initialFiles={assetInitialFiles}
-        onClose={handleAssetDialogClose}
-        onUploadAsset={handleUploadAsset}
-      />
+      {/* Asset upload dialog — mounted only while open, so every open is a
+          fresh form (bd-cp9wzu6o) */}
+      {showNewAssetDialog && (
+        <NewAssetDialog
+          isOpen
+          existingPaths={files.map(f => f.path)}
+          defaultDestination={assetDestination}
+          folders={allFolders}
+          initialFiles={assetInitialFiles}
+          onClose={handleAssetDialogClose}
+          onUploadAsset={handleUploadAsset}
+        />
+      )}
 
-      {/* Share project dialog */}
-      <ShareDialog
-        isOpen={showShareDialog}
-        shareableUrl={shareableUrl}
-        onClose={() => setShowShareDialog(false)}
-      />
+      {/* Share project dialog — mounted only while open (bd-cp9wzu6o) */}
+      {showShareDialog && (
+        <ShareDialog
+          isOpen
+          shareableUrl={shareableUrl}
+          onClose={() => setShowShareDialog(false)}
+        />
+      )}
     </div>
   );
 }

@@ -63,6 +63,7 @@ import { useSessionKeepAlive } from './hooks/useSessionKeepAlive';
 import { useExecutionChannel } from './hooks/useExecutionChannel';
 import { usePreviewSession } from './hooks/usePreviewSession';
 import { resolveAuthorId as resolveAuthorIdRequest } from './services/authService';
+import { createConnectionChangeHandler } from './services/connectionHandlers';
 import type { Route, ShareRoute, LinkProjectSetRoute, JoinCollectionRoute } from './utils/routing';
 import { resolveSyncServerUrl, DEFAULT_SYNC_SERVER, parseHashRoute, hubPath, savePreAuthHash, clearPreAuthHash, buildHashRoute } from './utils/routing';
 import { isEphemeralStorage } from './services/ephemeralStorage';
@@ -350,7 +351,10 @@ function App() {
         setCursorColor(settings.userColor);
       }
     });
-  }, [authLoading]);
+    // `auth` is in the deps so a later login re-seeds the anonymous identity
+    // with the OIDC display name; the createdAt === updatedAt guard above
+    // keeps re-runs from rewriting an identity the user already touched.
+  }, [authLoading, auth]);
 
 
   // Unified invite landing (bd-fxdcxbpq): capture a non-ephemeral share
@@ -553,6 +557,9 @@ function App() {
   // low-frequency: file add/remove/rename, presence join). This is a per-user
   // cache of "the project as I last saw it" — list surfaces (cards, peek)
   // read it so they never need a sync connection per project.
+  // The actions object is rebuilt per render but its methods are stable
+  // useCallbacks — destructure so the dep is the stable method.
+  const updateProjectSummary = projectSetActions.updateProjectSummary;
   useEffect(() => {
     if (!project || projectSetState.status !== 'connected' || files.length === 0) return;
     // You are always a contributor; presence identities fill in everyone else
@@ -561,14 +568,13 @@ function App() {
     for (const i of Object.values(identities)) {
       if (!seen.some((s) => s.name === i.name)) seen.push({ name: i.name, color: i.color });
     }
-    projectSetActions.updateProjectSummary(project.indexDocId, {
+    updateProjectSummary(project.indexDocId, {
       fileCount: files.length,
       topFiles: files.slice(0, 5).map((f) => f.path),
       contributors: seen.slice(0, 6),
       asOf: new Date().toISOString(),
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, files, identities, screenName, cursorColor, projectSetState.status]);
+  }, [project, files, identities, screenName, cursorColor, projectSetState.status, updateProjectSummary]);
 
   // Live refs for the dev-only console debug API. The API itself
   // is installed once (per the gate below) and reads current state
@@ -856,16 +862,15 @@ function App() {
           return next;
         });
       },
-      onConnectionChange: (connected) => {
-        setIsOnline(connected);
-        if (!connected && project) {
-          // Connection lost - show error
-          setConnectionError('Connection lost - working offline');
-        } else if (connected && connectionError === 'Connection lost - working offline') {
-          // Connection restored - clear error
-          setConnectionError(null);
-        }
-      },
+      // The factory-built handler never reads React state from this
+      // effect's closure: the pre-fix inline version compared against a
+      // `connectionError` frozen at registration time, so the offline
+      // banner never cleared on reconnect (bd-lsf2v5n0).
+      onConnectionChange: createConnectionChangeHandler({
+        projectOpen: project !== null,
+        setIsOnline,
+        setConnectionError,
+      }),
       onError: (error) => {
         setConnectionError(error.message);
       },

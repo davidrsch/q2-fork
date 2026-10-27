@@ -9,6 +9,7 @@ import { useScrollSync } from '../../hooks/useScrollSync';
 import { useSelectionSync } from '../../hooks/useSelectionSync';
 import { PreviewErrorOverlay } from '@quarto/preview-renderer/overlays/PreviewErrorOverlay';
 import { usePreference } from '../../hooks/usePreference';
+import { perfNow, perfSegment } from '../../utils/perfCounters';
 import MorphIframe, { type MorphIframeHandle } from '@quarto/preview-renderer/iframe/MorphIframe';
 import { ErrorView } from '@quarto/preview-renderer/overlays/PreviewStaticInfoViews';
 
@@ -365,6 +366,7 @@ export default function Preview({
   // effect without us doing any change detection ourselves. The
   // 20ms debounce inside `updatePreview` absorbs burst edits.
   useEffect(() => {
+    const fxT0 = perfNow();
     const filePath = currentFile?.path;
 
     // PreviewRouter filters non-QMD files, so filePath should always be valid here
@@ -375,6 +377,7 @@ export default function Preview({
     // Pass document path as-is from Automerge (e.g., "index.qmd" or "docs/index.qmd").
     // The WASM layer will use VFS path normalization to resolve relative paths correctly.
     updatePreview(content, filePath);
+    perfSegment('effect.preview-rerender', fxT0);
   }, [content, fileContents, updatePreview, currentFile?.path]);
 
   // Reset preview state when file changes

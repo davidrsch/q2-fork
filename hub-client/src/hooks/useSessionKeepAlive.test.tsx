@@ -121,4 +121,31 @@ describe('useSessionKeepAlive', () => {
     });
     expect(mockFetchAuthMe).toHaveBeenCalledTimes(1);
   });
+
+  it('calls the latest onAuthState without re-arming the interval', async () => {
+    // Characterization for the latest-callback mechanism (ref mirror, later
+    // useEffectEvent): a mid-stream callback swap must hit the new callback
+    // and must not re-run the effect (a re-arm would probe immediately,
+    // adding a third fetch).
+    const firstState = vi.fn();
+    const secondState = vi.fn();
+    mockFetchAuthMe.mockResolvedValue(me(1_000_000));
+    const { rerender } = renderHook(
+      ({ cb }: { cb: typeof onAuthState }) =>
+        useSessionKeepAlive({ enabled: true, onAuthState: cb, onAuthRejected }),
+      { initialProps: { cb: firstState } },
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(firstState).toHaveBeenCalledTimes(1);
+
+    rerender({ cb: secondState });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SESSION_KEEP_ALIVE_INTERVAL_MS);
+    });
+    expect(mockFetchAuthMe).toHaveBeenCalledTimes(2);
+    expect(firstState).toHaveBeenCalledTimes(1);
+    expect(secondState).toHaveBeenCalledTimes(1);
+  });
 });

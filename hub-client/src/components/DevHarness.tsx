@@ -605,12 +605,16 @@ function NewFileDialogStatefulHarness() {
           ))}
         </ul>
       </div>
-      <NewFileDialog
-        isOpen={isOpen}
-        existingPaths={FAKE_FILES.map((f) => f.path)}
-        onClose={() => setIsOpen(false)}
-        onCreateTextFile={(path) => setCreated((prev) => [...prev, path])}
-      />
+      {/* Mounted only while open: the dialog's fresh-form-per-open contract
+          (bd-cp9wzu6o) is exactly what this harness demos. */}
+      {isOpen && (
+        <NewFileDialog
+          isOpen
+          existingPaths={FAKE_FILES.map((f) => f.path)}
+          onClose={() => setIsOpen(false)}
+          onCreateTextFile={(path) => setCreated((prev) => [...prev, path])}
+        />
+      )}
     </EditorChrome>
   );
 }

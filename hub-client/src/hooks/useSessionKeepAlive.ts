@@ -23,7 +23,7 @@
  * instead.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useEffectEvent } from 'react';
 import type { AuthState } from '../services/authService';
 import { fetchAuthMe } from '../services/authService';
 
@@ -45,13 +45,10 @@ interface SessionKeepAliveOpts {
 }
 
 export function useSessionKeepAlive({ enabled, onAuthState, onAuthRejected }: SessionKeepAliveOpts) {
-  // Latest callbacks in refs so the interval keys on `enabled` alone.
-  const onAuthStateRef = useRef(onAuthState);
-  const onAuthRejectedRef = useRef(onAuthRejected);
-  useEffect(() => {
-    onAuthStateRef.current = onAuthState;
-    onAuthRejectedRef.current = onAuthRejected;
-  });
+  // The interval keys on `enabled` alone; the effect events reach the latest
+  // callbacks without re-arming it.
+  const onAuthStateEvent = useEffectEvent(onAuthState);
+  const onAuthRejectedEvent = useEffectEvent(onAuthRejected);
 
   useEffect(() => {
     if (!enabled) return;
@@ -63,9 +60,9 @@ export function useSessionKeepAlive({ enabled, onAuthState, onAuthRejected }: Se
         const me = await fetchAuthMe();
         if (cancelled) return;
         if (me) {
-          onAuthStateRef.current(me);
+          onAuthStateEvent(me);
         } else {
-          onAuthRejectedRef.current();
+          onAuthRejectedEvent();
         }
       } catch {
         // Network error / unreachable hub — no evidence, no action.

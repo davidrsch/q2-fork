@@ -21,6 +21,7 @@ import { stripAnsi } from '@quarto/preview-renderer/utils/stripAnsi';
 import { PreviewErrorOverlay } from '@quarto/preview-renderer/overlays/PreviewErrorOverlay';
 import { usePreference } from '../../hooks/usePreference';
 import { useScrollSync } from '../../hooks/useScrollSync';
+import { perfNow, perfSegment } from '../../utils/perfCounters';
 import type { Q2PreviewIframeHandle } from '@quarto/preview-renderer/iframe/Q2PreviewIframe';
 import ReactRenderer from './ReactRenderer';
 
@@ -787,8 +788,10 @@ export default function ReactPreview({
   // guard discards stale in-flight results, so a burst settles on the
   // latest content.
   useEffect(() => {
+    const fxT0 = perfNow();
     // Pass document path as-is from Automerge (e.g., "index.qmd" or "docs/index.qmd").
     updatePreview(content, currentFile?.path);
+    perfSegment('effect.react-preview-rerender', fxT0);
   }, [
     content,
     fileContents,

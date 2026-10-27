@@ -9,15 +9,31 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { useState } from 'react';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import ShareDialog from './ShareDialog';
 
 afterEach(cleanup);
+// Restore prototype spies between tests: vi.spyOn on an already-spied
+// method returns the SAME mock, so without this a later test's spy would
+// inherit the earlier test's recorded calls.
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const defaultProps = {
   isOpen: true,
   shareableUrl: 'https://hub.example.com/p/abc#key',
   onClose: vi.fn(),
+};
+
+const stubClipboard = () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText },
+    configurable: true,
+  });
+  return writeText;
 };
 
 describe('ShareDialog accessibility', () => {
@@ -60,21 +76,46 @@ describe('ShareDialog variants', () => {
   });
 });
 
+describe('ShareDialog select-all timeout (bd-lsf2v5n0)', () => {
+  it('selects the URL text shortly after the dialog opens', () => {
+    vi.useFakeTimers();
+    try {
+      const selectSpy = vi.spyOn(HTMLInputElement.prototype, 'select');
+      render(<ShareDialog {...defaultProps} />);
+      expect(selectSpy).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(100);
+      expect(selectSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels the pending select-all when the dialog closes and reopens quickly', () => {
+    vi.useFakeTimers();
+    try {
+      const selectSpy = vi.spyOn(HTMLInputElement.prototype, 'select');
+      const { rerender } = render(<ShareDialog {...defaultProps} isOpen={true} />);
+      // Close before the 100ms select-all fires, then reopen: without
+      // cleanup the first timer still lands on the remounted input, so the
+      // text gets selected twice.
+      vi.advanceTimersByTime(50);
+      rerender(<ShareDialog {...defaultProps} isOpen={false} />);
+      vi.advanceTimersByTime(10);
+      rerender(<ShareDialog {...defaultProps} isOpen={true} />);
+      vi.advanceTimersByTime(200);
+      expect(selectSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('ShareDialog Enter handling (GH #635 hardening)', () => {
   // Same contract as NewFileDialog (see ModalDialog's onKeyDown docs):
   // prevent Enter's default-action click, and leave button keydowns to
   // the button's own activation. ShareDialog's close is deferred 500ms
   // so the reopen bug can't bite today; these tests keep it that way if
   // the delay ever goes away.
-  const stubClipboard = () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText },
-      configurable: true,
-    });
-    return writeText;
-  };
-
   it('copies on Enter in the URL input and prevents the default action', () => {
     const writeText = stubClipboard();
     render(<ShareDialog {...defaultProps} />);
@@ -95,5 +136,33 @@ describe('ShareDialog Enter handling (GH #635 hardening)', () => {
     fireEvent.keyDown(closeButton, { key: 'Enter' });
 
     expect(writeText).not.toHaveBeenCalled();
+  });
+});
+
+describe('ShareDialog copied state (remount-per-open contract, bd-cp9wzu6o)', () => {
+  // Real parents mount the dialog only while it is open, so every open is a
+  // fresh mount and the success state from a previous copy is gone.
+  function StatefulHarness() {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button onClick={() => setOpen(true)}>Open dialog</button>
+        {open && <ShareDialog {...defaultProps} isOpen onClose={() => setOpen(false)} />}
+      </>
+    );
+  }
+
+  it('reopens without the previous session\'s copied state', async () => {
+    stubClipboard();
+    render(<StatefulHarness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
+    expect(await screen.findByRole('button', { name: 'Copied!' })).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }));
+
+    expect(screen.getByRole('button', { name: 'Copy link' })).toBeDefined();
   });
 });

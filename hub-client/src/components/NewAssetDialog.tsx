@@ -53,31 +53,44 @@ export default function NewAssetDialog({
   onUploadAsset,
   initialFiles,
 }: NewAssetDialogProps) {
+  // Parents mount this dialog only while it is open, so every open is a
+  // fresh mount: initial files are ingested once (lazily) and the rest of
+  // the form seeds from props — no reset effect (bd-cp9wzu6o).
+  const [initialEntries] = useState<PreviewEntry[]>(() =>
+    initialFiles && initialFiles.length > 0 ? processAssetFiles(initialFiles) : []
+  );
   const [destination, setDestination] = useState(defaultDestination);
-  const [previews, setPreviews] = useState<PreviewEntry[]>([]);
-  const [editedNames, setEditedNames] = useState<Map<File, string>>(new Map());
+  const [previews, setPreviews] = useState<PreviewEntry[]>(initialEntries);
+  const [editedNames, setEditedNames] = useState<Map<File, string>>(
+    () => new Map(initialEntries.map(({ file }) => [file, sanitizeFilename(file.name)]))
+  );
   const [isDragOver, setIsDragOver] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Reset when dialog opens/closes.
-  useEffect(() => {
-    if (isOpen) {
-      setDestination(defaultDestination);
-      setSubmitError(null);
-      setIsUploading(false);
-      setIsDragOver(false);
-      if (initialFiles && initialFiles.length > 0) {
-        ingestFiles(initialFiles);
-      } else {
-        setPreviews([]);
-        setEditedNames(new Map());
+  // Load image preview thumbnails asynchronously.
+  const loadImagePreviews = useCallback((entries: PreviewEntry[]) => {
+    for (const { file } of entries) {
+      if (file.type.startsWith('image/') && file.size > 0) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const url = e.target?.result as string;
+          setPreviews((prev) =>
+            prev.map((p) => (p.file === file ? { ...p, previewUrl: url } : p))
+          );
+        };
+        reader.readAsDataURL(file);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, initialFiles, defaultDestination]);
+  }, []);
+
+  // Image thumbnails for the initial files, once per mount; files added
+  // later go through ingestFiles below.
+  useEffect(() => {
+    loadImagePreviews(initialEntries);
+  }, [initialEntries, loadImagePreviews]);
 
   const ingestFiles = useCallback((files: File[]) => {
     const entries = processAssetFiles(files);
@@ -92,20 +105,8 @@ export default function NewAssetDialog({
       }
       return next;
     });
-    // Load image previews asynchronously.
-    for (const { file } of entries) {
-      if (file.type.startsWith('image/') && file.size > 0) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const url = e.target?.result as string;
-          setPreviews((prev) =>
-            prev.map((p) => (p.file === file ? { ...p, previewUrl: url } : p))
-          );
-        };
-        reader.readAsDataURL(file);
-      }
-    }
-  }, []);
+    loadImagePreviews(entries);
+  }, [loadImagePreviews]);
 
   const destinationError = useMemo(
     () => validateProjectPath(destination),

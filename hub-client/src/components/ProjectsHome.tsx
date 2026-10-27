@@ -694,9 +694,13 @@ export default function ProjectsHome({
   // Success unmounts this view; failure surfaces connectionError, which
   // clears the marker below.
   const [openingId, setOpeningId] = useState<string | null>(null);
-  useEffect(() => {
+  // Clear the marker when a connection error surfaces — adjusted during
+  // render so a stale marker never commits (bd-cp9wzu6o).
+  const [prevConnectionError, setPrevConnectionError] = useState(connectionError);
+  if (connectionError !== prevConnectionError) {
+    setPrevConnectionError(connectionError);
     if (connectionError) setOpeningId(null);
-  }, [connectionError]);
+  }
 
   const handleOpen = useCallback(async (item: ProjectItem) => {
     setOpeningId(item.indexDocId);
@@ -1093,9 +1097,14 @@ export default function ProjectsHome({
   const sortLabel = sortOrderLabel(sortOrder);
 
   // The current user, as a face (real identity from user settings).
-  const selfUser: Face | undefined = userSettings
-    ? { name: `${userSettings.userName} (you)`, initials: initialsFor(userSettings.userName), color: userSettings.userColor }
-    : undefined;
+  // Memoized so contributorsFor can depend on it without being recreated
+  // every render (userSettings state identity is stable between changes).
+  const selfUser: Face | undefined = useMemo(
+    () => userSettings
+      ? { name: `${userSettings.userName} (you)`, initials: initialsFor(userSettings.userName), color: userSettings.userColor }
+      : undefined,
+    [userSettings],
+  );
 
   // Real contributors for a project: the identities cached on its summary
   // (populated from the index doc when anyone opens it). A project nobody
@@ -1110,8 +1119,7 @@ export default function ProjectsHome({
       if (real.length > 0) return real;
       return selfUser ? [{ ...selfUser, name: selfUser.name.replace(/ \(you\)$/, '') }] : [];
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [userSettings?.userName, userSettings?.userColor],
+    [selfUser],
   );
 
   const renderFacepile = (users: Face[], size: 'sm' | 'md' | 'lg', max = 3) => {
@@ -2382,12 +2390,15 @@ export default function ProjectsHome({
         </ModalDialog>
       )}
 
-      <ShareDialog
-        isOpen={showLinkDialog}
-        shareableUrl={projectSetLinkUrl}
-        onClose={() => setShowLinkDialog(false)}
-        variant="projectSet"
-      />
+      {/* Mounted only while open, so every open is a fresh dialog (bd-cp9wzu6o) */}
+      {showLinkDialog && (
+        <ShareDialog
+          isOpen
+          shareableUrl={projectSetLinkUrl}
+          onClose={() => setShowLinkDialog(false)}
+          variant="projectSet"
+        />
+      )}
 
       <footer className="qh-footer">
         <Tooltip content={`Built: ${__BUILD_TIME__} · Commit date: ${__GIT_COMMIT_DATE__}`}>

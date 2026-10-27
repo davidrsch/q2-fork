@@ -116,6 +116,9 @@ export function Menu({
     returnFocusRef.current =
       triggerRef?.current ??
       (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    // Mount-only on purpose: menus mount per open, and the return-focus
+    // target must stay frozen as whatever was focused at that moment —
+    // re-capturing on a triggerRef identity change would clobber it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -152,12 +155,12 @@ export function Menu({
     [onClose],
   );
 
-  // Focus the first item on open.
+  // Focus the first item on open. `items` is a stable useCallback, so
+  // depending on it still runs this only on mount.
   useEffect(() => {
     const first = items()[0];
     first?.focus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [items]);
 
   // Keep keyboard focus in the menu when the item holding it is replaced.
   // The ＋ New menu lists a placeholder until the WASM registry answers,
@@ -202,6 +205,9 @@ export function Menu({
       root.style.top = `${y}px`;
       root.style.left = `${x}px`;
     }
+    // Mount-only on purpose: menus mount per open and `fixed` is the
+    // open-time anchor; recomputing on a later `fixed` change would shift
+    // a menu the user is already interacting with.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -11,17 +11,15 @@
  * drags are left alone, and it skips events a component handler already took (`defaultPrevented`).
  * It registers nothing unless `enabled` (import is offered: not the `q2 preview` embed).
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useEffectEvent } from 'react';
 import { collectDroppedEntries, type DroppedEntries } from '../utils/droppedEntries';
 
 const carriesFiles = (e: DragEvent): boolean => !e.defaultPrevented && !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
 
 export function useWindowFileDrop({ enabled, onDrop }: { enabled: boolean; onDrop: (entries: DroppedEntries) => void }): void {
-  // The listeners are attached once per `enabled`; they call the latest handler.
-  const handler = useRef(onDrop);
-  useEffect(() => {
-    handler.current = onDrop;
-  }, [onDrop]);
+  // The listeners are attached once per `enabled`; the effect event reaches
+  // the latest handler.
+  const onDropLatest = useEffectEvent(onDrop);
 
   useEffect(() => {
     if (!enabled) return;
@@ -36,7 +34,7 @@ export function useWindowFileDrop({ enabled, onDrop }: { enabled: boolean; onDro
       e.preventDefault();
       // The DataTransfer is only readable during the event: start walking it now.
       void collectDroppedEntries(e.dataTransfer!).then((entries) => {
-        if (entries.files.length > 0 || entries.folders.length > 0) handler.current(entries);
+        if (entries.files.length > 0 || entries.folders.length > 0) onDropLatest(entries);
       });
     };
     document.addEventListener('dragover', onDragOver);
