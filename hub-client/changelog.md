@@ -25,6 +25,7 @@ WASM rebuild is needed for a changelog-only edit.
 
 ### 2026-10-27
 
+- [`6a4a0d214`](https://github.com/quarto-dev/q2/commits/6a4a0d214): Fixed the "Connection lost - working offline" banner never clearing after the connection is restored, and the share dialog once again selects the link text shortly after it opens (the select-all had silently stopped firing).
 - [`f25064aa0`](https://github.com/quarto-dev/q2/commits/f25064aa0): The version history drawer labels steps with no recorded author "anonymous" and steps with no recorded timestamp "unknown", instead of rendering a bare `0`.
 
 ### 2026-10-26
