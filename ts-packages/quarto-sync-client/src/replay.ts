@@ -100,7 +100,11 @@ export function createReplaySession(
           : undefined)
         ?? meta?.actor
         ?? null;
-      return { timestamp: meta?.time ?? null, actor };
+      // null signals "unknown" in this contract: an unset change time
+      // decodes as 0, and an empty attribution key identifies no one. A
+      // literal 0 reaching the drawer renders as a bare "0" label
+      // (`{ts && …}` renders falsy numbers).
+      return { timestamp: meta?.time || null, actor: actor || null };
     } catch {
       return { timestamp: null, actor: null };
     }
