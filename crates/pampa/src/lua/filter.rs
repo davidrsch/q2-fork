@@ -220,20 +220,19 @@ pub fn create_filter_environment_with(
     // FORMAT - the target output format (html, latex, etc.)
     lua.globals().set("FORMAT", target_format)?;
 
-    // PANDOC_VERSION - version of Pandoc (we emulate 3.x behavior)
-    // Set as a table with numeric indices for version components
-    let version_table = lua.create_table()?;
-    version_table.set(1, 3)?;
-    version_table.set(2, 0)?;
-    version_table.set(3, 0)?;
-    lua.globals().set("PANDOC_VERSION", version_table)?;
+    // PANDOC_VERSION - version of Pandoc (we emulate 3.x behavior), as a
+    // pandoc.types.Version so `PANDOC_VERSION < pandoc.types.Version(...)`
+    // and `PANDOC_VERSION:must_be_at_least(...)` work (GH #942).
+    lua.globals().set(
+        "PANDOC_VERSION",
+        super::version::create_version(&lua, &[3, 0, 0])?,
+    )?;
 
     // PANDOC_API_VERSION - version of the pandoc-types API
-    let api_version_table = lua.create_table()?;
-    api_version_table.set(1, 1)?;
-    api_version_table.set(2, 23)?;
-    api_version_table.set(3, 1)?;
-    lua.globals().set("PANDOC_API_VERSION", api_version_table)?;
+    lua.globals().set(
+        "PANDOC_API_VERSION",
+        super::version::create_version(&lua, &[1, 23, 1])?,
+    )?;
 
     // PANDOC_SCRIPT_FILE - path to the current filter script
     lua.globals().set(

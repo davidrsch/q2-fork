@@ -348,6 +348,9 @@ fn userdata_type_name(ud: &AnyUserData) -> Option<String> {
     if ud.is::<LuaConfigNull>() {
         return Some("Null".to_string());
     }
+    if ud.is::<super::version::LuaVersion>() {
+        return Some("Version".to_string());
+    }
     ud.metatable()
         .ok()
         .and_then(|mt| mt.get::<String>("__name").ok())
