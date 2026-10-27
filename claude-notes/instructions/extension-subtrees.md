@@ -54,7 +54,7 @@ remains the hermetic test fixture.
 
    **Running from a linked worktree (`.worktrees/<name>/`): set
    `QUARTO_SUBTREE_ROOT`.** `subtree_root()`'s default falls back to
-   `create_worktree::repo_root()`, which resolves to the *main* checkout
+   `create_worktree::main_checkout_root()`, which resolves to the *main* checkout
    (`git rev-parse --git-common-dir`'s parent) — not the worktree the
    command is invoked from. Without the override, `git subtree add`
    silently targets the main checkout's working tree and fails with

@@ -563,7 +563,12 @@ pub fn fetch_gh_issue(number: u32) -> Result<GhIssue> {
 /// new worktree always lands at `<main-repo>/.worktrees/<leaf>` regardless
 /// of whether the command is invoked from the main worktree, a nested
 /// worktree, or a subdirectory.
-pub fn repo_root() -> Result<PathBuf> {
+///
+/// This is **not** the checkout the command runs in: from a linked worktree
+/// it names the main checkout. A command that reads or writes the files of
+/// the branch the caller is standing on wants
+/// [`crate::switch_task::current_worktree_root`] instead (bd-cvk7jb11).
+pub fn main_checkout_root() -> Result<PathBuf> {
     let output = Command::new("git")
         .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
         .output()
@@ -636,7 +641,7 @@ pub fn git_worktree_add(branch: &str, dir: &Path, base: &str) -> Result<()> {
 pub fn run(args: Args) -> Result<()> {
     // Always anchor new worktrees to the main repo root so the command works
     // identically from main, from another worktree, or from any subdirectory.
-    let root = repo_root()?;
+    let root = main_checkout_root()?;
 
     // `args.base.is_none()` means the user didn't pass `--base`; we
     // fall back to `main` (the pre-bd-ojtq behaviour) but remember
@@ -761,7 +766,12 @@ struct Plan {
     parent_epic: Option<ParentEpic>,
 }
 
-fn plan_braid(id: &str, slug_override: Option<&str>, base: &str, repo_root: &Path) -> Result<Plan> {
+fn plan_braid(
+    id: &str,
+    slug_override: Option<&str>,
+    base: &str,
+    main_checkout_root: &Path,
+) -> Result<Plan> {
     let meta = fetch_issue_metadata(id)?;
     let slug = match slug_override {
         Some(s) => {
@@ -782,7 +792,7 @@ fn plan_braid(id: &str, slug_override: Option<&str>, base: &str, repo_root: &Pat
     }
     Ok(Plan {
         branch: strand_branch(&leaf),
-        dir: repo_root.join(".worktrees").join(&leaf),
+        dir: main_checkout_root.join(".worktrees").join(&leaf),
         base: base.to_string(),
         kind: SectionKind::Braid {
             id: id.to_string(),
@@ -797,7 +807,7 @@ fn plan_issue(
     number: u32,
     slug_suffix: Option<&str>,
     base: &str,
-    repo_root: &Path,
+    main_checkout_root: &Path,
 ) -> Result<Plan> {
     if let Some(s) = slug_suffix {
         validate_slug(s)?;
@@ -809,7 +819,7 @@ fn plan_issue(
     };
     Ok(Plan {
         branch: leaf.clone(),
-        dir: repo_root.join(".worktrees").join(&leaf),
+        dir: main_checkout_root.join(".worktrees").join(&leaf),
         base: base.to_string(),
         kind: SectionKind::Issue {
             number,
@@ -820,7 +830,7 @@ fn plan_issue(
     })
 }
 
-fn plan_upgrade(slug_suffix: Option<&str>, base: &str, repo_root: &Path) -> Result<Plan> {
+fn plan_upgrade(slug_suffix: Option<&str>, base: &str, main_checkout_root: &Path) -> Result<Plan> {
     if let Some(s) = slug_suffix {
         validate_slug(s)?;
     }
@@ -833,7 +843,7 @@ fn plan_upgrade(slug_suffix: Option<&str>, base: &str, repo_root: &Path) -> Resu
     };
     Ok(Plan {
         branch: leaf.clone(),
-        dir: repo_root.join(".worktrees").join(&leaf),
+        dir: main_checkout_root.join(".worktrees").join(&leaf),
         base: base.to_string(),
         kind: SectionKind::Upgrade { date },
         parent_epic: None,
@@ -1092,24 +1102,25 @@ mod tests {
     }
 
     #[test]
-    fn repo_root_returns_absolute_directory_with_dot_git() {
-        // Test runs inside this checkout, so repo_root() must succeed and
+    fn main_checkout_root_returns_absolute_directory_with_dot_git() {
+        // Test runs inside this checkout, so main_checkout_root() must succeed and
         // point at a directory containing a `.git` entry (file or dir).
-        let root = repo_root().expect("repo_root() should succeed inside a git checkout");
+        let root = main_checkout_root()
+            .expect("main_checkout_root() should succeed inside a git checkout");
         assert!(
             root.is_absolute(),
-            "repo_root() must return an absolute path, got {}",
+            "main_checkout_root() must return an absolute path, got {}",
             root.display()
         );
         assert!(
             root.is_dir(),
-            "repo_root() must point at an existing directory, got {}",
+            "main_checkout_root() must point at an existing directory, got {}",
             root.display()
         );
         let git_entry = root.join(".git");
         assert!(
             git_entry.exists(),
-            "repo_root() result {} should contain a .git entry",
+            "main_checkout_root() result {} should contain a .git entry",
             root.display()
         );
     }

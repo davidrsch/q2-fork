@@ -118,7 +118,7 @@ fn describe(outcome: PullOutcome) -> &'static str {
 /// The default is the **current worktree's** root (`git rev-parse
 /// --show-toplevel`): subtree add/pull must operate on the checkout the
 /// command was invoked from. This deliberately differs from
-/// [`crate::create_worktree::repo_root`], which resolves the *main*
+/// [`crate::create_worktree::main_checkout_root`], which resolves the *main*
 /// worktree via `--git-common-dir` (right for placing new worktrees under
 /// `<main-repo>/.worktrees/`, wrong here — from a linked worktree it would
 /// subtree into the main checkout's dirty tree and fail with "working tree
@@ -359,7 +359,7 @@ mod tests {
         // Regression test: the default root must be the checkout the command
         // was invoked from (`git rev-parse --show-toplevel`), not the main
         // worktree of the repository (`--git-common-dir`'s parent, which is
-        // what create_worktree::repo_root() returns and is correct for *its*
+        // what create_worktree::main_checkout_root() returns and is correct for *its*
         // use). In a linked worktree those differ, and subtree add/pull must
         // operate on the branch the caller is standing on.
         let main_repo = build_fixture_consumer();

@@ -31,7 +31,7 @@ use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 
-use crate::create_worktree::repo_root;
+use crate::switch_task::current_worktree_root;
 
 /// Parsed `examples/manifest.yml`.
 #[derive(Debug, Deserialize)]
@@ -43,7 +43,7 @@ struct Manifest {
 /// `cargo xtask stage-doc-examples`: build `q2` (release profile when
 /// `release`), then stage every manifest entry with it.
 pub fn run(release: bool) -> Result<()> {
-    let root = repo_root()?;
+    let root = current_worktree_root()?;
     let q2 = crate::util::build_q2(&root, release)?;
     stage_all(&root, &q2)
 }

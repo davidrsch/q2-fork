@@ -8,6 +8,9 @@ default-members = ["crates/*", "crates/experiments/reconcile-viewer"]
 # - WASM crates: build with wasm-pack or --target wasm32-unknown-unknown
 # - pampa/fuzz: requires nightly Rust + libfuzzer-sys (Linux/macOS only), run via `cargo fuzz`
 # crates/experiments is a container directory, not a crate, so we exclude it from crates/* matching.
+# Every excluded *crate* must also declare an empty `[workspace]` of its own:
+# otherwise, from a git worktree under .worktrees/, cargo skips this
+# (excluding) root and walks up into the main checkout's workspace (bd-cvk7jb11).
 exclude = [
     "crates/wasm-quarto-hub-client",
     "crates/wasm-qmd-parser",

@@ -18,14 +18,14 @@
 use anyhow::{Context, Result, bail};
 use std::process::Stdio;
 
-use crate::create_worktree::repo_root;
+use crate::switch_task::current_worktree_root;
 
 /// Run the check. `profile` is passed to cargo as `--profile <name>` (CI
 /// builds with `ci`); `None` uses cargo's default `dev` profile.
 /// `rustflags`, when set, overrides `RUSTFLAGS` for both builds; it must
 /// match the build that came before, or cargo rebuilds the whole tree.
 pub fn run(profile: Option<&str>, rustflags: Option<&str>) -> Result<()> {
-    let root = repo_root()?;
+    let root = current_worktree_root()?;
 
     let mut args = vec!["build", "--bin", "q2"];
     if let Some(profile) = profile {
