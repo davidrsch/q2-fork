@@ -145,13 +145,13 @@ path = "./crates/quarto-wasm-embed"
 version = "0.5.0"
 
 [workspace.dependencies.quarto-error-reporting]
-version = "0.4.0"
+version = "0.4.1"
 
 [workspace.dependencies.quarto-error-catalog]
 path = "./crates/quarto-error-catalog"
 
 [workspace.dependencies.quarto-source-map]
-version = "0.3.0"
+version = "0.3.1"
 
 [workspace.dependencies.quarto-xml]
 path = "./crates/quarto-xml"
@@ -311,6 +311,14 @@ verbose_bit_mask = "warn"
 verbose_file_reads = "warn"
 
 [patch.crates-io]
+# REMOVE BEFORE MERGE: quarto-source-map 0.3.1 and quarto-error-reporting
+# 0.4.1 (Concat-shaped diagnostic locations coalesce across pages,
+# posit-dev/quarto-error-reporting#10) are not on crates.io yet; build
+# against their PR branches (posit-dev/quarto-source-map#9,
+# posit-dev/quarto-error-reporting#11). Once both publish, drop these
+# two lines and `cargo update -p quarto-source-map -p quarto-error-reporting`.
+quarto-source-map = { git = "https://github.com/posit-dev/quarto-source-map", branch = "resolved-runs" }
+quarto-error-reporting = { git = "https://github.com/posit-dev/quarto-error-reporting", branch = "coalesce-concat-runs" }
 lua-src = { path = "crates/lua-src-wasm" }
 # Neutralize tree-sitter-language's upstream wasm32 stdio/stdlib/string C
 # stubs so wasm-c-shim is the single source of truth for C stdlib symbols

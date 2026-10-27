@@ -303,3 +303,119 @@ fn singleton_warning_keeps_legacy_shape() {
         "singleton group must not grow a tail:\n{stderr}"
     );
 }
+
+/// A website whose `page-footer` carries one single-line scalar and
+/// one **folded** scalar (a plain or quoted scalar continued on the
+/// next line). Each HTML tag in either raises Q-2-9 once per page.
+/// The folded scalar's content provenance is a `Concat` (quarto-yaml
+/// ≥ 0.5.0), so the Q-2-9 locations re-parsed out of it are
+/// `Substring { parent: Concat }`, the shape
+/// posit-dev/quarto-error-reporting#10 is about.
+fn write_folded_footer_project(dir: &Path, pages: &[&str]) {
+    write_file(
+        &dir.join("_quarto.yml"),
+        "project:\n  type: website\nwebsite:\n  title: Probe\n  page-footer:\n    left: '<b>one line</b>'\n    right: '<i>first line</i>\n      <u>second line</u>'\n",
+    );
+    for page in pages {
+        write_file(
+            &dir.join(format!("{page}.qmd")),
+            &format!("---\ntitle: {page}\n---\n\nbody\n"),
+        );
+    }
+}
+
+/// Count the `Affected files:` tails that list exactly `pages`, in
+/// order, as basenames.
+fn count_tails_listing(stderr: &str, pages: &[&str]) -> usize {
+    stderr
+        .lines()
+        .filter(|l| l.starts_with("Affected files: "))
+        .filter(|l| {
+            let listed: Vec<String> = l["Affected files: ".len()..]
+                .split(", ")
+                .map(|p| {
+                    Path::new(p.trim())
+                        .file_name()
+                        .map(|f| f.to_string_lossy().into_owned())
+                        .unwrap_or_default()
+                })
+                .collect();
+            listed == pages.iter().map(|p| format!("{p}.qmd")).collect::<Vec<_>>()
+        })
+        .count()
+}
+
+/// Q-2-9 warnings re-parsed out of a **folded** scalar coalesce across
+/// pages exactly like those from a single-line scalar
+/// (posit-dev/quarto-error-reporting#10).
+///
+/// Six tags (`<b>`, `</b>` on the single-line scalar; `<i>`, `</i>`,
+/// `<u>`, `</u>` on the folded one) over three pages must print as six
+/// groups, each tailed by all three pages. Before the fix the folded
+/// scalar's four tags printed as twelve singletons (14 emissions in
+/// all; reproduced with q2 0.36.0-nightly.20261024).
+#[test]
+fn folded_scalar_config_warnings_coalesce_across_pages() {
+    let dir = TempDir::new().unwrap();
+    write_folded_footer_project(dir.path(), &["a", "b", "c"]);
+
+    let (success, stderr) = run_q2_render(dir.path());
+    assert!(
+        success,
+        "Q-2-9 is a warning; it must not fail the render:\n{stderr}"
+    );
+
+    let q2_9_count = stderr.matches("Q-2-9").count();
+    assert_eq!(
+        q2_9_count, 6,
+        "expected six coalesced Q-2-9 groups (two tags on the single-line \
+         scalar, four on the folded one), not one per page per tag:\n{stderr}"
+    );
+    assert_eq!(
+        count_tails_listing(&stderr, &["a", "b", "c"]),
+        6,
+        "every Q-2-9 group must list all three pages:\n{stderr}"
+    );
+    // The folded scalar's snippet still renders: this text exists only
+    // in `_quarto.yml`'s content, never in the diagnostic prose.
+    assert!(
+        stderr.contains("<u>second line</u>"),
+        "the folded scalar's second line should render in a snippet:\n{stderr}"
+    );
+}
+
+/// The block-scalar fixture from
+/// `block_scalar_config_diagnostic_binds_concat_backed_source`, over
+/// three pages: its two Q-2-9 warnings (a `Substring { parent: Concat }`
+/// each, the block scalar's decoded content being discontiguous in the
+/// source) coalesce into two groups tailed by all three pages.
+#[test]
+fn block_scalar_config_warnings_coalesce_across_pages() {
+    let dir = TempDir::new().unwrap();
+    write_file(
+        &dir.path().join("_quarto.yml"),
+        "project:\n  type: website\nwebsite:\n  title: \"T\"\n  page-footer:\n    center: |\n      line one\n      line two\n      <span id=\"y\">Footer</span>\n",
+    );
+    for page in ["a", "b", "c"] {
+        write_file(
+            &dir.path().join(format!("{page}.qmd")),
+            &format!("---\ntitle: {page}\n---\n\nbody\n"),
+        );
+    }
+
+    let (success, stderr) = run_q2_render(dir.path());
+    assert!(
+        success,
+        "Q-2-9 is a warning; it must not fail the render:\n{stderr}"
+    );
+    let q2_9_count = stderr.matches("Q-2-9").count();
+    assert_eq!(
+        q2_9_count, 2,
+        "expected two coalesced Q-2-9 groups (open + close <span>):\n{stderr}"
+    );
+    assert_eq!(
+        count_tails_listing(&stderr, &["a", "b", "c"]),
+        2,
+        "both Q-2-9 groups must list all three pages:\n{stderr}"
+    );
+}

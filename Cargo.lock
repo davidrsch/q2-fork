@@ -7209,9 +7209,8 @@ dependencies = [
 
 [[package]]
 name = "quarto-error-reporting"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89db4efd3108535818d52d21aba89c0fc6abab50615c4cc77467863f0f5061de"
+version = "0.4.1"
+source = "git+https://github.com/posit-dev/quarto-error-reporting?branch=coalesce-concat-runs#0cd6066c5c04cc8442259b8dabedba533f25a88c"
 dependencies = [
  "ariadne",
  "quarto-source-map",
@@ -7623,9 +7622,8 @@ dependencies = [
 
 [[package]]
 name = "quarto-source-map"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4d00105e7927764597b55db01450f21e9086d5ffbc7311a440c228a61921236"
+version = "0.3.1"
+source = "git+https://github.com/posit-dev/quarto-source-map?branch=resolved-runs#00fec43c268a0f4871810a0bd476f9639b779fc6"
 dependencies = [
  "schemars",
  "serde",
