@@ -14,6 +14,7 @@ mod diagnostics;
 mod dialect;
 mod dofile_wasm;
 mod filter;
+mod host_context;
 mod io_wasm;
 mod json;
 mod list;
@@ -42,7 +43,7 @@ mod walk;
 #[allow(unused_imports)]
 pub use crate::dialect::ModuleCompileError;
 #[allow(unused_imports)]
-pub use crate::lua_options::{ExtensionRoot, LuaOptions, ModuleRoots};
+pub use crate::lua_options::{ExtensionRoot, HostContext, HostProject, LuaOptions, ModuleRoots};
 #[allow(unused_imports)]
 pub use dialect::{DialectError, SourceDialect, register_source_dialect};
 #[allow(unused_imports)]

@@ -102,6 +102,13 @@ pub struct StageContext {
     /// (Q1 parity: env files are project-scoped).
     pub project_env: hashlink::LinkedHashMap<String, String>,
 
+    /// The environment Lua filters and shortcodes see through
+    /// `os.getenv`, taken once here — on the thread that builds the
+    /// context, before any script runs — by
+    /// [`crate::project::environment::snapshot_environment`] (GH #939).
+    /// Shared with the per-document `LuaOptions` by `Arc`.
+    pub env_snapshot: Arc<crate::project::environment::EnvSnapshot>,
+
     // === Mutable state ===
     /// Artifact store for dependencies and intermediates
     pub artifacts: ArtifactStore,
@@ -445,6 +452,14 @@ impl StageContext {
             &active_profile_names,
             &mut startup_diagnostics,
         );
+        let env_snapshot = Arc::new(crate::project::environment::snapshot_environment(
+            runtime.env_all().unwrap_or_default(),
+            &project_env,
+            crate::project::project_profile::quarto_profile_env_value(
+                &project.config.active_config_profiles,
+            )
+            .as_deref(),
+        ));
 
         Ok(Self {
             runtime,
@@ -456,6 +471,7 @@ impl StageContext {
             extensions,
             variables,
             project_env,
+            env_snapshot,
             artifacts: ArtifactStore::new(),
             includes: PandocIncludes::default(),
             diagnostics: startup_diagnostics,

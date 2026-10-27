@@ -1228,7 +1228,13 @@ impl AstTransform for ShortcodeResolveTransform {
             && let Some(runtime) = self.runtime.as_ref()
         {
             let runtime = runtime.clone();
-            let lua_options = crate::lmd::lua_options(ctx.project, runtime.as_ref());
+            let lua_options = crate::lmd::lua_options_for_document(
+                ctx.project,
+                runtime.as_ref(),
+                ctx.document,
+                ctx.output_path(),
+                ctx.env_snapshot.clone(),
+            );
             match pampa::lua::LuaShortcodeEngine::new_with(
                 &self.target_format,
                 runtime,

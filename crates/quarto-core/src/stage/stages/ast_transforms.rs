@@ -222,6 +222,9 @@ impl PipelineStage for AstTransformsStage {
         // Transfer mutable state to the RenderContext
         render_ctx.artifacts = std::mem::take(&mut ctx.artifacts);
         render_ctx.includes = std::mem::take(&mut ctx.includes);
+        // The environment Lua shortcodes read via os.getenv (GH #939);
+        // read-only, so the Arc is cloned rather than moved.
+        render_ctx.env_snapshot = Some(ctx.env_snapshot.clone());
         render_ctx.ref_type_registry = ctx.ref_type_registry.take();
         render_ctx.crossref_index = ctx.crossref_index.take();
         render_ctx.observer = ctx.observer.clone();
