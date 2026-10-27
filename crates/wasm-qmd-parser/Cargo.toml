@@ -34,3 +34,8 @@ wasm-bindgen-test = "0.3.34"
 # wasm-quarto-hub-client's; see claude-notes/plans/2026-04-20-wasm-shim-merge.md.
 [patch.crates-io]
 tree-sitter-language = { path = "../tree-sitter-language-wasm-shim" }
+
+# Excluded from the root workspace; declare this as its own workspace so
+# cargo does not traverse up into the parent monorepo workspace when this
+# checkout is a git worktree inside the main repo tree (bd-cvk7jb11).
+[workspace]

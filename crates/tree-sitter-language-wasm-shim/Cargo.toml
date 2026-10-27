@@ -25,3 +25,8 @@ build = "build.rs"
 [lib]
 name = "tree_sitter_language"
 path = "src/language.rs"
+
+# Excluded from the root workspace; declare this as its own workspace so
+# cargo does not traverse up into the parent monorepo workspace when this
+# checkout is a git worktree inside the main repo tree (bd-cvk7jb11).
+[workspace]
