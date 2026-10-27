@@ -2,7 +2,7 @@
 title: 'hub-client `useEffect` audit: phased refactor'
 date: 2026-10-24
 description: 'Phased refactor of the refactor-worthy useEffect sites in hub-client: stale-dep fixes, useSyncExternalStore conversions, derived-state elimination, then measured wide-dep performance work.'
-status: in-progress  # All 5 phases done. Phases 1–4 open as stacked PRs (#924, #925, #931, #936); phase 5 awaiting push/PR.
+status: in-progress  # All 5 phases done, open as stacked PRs (#924, #925, #931, #936, #938).
 ---
 
 ## Overview
@@ -396,7 +396,7 @@ or moving invalidation into the sync-service callback.
 
 ## Phase 5 — `useEffectEvent` sweep (optional, low priority)
 
-**Done 2026-10-27 (bd-t18384ia).** The sweep triaged all twelve sites and
+**Done 2026-10-27 (bd-t18384ia); open as PR #938, stacked on #936.** The sweep triaged all twelve sites and
 converted three; the other nine fail the `useEffectEvent` contract, which
 eslint-plugin-react-hooks v7 enforces lexically: an effect-event variable may
 only be *referenced* from inside an effect (or another effect event) in the
