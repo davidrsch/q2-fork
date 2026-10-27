@@ -26,6 +26,13 @@ website:
     # appears on every other unreviewed page.
     remember-dismissal: false
   navbar:
+    # quarto.org's wordmark in place of the "Quarto 2" text. The blue
+    # logo needs a light navbar in light mode (it vanishes on the brand
+    # blue); the dark theme redefines $light, so the navbar stays dark there.
+    background: light
+    logo: assets/images/quarto.png
+    logo-alt: "Quarto logo."
+    title: false
     left:
       - href: index.qmd
         text: Home

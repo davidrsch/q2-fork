@@ -1095,6 +1095,14 @@ In a script, on CI, or with `--json` there is nobody to ask, and Quarto
 q2 use brand myorg/shared-brand --trust
 ```
 
+A dry run of a remote source still downloads it to build the plan, so it needs
+the same trust. In a terminal, `q2 use brand <source> --dry-run` asks before it
+downloads. In a script, pass `--trust` with `--dry-run`:
+
+``` {.bash filename="Terminal"}
+q2 use brand myorg/shared-brand --dry-run --trust --no-prompt
+```
+
 ::: callout-note
 ## `--force` and `--trust` are different permissions
 
@@ -1106,6 +1114,9 @@ an existing `brand:` declaration.
 Neither implies the other, deliberately. A script that needs to replace a
 local brand should not thereby gain permission to execute whatever a URL
 serves.
+
+The two flags also differ under `--dry-run`. A dry run downloads but never
+overwrites, so `--trust` combines with `--dry-run` and `--force` does not.
 :::
 
 #### Non-interactive usage

@@ -356,6 +356,14 @@ fn confirm_trust(
         .unwrap_or_default();
 
     let Some(prompter) = ctx.prompter.as_deref_mut() else {
+        // A dry run downloads too, so it needs the same consent; say so
+        // in the flags the caller should actually re-run with.
+        let rerun = if req.dry_run {
+            "Re-run with --dry-run --trust to preview, confirming you trust the authors of \
+             this extension."
+        } else {
+            "Re-run with --trust to confirm you trust the authors of this extension."
+        };
         return Err(CommandFailure::new(
             format!(
                 "Refusing to download {} without confirmation",
@@ -364,7 +372,7 @@ fn confirm_trust(
             format!(
                 "Quarto extensions may execute code when documents are rendered. There is no \
                  terminal to ask on, so nothing was fetched.\n\n\
-                 Re-run with --trust to confirm you trust the authors of this extension.{learn_more}"
+                 {rerun}{learn_more}"
             ),
         ));
     };
@@ -501,6 +509,22 @@ mod tests {
         let text = err.0.to_text(None);
         assert!(text.contains("--trust"), "{text}");
         assert!(text.contains("execute code"), "{text}");
+    }
+
+    #[test]
+    fn the_trust_refusal_hint_matches_the_mode() {
+        let cwd = TempDir::new().unwrap();
+        let err = resolve_with(&request("org/repo"), cwd.path(), None).unwrap_err();
+        let text = err.0.to_text(None);
+        assert!(!text.contains("--dry-run"), "{text}");
+
+        let req = AddRequest {
+            dry_run: true,
+            ..request("org/repo")
+        };
+        let err = resolve_with(&req, cwd.path(), None).unwrap_err();
+        let text = err.0.to_text(None);
+        assert!(text.contains("--dry-run --trust"), "{text}");
     }
 
     #[test]
