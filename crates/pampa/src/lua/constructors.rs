@@ -1006,6 +1006,9 @@ pub fn register_pandoc_namespace(
     // Document + meta constructors (pandoc.Pandoc, pandoc.Meta, pandoc.Meta*)
     super::pandoc_doc::register_doc_constructors(lua, &pandoc)?;
 
+    // pandoc.types.Version (GH #942)
+    super::version::register_pandoc_types(lua, &pandoc)?;
+
     // Set as global
     lua.globals().set("pandoc", pandoc)?;
 

@@ -36,6 +36,7 @@ mod system;
 mod text;
 mod types;
 mod utils;
+mod version;
 mod walk;
 
 #[allow(unused_imports)]
