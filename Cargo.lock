@@ -1660,7 +1660,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 3.0.6",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -1797,7 +1797,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c54e03a951783e8b327515db3f2a2fd0e3bed362a96b066f341ce66ed49b4ead"
 dependencies = [
  "data-encoding",
- "syn 3.0.6",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -7210,7 +7210,8 @@ dependencies = [
 [[package]]
 name = "quarto-error-reporting"
 version = "0.4.1"
-source = "git+https://github.com/posit-dev/quarto-error-reporting?branch=coalesce-concat-runs#0cd6066c5c04cc8442259b8dabedba533f25a88c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8402839513315e3fa04a38ad666c67d827e4399fccbb38f90fb88169dfc83e7e"
 dependencies = [
  "ariadne",
  "quarto-source-map",
@@ -7623,7 +7624,8 @@ dependencies = [
 [[package]]
 name = "quarto-source-map"
 version = "0.3.1"
-source = "git+https://github.com/posit-dev/quarto-source-map?branch=resolved-runs#00fec43c268a0f4871810a0bd476f9639b779fc6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df8e902e7d6bedc69a74efec032c2cbb3225e1fdaf0a34c9e098a35cb6209ca9"
 dependencies = [
  "schemars",
  "serde",
