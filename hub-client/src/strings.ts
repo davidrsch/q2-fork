@@ -524,4 +524,13 @@ export const replay = {
   restore: 'Restore this version',
   restoreTooltip: 'Replace the document with this version (history is preserved)',
   changeTooltip: (n: number) => `Change ${n}`,
+  /** Header label for a step with no recorded timestamp. */
+  unknown: 'unknown',
+  /**
+   * Header label for a step with no attribution key — the norm on
+   * auth-less deployments (`--allow-insecure-auth` / local-prod) for
+   * authorless changes (imports, CLI/MCP edits, pre-author history).
+   * Matches the anonymous-name vocabulary (`generateAnonymousName`).
+   */
+  anonymous: 'anonymous',
 } as const;

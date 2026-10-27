@@ -524,13 +524,20 @@ export default function ReplayDrawer({
         </button>
 
         <div className="replay-drawer__info">
-          {state.timestamp && (
+          {/* Ternaries, not `&&`: a falsy number (unset time decodes as
+              0) must fall into the unknown branch, never render as a
+              bare `0` text node. */}
+          {state.timestamp ? (
             <span className="replay-drawer__timestamp">
               <span className="replay-drawer__relative">{formatTimestamp(state.timestamp)}</span>
               <span className="replay-drawer__absolute">{formatFullTimestamp(state.timestamp)}</span>
             </span>
+          ) : (
+            <span className="replay-drawer__timestamp replay-drawer__timestamp--unknown">
+              {replay.unknown}
+            </span>
           )}
-          {state.actor && (
+          {state.actor ? (
             <span
               className={`replay-drawer__actor${currentActorId === state.actor ? ' replay-drawer__actor--me' : ''}`}
               data-actor-key={state.actor}
@@ -544,6 +551,10 @@ export default function ReplayDrawer({
               {currentActorId === state.actor && (
                 <span className="replay-drawer__actor-you">(you)</span>
               )}
+            </span>
+          ) : (
+            <span className="replay-drawer__actor replay-drawer__actor--anonymous">
+              {replay.anonymous}
             </span>
           )}
         </div>

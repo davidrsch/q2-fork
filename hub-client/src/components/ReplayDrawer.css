@@ -173,6 +173,13 @@
   color: var(--editor-text-muted);
 }
 
+/* Placeholders for a step with no recorded timestamp / attribution. */
+.replay-drawer__timestamp--unknown,
+.replay-drawer__actor--anonymous {
+  color: var(--editor-text-muted);
+  font-style: italic;
+}
+
 /* Close (✕) — the single explicit exit affordance, rightmost in the
    header. The title toggle also collapses; Esc works from anywhere in
    the focused drawer. */

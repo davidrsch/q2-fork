@@ -195,6 +195,22 @@ describe('ReplaySession', () => {
       expect(meta.actor).toBeNull();
     });
 
+    it('maps an unset change timestamp (time: 0) to null', () => {
+      // Automerge decodes a change with no recorded time as time: 0; the
+      // drawer's contract is null = unknown. Passing 0 through renders a
+      // bare "0" in the header via the `{ts && …}` falsy-number pitfall.
+      enterSession(['a', 'b'], [0, 2000]);
+
+      expect(session.getMetadataAt(0).timestamp).toBeNull();
+      expect(session.getMetadataAt(1).timestamp).toBe(2000);
+    });
+
+    it('maps an empty attribution key to null', () => {
+      enterSession(['a'], undefined, [''], ['']);
+
+      expect(session.getMetadataAt(0).actor).toBeNull();
+    });
+
     // ── Author-first resolution (author-ID transition) ─────────────
     //
     // getMetadataAt returns the *attribution key* for the step:

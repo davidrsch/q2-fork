@@ -316,6 +316,38 @@ describe('ReplayDrawer', () => {
     });
   });
 
+  describe('unknown metadata', () => {
+    // A step whose change carries no timestamp / attribution key must not
+    // leak a bare `0` into the header (React renders falsy numbers inside
+    // `{cond && …}`) — it shows an explicit 'unknown' label instead.
+    const unknownState = makeState({
+      isActive: true,
+      historyLength: 5,
+      currentIndex: 2,
+      currentContent: 'hello',
+      timestamp: null,
+      actor: null,
+    });
+
+    it('labels a missing timestamp "unknown" and missing attribution "anonymous"', () => {
+      render(<ReplayDrawer state={unknownState} controls={controls} />);
+      expect(screen.getByText('unknown')).toBeDefined();
+      expect(screen.getByText('anonymous')).toBeDefined();
+    });
+
+    it('treats a 0 timestamp (unset change time) as unknown', () => {
+      const zeroTs = makeState({
+        ...unknownState,
+        timestamp: 0,
+        actor: 'abcdef0123456789abcdef0123456789',
+      });
+      const { container } = render(<ReplayDrawer state={zeroTs} controls={controls} />);
+      const info = container.querySelector('.replay-drawer__info')!;
+      expect(screen.getByText('unknown')).toBeDefined();
+      expect(info.textContent!.startsWith('0')).toBe(false);
+    });
+  });
+
   describe('waveform', () => {
     const activeState = makeState({
       isActive: true,
