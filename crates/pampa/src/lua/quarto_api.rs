@@ -215,14 +215,16 @@ fn register_quarto_component(lua: &Lua, quarto: &Table) -> Result<()> {
     Ok(())
 }
 
-/// `quarto.version` — table {0, 1, 0} so extensions can do
-/// `table.concat(quarto.version, '.')` to get "0.1.0"
+/// `quarto.version` — the version this build reports
+/// (`quarto_util::cli_version()`, so a nightly's `QUARTO_VERSION_OVERRIDE`
+/// is honored), as a `pandoc.types.Version`: comparable with strings and
+/// other Versions (`quarto.version >= "1.4"`), `tostring` gives `"0.36.0"`,
+/// and `table.concat(quarto.version, '.')` still works (GH #942). Only the
+/// leading dotted-numeric part is carried: `0.37.0-nightly.20261027` is
+/// `0.37.0`, as in Quarto 1.
 fn register_quarto_version(lua: &Lua, quarto: &Table) -> Result<()> {
-    let version = lua.create_table()?;
-    version.set(1, 0)?;
-    version.set(2, 1)?;
-    version.set(3, 0)?;
-    quarto.set("version", version)?;
+    let version = super::version::LuaVersion::leading(quarto_util::cli_version());
+    quarto.set("version", super::version::create_version(lua, &version.0)?)?;
     Ok(())
 }
 
@@ -1801,20 +1803,60 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn test_quarto_version_is_table() {
+    fn test_quarto_version_is_a_pandoc_version() {
         let lua = create_test_lua();
-        let result: String = lua.load(r#"return type(quarto.version)"#).eval().unwrap();
-        assert_eq!(result, "table");
+        let result: String = lua
+            .load(r#"return pandoc.utils.type(quarto.version)"#)
+            .eval()
+            .unwrap();
+        assert_eq!(result, "Version");
     }
 
     #[test]
-    fn test_quarto_version_concat() {
+    fn test_quarto_version_tracks_the_build_version() {
         let lua = create_test_lua();
-        let result: String = lua
+        let expected = super::super::version::LuaVersion::leading(quarto_util::cli_version());
+        let expected = expected
+            .0
+            .iter()
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+            .join(".");
+        assert_ne!(expected, "0.1.0", "the hard-coded placeholder must be gone");
+        let shown: String = lua
+            .load(r#"return tostring(quarto.version)"#)
+            .eval()
+            .unwrap();
+        assert_eq!(shown, expected);
+        // Q1-era extensions build the string this way; it must keep working
+        // on the userdata (GH #942).
+        let concat: String = lua
             .load(r#"return table.concat(quarto.version, '.')"#)
             .eval()
             .unwrap();
-        assert_eq!(result, "0.1.0");
+        assert_eq!(concat, expected);
+    }
+
+    #[test]
+    fn test_quarto_version_compares_with_strings() {
+        let lua = create_test_lua();
+        // The probe from GH #942, which used to fail with "attempt to
+        // compare string with table".
+        let ok: bool = lua
+            .load(r#"return (quarto.version >= "1.4") == false and quarto.version >= "0.1""#)
+            .eval()
+            .unwrap();
+        assert!(ok);
+        let wrapped: String = lua
+            .load(r#"return tostring(pandoc.types.Version(quarto.version))"#)
+            .eval()
+            .unwrap();
+        assert_eq!(
+            wrapped,
+            lua.load(r#"return tostring(quarto.version)"#)
+                .eval::<String>()
+                .unwrap()
+        );
     }
 
     // =========================================================================

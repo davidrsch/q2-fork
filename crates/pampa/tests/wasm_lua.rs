@@ -559,7 +559,8 @@ end
 // Test 6: Synthetic os module is registered in filter execution
 // ============================================================================
 
-/// Verify that the synthetic os module (os.time, os.clock, os.difftime) is
+/// Verify that the synthetic os module (os.time, os.clock, os.difftime,
+/// os.getenv) is
 /// registered when filters execute on wasm32.
 #[wasm_bindgen_test]
 async fn synthetic_os_available_in_filters() {
@@ -579,6 +580,13 @@ function Para(el)
     assert(type(os.time) == "function", "os.time should be a function")
     assert(type(os.clock) == "function", "os.clock should be a function")
     assert(type(os.difftime) == "function", "os.difftime should be a function")
+    -- os.getenv is runtime-backed (nothing in the browser) and is what
+    -- the host's environment snapshot replaces (GH #939).
+    assert(type(os.getenv) == "function", "os.getenv should be a function")
+    assert(os.getenv("QUARTO_PROFILE") == nil, "no environment in the browser")
+    -- os.exit is the document-failing replacement, not absent (GH #941).
+    assert(type(os.exit) == "function", "os.exit should be a function")
+    assert(pcall(os.exit, 1) == false, "os.exit should raise, not return")
     return el
 end
 "#

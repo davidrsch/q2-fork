@@ -2,7 +2,8 @@
  * os_wasm.rs
  *
  * Synthetic `os` table for WASM and test environments.
- * Provides os.time(), os.clock(), and os.difftime() backed by SystemRuntime.
+ * Provides os.time(), os.clock(), os.difftime(), and os.getenv() backed by
+ * SystemRuntime.
  */
 
 use std::sync::Arc;
@@ -36,6 +37,18 @@ pub fn register_wasm_os(lua: &Lua, runtime: Arc<dyn SystemRuntime>) -> Result<()
     os.set(
         "difftime",
         lua.create_function(|_, (t2, t1): (f64, f64)| Ok(t2 - t1))?,
+    )?;
+
+    // os.getenv(name) — the runtime's view of the environment (nothing, on
+    // wasm32-unknown-unknown). The host's environment snapshot replaces
+    // this when one is supplied (`host_context::register_host_context`).
+    let rt = runtime.clone();
+    os.set(
+        "getenv",
+        lua.create_function(move |_, name: String| {
+            rt.env_get(&name)
+                .map_err(|e| mlua::Error::runtime(e.to_string()))
+        })?,
     )?;
 
     lua.globals().set("os", os)?;

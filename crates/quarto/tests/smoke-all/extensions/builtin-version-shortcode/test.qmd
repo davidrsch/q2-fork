@@ -6,7 +6,9 @@ _quarto:
     html:
       dom-parity: true
       noErrors: true
+      # The real build version (GH #942), not the former {0,1,0} placeholder.
       ensureFileRegexMatches:
+        - ["The current version is \\d+\\.\\d+\\.\\d+\\."]
         - ["0\\.1\\.0"]
 ---
 
