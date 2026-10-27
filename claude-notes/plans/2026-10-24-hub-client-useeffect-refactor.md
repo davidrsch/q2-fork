@@ -438,10 +438,18 @@ callback, a state updater, or a function passed across a hook boundary.
 - Verification: `npm run test:ci` all three legs green (unit + integration +
   WASM); `npm run build:all` green (production `tsc -b && vite build` plus
   sw-precache check); eslint clean on the five touched files
-  (`rules-of-hooks` accepts all three effect events). Not browser-smoked:
-  pure refactor behind characterization tests; the three hooks\' behaviors
-  (probe strikes, keep-alive callbacks, drop routing) are fully exercised by
-  their suites.
+  (`rules-of-hooks` accepts all three effect events). Browser-smoked
+  2026-10-27, both converted paths green end-to-end:
+  - File drop (`useWindowFileDrop`): 13/13 `import-document.spec.ts` tests
+    on chromium, including the four window-fallback drops (top bar, dialog
+    backdrop, preview pane docx, preview pane csv).
+  - Auth probe (`useAuthProbe`): a throwaway Playwright spec on the auth-on
+    e2e stack (mock OIDC, deleted after use) drove the live path — signed
+    in, project open, networking severed: the offline pill appeared, two
+    `/auth/me` probes fired through the converted effect event, no logout
+    occurred (network-error invariant), and reconnecting restored the
+    online pill. `useSessionKeepAlive`\'s 1 h cadence is unobservable in a
+    smoke; its mechanism is identical to the probe\'s and unit-pinned.
 
 ## Out of scope
 
