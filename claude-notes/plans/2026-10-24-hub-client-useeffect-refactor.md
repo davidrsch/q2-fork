@@ -2,7 +2,7 @@
 title: 'hub-client `useEffect` audit: phased refactor'
 date: 2026-10-24
 description: 'Phased refactor of the refactor-worthy useEffect sites in hub-client: stale-dep fixes, useSyncExternalStore conversions, derived-state elimination, then measured wide-dep performance work.'
-status: in-progress  # Phases 1–4 done; 1–3 open as stacked PRs (#924, #925, #931), 4 on refactor/useeffect-phase4 (bd-wfhd0dg5). Phase 5 not started.
+status: in-progress  # Phases 1–4 done and open as stacked PRs (#924, #925, #931, #936). Phase 5 not started.
 ---
 
 ## Overview
@@ -276,7 +276,7 @@ characterization-test setup with the Phase 4 and Phase 5 `Editor.tsx` items.
 
 ## Phase 4 — Wide-dependency performance (measure first)
 
-**Done 2026-10-27 (bd-wfhd0dg5); on `refactor/useeffect-phase4`.** Findings
+**Done 2026-10-27 (bd-wfhd0dg5); open as PR #936, stacked on #931.** Findings
 that shaped the landing:
 
 - The instrumentation helper landed as `src/utils/perfCounters.ts`: enabled
