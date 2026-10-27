@@ -84,7 +84,9 @@ export function useAutoEstablishRoot({
       firedRef.current = true;
       void migrateProjects(DEFAULT_SYNC_SERVER);
     }
-    // The actions are stable useCallbacks; status/enabled are the triggers.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, enabled]);
+    // The ref guards above make re-runs idempotent, so the callbacks can
+    // be honest deps: a re-entry from an identity change either returns
+    // early (firedRef / freshRootPendingRef) or fires onFreshRoot with the
+    // freshest closure.
+  }, [status, enabled, createProjectSet, migrateProjects, onFreshRoot]);
 }

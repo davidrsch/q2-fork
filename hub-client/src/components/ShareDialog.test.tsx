@@ -13,6 +13,12 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import ShareDialog from './ShareDialog';
 
 afterEach(cleanup);
+// Restore prototype spies between tests: vi.spyOn on an already-spied
+// method returns the SAME mock, so without this a later test's spy would
+// inherit the earlier test's recorded calls.
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const defaultProps = {
   isOpen: true,
@@ -57,6 +63,40 @@ describe('ShareDialog variants', () => {
       screen.getByText(/access and edit every project in your project list permanently/)
     ).toBeDefined();
     expect(screen.queryByText('Share project')).toBeNull();
+  });
+});
+
+describe('ShareDialog select-all timeout (bd-lsf2v5n0)', () => {
+  it('selects the URL text shortly after the dialog opens', () => {
+    vi.useFakeTimers();
+    try {
+      const selectSpy = vi.spyOn(HTMLInputElement.prototype, 'select');
+      render(<ShareDialog {...defaultProps} />);
+      expect(selectSpy).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(100);
+      expect(selectSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels the pending select-all when the dialog closes and reopens quickly', () => {
+    vi.useFakeTimers();
+    try {
+      const selectSpy = vi.spyOn(HTMLInputElement.prototype, 'select');
+      const { rerender } = render(<ShareDialog {...defaultProps} isOpen={true} />);
+      // Close before the 100ms select-all fires, then reopen: without
+      // cleanup the first timer still lands on the remounted input, so the
+      // text gets selected twice.
+      vi.advanceTimersByTime(50);
+      rerender(<ShareDialog {...defaultProps} isOpen={false} />);
+      vi.advanceTimersByTime(10);
+      rerender(<ShareDialog {...defaultProps} isOpen={true} />);
+      vi.advanceTimersByTime(200);
+      expect(selectSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

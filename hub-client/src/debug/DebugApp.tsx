@@ -158,7 +158,9 @@ function Inspector({ authNotice }: { authNotice?: string }) {
       repoRef.current = null
     }
     // `rebuild` captures mode; reloading on mode change is the entire
-    // point of this effect.
+    // point of this effect. Adding `rebuild` to the deps would also
+    // reload when its other captures (syncServerUrl, addMessage) change
+    // identity — mode is the only intended trigger in this debug tool.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode])
 

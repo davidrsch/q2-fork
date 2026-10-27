@@ -8,7 +8,7 @@
  * Displays a warning about permanent access and allows copying the link.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import ModalDialog from './ModalDialog';
 import { common, dialogs } from '../strings';
 import './ShareDialog.css';
@@ -30,7 +30,11 @@ export default function ShareDialog({
   variant = 'project',
 }: ShareDialogProps) {
   const [copied, setCopied] = useState(false);
-  const urlInputRef = useRef<HTMLInputElement>(null);
+  // The input is tracked as state (not a ref) because it mounts a commit
+  // after the dialog does — ModalDialog resolves its portal target from a
+  // hidden marker first — so an effect keyed only on `isOpen` would run
+  // before the input exists and never select (bd-lsf2v5n0).
+  const [urlInput, setUrlInput] = useState<HTMLInputElement | null>(null);
 
   // Reset copied state when dialog opens
   useEffect(() => {
@@ -39,14 +43,14 @@ export default function ShareDialog({
     }
   }, [isOpen]);
 
-  // Select all text when dialog opens
+  // Select all text shortly after the dialog opens; the timeout is
+  // cleared on close/unmount so it can't fire twice across a rapid
+  // close/reopen or land on a detached input.
   useEffect(() => {
-    if (isOpen && urlInputRef.current) {
-      setTimeout(() => {
-        urlInputRef.current?.select();
-      }, 100);
-    }
-  }, [isOpen]);
+    if (!isOpen || !urlInput) return;
+    const timer = setTimeout(() => urlInput.select(), 100);
+    return () => clearTimeout(timer);
+  }, [isOpen, urlInput]);
 
   const handleCopyLink = useCallback(async () => {
     if (!shareableUrl) return;
@@ -123,7 +127,7 @@ export default function ShareDialog({
           <div className="url-field">
             <label htmlFor="shareable-url">{text.linkLabel}</label>
             <input
-              ref={urlInputRef}
+              ref={setUrlInput}
               id="shareable-url"
               type="text"
               className="qh-input focus-accent"
