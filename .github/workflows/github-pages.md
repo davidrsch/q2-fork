@@ -25,17 +25,25 @@ It runs on any push to `main` touching the sandbox package, the
 preview-renderer source, or the vendored resources it embeds, or manually via
 `gh workflow run deploy-q2-sandbox.yml`.
 
-## This repo's own Pages site → https://quarto-dev.github.io/q2/
+## Q2 docs → https://quarto-dev.github.io/q2/
 
-Pages on this repo is in "GitHub Actions" mode (no `gh-pages` branch; it
-serves whatever artifact the last deploy workflow uploaded), and the `/q2/`
-path is fixed by GitHub (project Pages sites always live at
-`https://<org>.github.io/<repo>/`). It is being freed for the Q2
-documentation (bd-73lilznv,
-`claude-notes/plans/2026-10-26-move-sandbox-free-q2-pages.md`). Until
-production quarto-hub.com is rebuilt against the `/q2-sandbox/` default,
-`deploy-sandboxed-preview.yml` keeps publishing the same sandbox bundle here
-too; it is deleted once the cutover is verified.
+`deploy-docs.yml` builds q2 from the pushed commit, stages the example
+projects (`cargo xtask stage-doc-examples`), renders `docs/` with that q2, and
+deploys `docs/_site` to this repo's own Pages site through the
+`github-pages` environment. Pages here is in "GitHub Actions" mode (no
+`gh-pages` branch; it serves the artifact the last deploy uploaded), and the
+`/q2/` path is fixed by GitHub: project Pages sites always live at
+`https://<org>.github.io/<repo>/`.
+
+It runs on any push to `main` touching `docs/` or `examples/`, or manually
+via `gh workflow run deploy-docs.yml`. Pull requests touching those paths run
+the build job only, so a docs page that fails to render is caught before
+merge.
+
+Until 2026-10 this site served the sandboxed preview, whose service worker
+breaks page loads for anyone who still has it registered.
+`docs/serviceWorker.js` replaces it with one that unregisters itself; see
+the comment there for when it can go (bd-73lilznv).
 
 Note that both sites share the `quarto-dev.github.io` origin; giving the
 sandbox an origin of its own is bd-gotwa715.

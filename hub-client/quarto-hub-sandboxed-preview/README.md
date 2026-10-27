@@ -34,8 +34,9 @@ from the sandbox attribute.
   (the asset dir is deliberately not `assets/` — the service worker exempts
   it from VFS proxying, and a project's own `assets/` folder must not be
   shadowed)
-- **Output locations**: `dist/` (deployed to GitHub Pages by
-  `.github/workflows/deploy-sandboxed-preview.yml`) and a copy at
+- **Output locations**: `dist/` (deployed to
+  https://quarto-dev.github.io/q2-sandbox/ by
+  `.github/workflows/deploy-q2-sandbox.yml`) and a copy at
   `../public/q2-sandboxed-preview/` (gitignored; same-origin fallback for
   hub-client dev via `VITE_Q2_SANDBOXED_PREVIEW_URL=q2-sandboxed-preview/index.html`)
 
