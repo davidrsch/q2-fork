@@ -25,6 +25,7 @@ pub mod json_errors;
 pub mod jupyter_kernel_cleanup_e2e;
 pub mod lmd_snapshots;
 pub mod lua_host_context_cli;
+pub mod lua_os_exit_cli;
 pub mod metadata_flag_cli_e2e;
 pub mod nested_projects_cli;
 pub mod nightly_gate;

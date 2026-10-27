@@ -55,6 +55,14 @@ pub enum LuaFilterError {
     ///
     /// [`InvalidReturn`]: LuaFilterError::InvalidReturn
     InvalidScriptReturn(String),
+    /// The filter called `os.exit(code)` (GH #941). Quarto 1 filters do
+    /// this to fail a render; here it fails this document only, like
+    /// `error()`, and the render goes on to the next one. The code is
+    /// reported, not propagated as the process status.
+    Exit {
+        filter: std::path::PathBuf,
+        code: i64,
+    },
 }
 
 impl std::fmt::Display for LuaFilterError {
@@ -66,6 +74,12 @@ impl std::fmt::Display for LuaFilterError {
             LuaFilterError::LuaError(err) => write!(f, "Lua filter error: {}", err),
             LuaFilterError::InvalidReturn(msg) => write!(f, "Invalid filter return: {}", msg),
             LuaFilterError::InvalidScriptReturn(msg) => write!(f, "{}", msg),
+            LuaFilterError::Exit { filter, code } => write!(
+                f,
+                "Lua filter {} called os.exit({}); the document was not rendered",
+                filter.display(),
+                code
+            ),
         }
     }
 }
@@ -176,6 +190,10 @@ pub fn create_filter_environment_with(
     };
     #[cfg(not(target_arch = "wasm32"))]
     let lua = Lua::new();
+
+    // os.exit fails the document, not the process (GH #941). On native this
+    // replaces the stdlib's libc exit; on WASM it extends the synthetic os.
+    super::os_exit::install_os_exit(&lua)?;
 
     // Create mediabag for storing media items
     // In the future, this could be pre-populated from the document or passed in
@@ -289,6 +307,40 @@ pub async fn apply_lua_filter(
 /// [`apply_lua_filter`] with source dialects available to the filter's
 /// `require` (bd-76ogq4ew).
 pub async fn apply_lua_filter_with(
+    pandoc: &Pandoc,
+    context: &ASTContext,
+    filter_path: &Path,
+    target_format: &str,
+    runtime: Arc<dyn SystemRuntime>,
+    attribution: Option<Arc<dyn crate::attribution::AttributionLookup>>,
+    options: &crate::lua_options::LuaOptions,
+) -> FilterResult<FilterOutput> {
+    let result = apply_lua_filter_inner(
+        pandoc,
+        context,
+        filter_path,
+        target_format,
+        runtime,
+        attribution,
+        options,
+    )
+    .await;
+    // `os.exit` surfaces as a Lua error wrapping `LuaExit`, whether it was
+    // raised while the script loaded or inside a handler (GH #941). Name
+    // it as what it is rather than printing the wrapped error chain.
+    match result {
+        Err(LuaFilterError::LuaError(err)) => match super::os_exit::requested_exit(&err) {
+            Some(code) => Err(LuaFilterError::Exit {
+                filter: filter_path.to_path_buf(),
+                code,
+            }),
+            None => Err(LuaFilterError::LuaError(err)),
+        },
+        other => other,
+    }
+}
+
+async fn apply_lua_filter_inner(
     pandoc: &Pandoc,
     context: &ASTContext,
     filter_path: &Path,

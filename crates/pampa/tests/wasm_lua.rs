@@ -584,6 +584,9 @@ function Para(el)
     -- the host's environment snapshot replaces (GH #939).
     assert(type(os.getenv) == "function", "os.getenv should be a function")
     assert(os.getenv("QUARTO_PROFILE") == nil, "no environment in the browser")
+    -- os.exit is the document-failing replacement, not absent (GH #941).
+    assert(type(os.exit) == "function", "os.exit should be a function")
+    assert(pcall(os.exit, 1) == false, "os.exit should raise, not return")
     return el
 end
 "#

@@ -1823,7 +1823,10 @@ mod tests {
             .collect::<Vec<_>>()
             .join(".");
         assert_ne!(expected, "0.1.0", "the hard-coded placeholder must be gone");
-        let shown: String = lua.load(r#"return tostring(quarto.version)"#).eval().unwrap();
+        let shown: String = lua
+            .load(r#"return tostring(quarto.version)"#)
+            .eval()
+            .unwrap();
         assert_eq!(shown, expected);
         // Q1-era extensions build the string this way; it must keep working
         // on the userdata (GH #942).
