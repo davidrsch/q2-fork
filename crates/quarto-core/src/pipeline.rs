@@ -2266,8 +2266,7 @@ pub fn build_transform_pipeline(
     target_format: String,
     pipeline_profile: crate::format::PipelineProfile,
     variables: Option<quarto_pandoc_types::ConfigValue>,
-    project_env: hashlink::LinkedHashMap<String, String>,
-    quarto_profile: Option<String>,
+    env_snapshot: Option<std::sync::Arc<crate::project::environment::EnvSnapshot>>,
 ) -> TransformPipeline {
     let mut pipeline: TransformPipeline = TransformPipeline::new();
 
@@ -2326,8 +2325,7 @@ pub fn build_transform_pipeline(
         runtime.clone(),
         lua_format,
         variables,
-        project_env,
-        quarto_profile,
+        env_snapshot,
     )));
     // Heading ids follow the *final* text: shortcode expansion just above
     // and lmd cells (`lmd-execute`, before the transforms) both rewrite
@@ -3213,8 +3211,7 @@ pub fn build_q2_preview_transform_pipeline(
     target_format: String,
     pipeline_profile: crate::format::PipelineProfile,
     variables: Option<quarto_pandoc_types::ConfigValue>,
-    project_env: hashlink::LinkedHashMap<String, String>,
-    quarto_profile: Option<String>,
+    env_snapshot: Option<std::sync::Arc<crate::project::environment::EnvSnapshot>>,
 ) -> TransformPipeline {
     let mut pipeline = build_transform_pipeline(
         shortcode_paths,
@@ -3223,8 +3220,7 @@ pub fn build_q2_preview_transform_pipeline(
         target_format,
         pipeline_profile,
         variables,
-        project_env,
-        quarto_profile,
+        env_snapshot,
     );
     pipeline.retain_excluding(Q2_PREVIEW_TRANSFORM_EXCLUDED);
     pipeline
@@ -4472,7 +4468,6 @@ mod tests {
             "html".to_string(),
             crate::format::PipelineProfile::HtmlRender,
             None,
-            Default::default(),
             None,
         );
         let html_names: Vec<&str> = html.iter().map(|t| t.name()).collect();
@@ -5194,7 +5189,6 @@ mod tests {
             "q2-preview".to_string(),
             crate::format::PipelineProfile::HtmlPreview,
             None,
-            Default::default(),
             None,
         );
         let names: Vec<&str> = pipeline.iter().map(|t| t.name()).collect();
@@ -5220,7 +5214,6 @@ mod tests {
             "q2-preview".to_string(),
             crate::format::PipelineProfile::HtmlPreview,
             None,
-            Default::default(),
             None,
         );
         let names: Vec<&str> = pipeline.iter().map(|t| t.name()).collect();
@@ -5275,7 +5268,6 @@ mod tests {
             "html".to_string(),
             crate::format::PipelineProfile::HtmlRender,
             None,
-            Default::default(),
             None,
         );
         let names: Vec<&str> = pipeline.iter().map(|t| t.name()).collect();
@@ -5333,7 +5325,6 @@ mod tests {
             "html".to_string(),
             crate::format::PipelineProfile::HtmlRender,
             None,
-            Default::default(),
             None,
         );
         let found = pipeline
@@ -5366,7 +5357,6 @@ mod tests {
             "html".to_string(),
             crate::format::PipelineProfile::HtmlRender,
             None,
-            Default::default(),
             None,
         );
         let names: Vec<&str> = pipeline.iter().map(|t| t.name()).collect();
@@ -5408,7 +5398,6 @@ mod tests {
             "html".to_string(),
             crate::format::PipelineProfile::HtmlRender,
             None,
-            Default::default(),
             None,
         );
         let names: Vec<&str> = pipeline.iter().map(|t| t.name()).collect();
@@ -5485,7 +5474,6 @@ mod tests {
                 format.to_string(),
                 crate::format::PipelineProfile::from_format(format),
                 None,
-                Default::default(),
                 None,
             );
             let steps: Vec<(&str, TransformPhase)> =
@@ -5567,7 +5555,6 @@ mod tests {
             "html".to_string(),
             crate::format::PipelineProfile::HtmlRender,
             None,
-            Default::default(),
             None,
         );
 
@@ -5599,7 +5586,6 @@ mod tests {
             "html".to_string(),
             crate::format::PipelineProfile::HtmlRender,
             None,
-            Default::default(),
             None,
         );
         let expected: Vec<&str> = pipeline
@@ -5632,7 +5618,6 @@ mod tests {
             "html".to_string(),
             crate::format::PipelineProfile::HtmlRender,
             None,
-            Default::default(),
             None,
         );
         let expected: Vec<&str> = pipeline
@@ -5677,7 +5662,6 @@ mod tests {
                 "html".to_string(),
                 crate::format::PipelineProfile::HtmlRender,
                 None,
-                Default::default(),
                 None,
             );
             let project = make_test_project();
@@ -5846,7 +5830,6 @@ mod tests {
             "typst".to_string(),
             crate::format::PipelineProfile::from_format("typst"),
             None,
-            Default::default(),
             None,
         );
         let expected: Vec<&str> = pipeline
@@ -6355,7 +6338,6 @@ mod tests {
             "html".to_string(),
             crate::format::PipelineProfile::HtmlRender,
             None,
-            Default::default(),
             None,
         );
         let names: Vec<&str> = pipeline.iter().map(|t| t.name()).collect();
@@ -6394,7 +6376,6 @@ mod tests {
             "q2-preview".to_string(),
             crate::format::PipelineProfile::HtmlPreview,
             None,
-            Default::default(),
             None,
         );
         let names: Vec<&str> = pipeline.iter().map(|t| t.name()).collect();
@@ -6422,7 +6403,6 @@ mod tests {
                 format.to_string(),
                 crate::format::PipelineProfile::from_format(format),
                 None,
-                Default::default(),
                 None,
             );
             let names: Vec<&str> = pipeline.iter().map(|t| t.name()).collect();
@@ -6460,7 +6440,6 @@ mod tests {
             "html".to_string(),
             crate::format::PipelineProfile::HtmlRender,
             None,
-            Default::default(),
             None,
         );
         let html_names: Vec<&str> = html_pipeline.iter().map(|t| t.name()).collect();
@@ -6480,7 +6459,6 @@ mod tests {
             "docx".to_string(),
             crate::format::PipelineProfile::Pandoc("docx".to_string()),
             None,
-            Default::default(),
             None,
         );
         let docx_names: Vec<&str> = docx_pipeline.iter().map(|t| t.name()).collect();
@@ -6513,7 +6491,6 @@ mod tests {
             "docx".to_string(),
             crate::format::PipelineProfile::Pandoc("docx".to_string()),
             None,
-            Default::default(),
             None,
         );
         let docx_names: Vec<&str> = docx_pipeline.iter().map(|t| t.name()).collect();
@@ -6545,7 +6522,6 @@ mod tests {
                 format.to_string(),
                 crate::format::PipelineProfile::from_format(format),
                 None,
-                Default::default(),
                 None,
             );
             let names: Vec<&str> = pipeline.iter().map(|t| t.name()).collect();
@@ -6570,7 +6546,6 @@ mod tests {
             "html".to_string(),
             crate::format::PipelineProfile::HtmlRender,
             None,
-            Default::default(),
             None,
         );
         let names: Vec<&str> = pipeline.iter().map(|t| t.name()).collect();
@@ -6667,7 +6642,6 @@ mod tests {
             "revealjs".to_string(),
             crate::format::PipelineProfile::RevealjsRender,
             None,
-            Default::default(),
             None,
         );
         let names: Vec<&str> = pipeline.iter().map(|t| t.name()).collect();
@@ -6777,7 +6751,6 @@ mod tests {
             "html".to_string(),
             crate::format::PipelineProfile::HtmlRender,
             None,
-            Default::default(),
             None,
         );
         let html_names: Vec<&str> = html.iter().map(|t| t.name()).collect();
@@ -6816,7 +6789,6 @@ mod tests {
             "html".to_string(),
             crate::format::PipelineProfile::HtmlRender,
             None,
-            Default::default(),
             None,
         );
         let nav_names: Vec<&str> = html
@@ -6858,7 +6830,6 @@ mod tests {
             "docx".to_string(),
             crate::format::PipelineProfile::Pandoc("docx".to_string()),
             None,
-            Default::default(),
             None,
         );
         let names: Vec<&str> = pipeline.iter().map(|t| t.name()).collect();
@@ -6925,7 +6896,6 @@ mod tests {
             "html".to_string(),
             crate::format::PipelineProfile::HtmlRender,
             None,
-            Default::default(),
             None,
         );
         let names: Vec<&str> = pipeline.iter().map(|t| t.name()).collect();
@@ -6988,7 +6958,6 @@ mod tests {
             "docx".to_string(),
             crate::format::PipelineProfile::Pandoc("docx".to_string()),
             None,
-            Default::default(),
             None,
         );
 
@@ -7035,7 +7004,6 @@ mod tests {
             "q2-preview".to_string(),
             crate::format::PipelineProfile::HtmlPreview,
             None,
-            Default::default(),
             None,
         );
         let names: Vec<&str> = pipeline.iter().map(|t| t.name()).collect();
@@ -7047,7 +7015,6 @@ mod tests {
             "q2-preview".to_string(),
             crate::format::PipelineProfile::HtmlPreview,
             None,
-            Default::default(),
             None,
         );
         let preview_names: Vec<&str> = preview_pipeline.iter().map(|t| t.name()).collect();
@@ -7523,7 +7490,6 @@ mod tests {
             "html".to_string(),
             crate::format::PipelineProfile::HtmlRender,
             None,
-            Default::default(),
             None,
         );
         let transform_names: Vec<&str> = html_transforms.iter().map(|t| t.name()).collect();

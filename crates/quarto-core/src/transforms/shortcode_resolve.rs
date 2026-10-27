@@ -54,6 +54,7 @@ use quarto_analysis::AnalysisContext;
 
 use crate::Result;
 use crate::extension::types::Extension;
+use crate::project::environment::EnvSnapshot;
 use crate::render::RenderContext;
 use crate::transform::{AstTransform, TransformPhase};
 use quarto_system_runtime::SystemRuntime;
@@ -182,34 +183,26 @@ fn positional_arg_to_string(arg: &ShortcodeArg) -> Option<String> {
 
 /// Built-in handler for `{{< env NAME >}}` / `{{< env NAME fallback >}}`.
 ///
-/// Resolution order: the real process environment, then the project's
-/// `_environment` files (loaded into `project_env` by
-/// [`crate::project::environment::load_project_environment`] — q2
-/// never mutates the process env, so file values arrive as data), then
-/// the optional second positional argument (Q1 1.5, #8316). Unset
-/// everywhere with no fallback is a Q-16-5 warning (Q1 warned and
-/// emitted `?env`). On wasm32 `std::env::var` always errs, so only the
-/// project env map (loaded through the VFS) and fallbacks apply there.
+/// Reads the render's environment snapshot
+/// ([`crate::stage::StageContext::env_snapshot`], built once per document
+/// by [`crate::project::environment::snapshot_environment`]): the real
+/// process environment, then the project's `_environment` files for keys
+/// the real environment lacks, then `QUARTO_PROFILE` forced to the
+/// normalized active profile list (bd-fu16z22k) — the same map Lua
+/// filters and shortcode scripts see through `os.getenv`, so the two can
+/// never disagree. The optional second positional argument is the
+/// fallback (Q1 1.5, #8316); unset everywhere with no fallback is a
+/// Q-16-5 warning (Q1 warned and emitted `?env`).
+///
+/// Without a snapshot (a pipeline built outside a `StageContext`, as in
+/// unit tests) the handler reads the real process environment directly.
 pub struct EnvShortcodeHandler {
-    project_env: hashlink::LinkedHashMap<String, String>,
-    /// Normalized active project-profile list for `QUARTO_PROFILE`
-    /// lookups (bd-fu16z22k). Checked BEFORE the real environment:
-    /// after `--profile b` replaced `QUARTO_PROFILE=a`, the shortcode
-    /// must resolve `b` — Q1 guaranteed this by writing the
-    /// normalized list back into the env; q2 never mutates its env,
-    /// so the handler carries the value as data instead.
-    quarto_profile: Option<String>,
+    env: Option<Arc<EnvSnapshot>>,
 }
 
 impl EnvShortcodeHandler {
-    pub fn new(
-        project_env: hashlink::LinkedHashMap<String, String>,
-        quarto_profile: Option<String>,
-    ) -> Self {
-        Self {
-            project_env,
-            quarto_profile,
-        }
+    pub fn new(env: Option<Arc<EnvSnapshot>>) -> Self {
+        Self { env }
     }
 }
 
@@ -240,17 +233,16 @@ impl ShortcodeHandler for EnvShortcodeHandler {
             });
         };
 
-        let value = (name == crate::project::project_profile::QUARTO_PROFILE_VAR)
-            .then(|| self.quarto_profile.clone())
-            .flatten()
-            .or_else(|| std::env::var(&name).ok())
-            .or_else(|| self.project_env.get(&name).cloned())
-            .or_else(|| {
-                shortcode
-                    .positional_args
-                    .get(1)
-                    .and_then(positional_arg_to_string)
-            });
+        let value = match &self.env {
+            Some(env) => env.get(&name).cloned(),
+            None => std::env::var(&name).ok(),
+        }
+        .or_else(|| {
+            shortcode
+                .positional_args
+                .get(1)
+                .and_then(positional_arg_to_string)
+        });
 
         match value {
             Some(text) => ShortcodeResult::Inlines(vec![Inline::Str(Str {
@@ -470,6 +462,10 @@ pub struct ShortcodeResolveTransform {
     extensions: Vec<Extension>,
     /// System runtime for reading Lua files
     runtime: Option<Arc<dyn SystemRuntime>>,
+    /// The render's environment snapshot, for the Lua shortcode engine's
+    /// `os.getenv` (through `HostContext`). The `env` handler holds the
+    /// same `Arc`. `None` outside a `StageContext`-driven render.
+    env_snapshot: Option<Arc<EnvSnapshot>>,
     /// Target format string (e.g., "html") for Lua FORMAT global
     target_format: String,
 }
@@ -479,25 +475,25 @@ impl ShortcodeResolveTransform {
     /// Used in tests that don't need Lua support.
     pub fn new() -> Self {
         Self {
-            handlers: Self::builtin_handlers(None, hashlink::LinkedHashMap::new(), None),
+            handlers: Self::builtin_handlers(None, None),
             lua_shortcode_paths: Vec::new(),
             extensions: Vec::new(),
             runtime: None,
             target_format: String::new(),
+            env_snapshot: None,
         }
     }
 
-    /// The built-in Rust handlers: `meta`, `env` (fed by the project's
-    /// `_environment` files), and `var` (fed by the project's
+    /// The built-in Rust handlers: `meta`, `env` (fed by the render's
+    /// environment snapshot), and `var` (fed by the project's
     /// `_variables.yml`, when present).
     fn builtin_handlers(
         variables: Option<ConfigValue>,
-        project_env: hashlink::LinkedHashMap<String, String>,
-        quarto_profile: Option<String>,
+        env: Option<Arc<EnvSnapshot>>,
     ) -> Vec<Box<dyn ShortcodeHandler>> {
         vec![
             Box::new(MetaShortcodeHandler),
-            Box::new(EnvShortcodeHandler::new(project_env, quarto_profile)),
+            Box::new(EnvShortcodeHandler::new(env)),
             Box::new(VarShortcodeHandler::new(variables)),
         ]
     }
@@ -512,15 +508,15 @@ impl ShortcodeResolveTransform {
         runtime: Arc<dyn SystemRuntime>,
         target_format: String,
         variables: Option<ConfigValue>,
-        project_env: hashlink::LinkedHashMap<String, String>,
-        quarto_profile: Option<String>,
+        env_snapshot: Option<Arc<EnvSnapshot>>,
     ) -> Self {
         Self {
-            handlers: Self::builtin_handlers(variables, project_env, quarto_profile),
+            handlers: Self::builtin_handlers(variables, env_snapshot.clone()),
             lua_shortcode_paths,
             extensions,
             runtime: Some(runtime),
             target_format,
+            env_snapshot,
         }
     }
 
@@ -1233,7 +1229,7 @@ impl AstTransform for ShortcodeResolveTransform {
                 runtime.as_ref(),
                 ctx.document,
                 ctx.output_path(),
-                ctx.env_snapshot.clone(),
+                self.env_snapshot.clone(),
             );
             match pampa::lua::LuaShortcodeEngine::new_with(
                 &self.target_format,
@@ -2454,53 +2450,63 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_env_shortcode_handler_set_and_fallback() {
-        let handler = EnvShortcodeHandler::new(Default::default(), None);
-        let meta = ConfigValue::new_map(vec![], dummy_source_info());
+    fn snapshot(pairs: &[(&str, &str)]) -> Option<Arc<EnvSnapshot>> {
+        Some(Arc::new(
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        ))
+    }
 
-        // Set variable wins over fallback.
-        // SAFETY: test-local variable name; nextest runs each test in its
-        // own process, so no cross-test env races.
-        unsafe { std::env::set_var("QUARTO_TEST_ENV_SC", "env-value") };
-        let shortcode = make_shortcode("env", vec!["QUARTO_TEST_ENV_SC", "fallback"]);
+    fn resolve_env(handler: &EnvShortcodeHandler, args: Vec<&str>) -> ShortcodeResult {
+        let meta = ConfigValue::new_map(vec![], dummy_source_info());
+        let shortcode = make_shortcode("env", args);
         let ctx = ShortcodeContext {
             metadata: &meta,
             source_info: &shortcode.source_info,
         };
-        match handler.resolve(&shortcode, &ctx, ResolutionContext::Inline) {
+        handler.resolve(&shortcode, &ctx, ResolutionContext::Inline)
+    }
+
+    fn expect_str(result: ShortcodeResult) -> String {
+        match result {
             ShortcodeResult::Inlines(inlines) => {
                 let Inline::Str(s) = &inlines[0] else {
                     panic!("expected Str");
                 };
-                assert_eq!(s.text, "env-value");
+                s.text.clone()
             }
             other => panic!("Expected Inlines, got {:?}", std::mem::discriminant(&other)),
         }
+    }
 
-        // Unset variable falls back to the second positional arg (Q1 1.5).
-        let shortcode = make_shortcode("env", vec!["QUARTO_TEST_ENV_SC_UNSET", "fallback"]);
-        let ctx = ShortcodeContext {
-            metadata: &meta,
-            source_info: &shortcode.source_info,
-        };
-        match handler.resolve(&shortcode, &ctx, ResolutionContext::Inline) {
-            ShortcodeResult::Inlines(inlines) => {
-                let Inline::Str(s) = &inlines[0] else {
-                    panic!("expected Str");
-                };
-                assert_eq!(s.text, "fallback");
-            }
-            _ => panic!("Expected Inlines"),
-        }
-
-        // Unset without fallback: Q-16-5 error.
-        let shortcode = make_shortcode("env", vec!["QUARTO_TEST_ENV_SC_UNSET"]);
-        let ctx = ShortcodeContext {
-            metadata: &meta,
-            source_info: &shortcode.source_info,
-        };
-        match handler.resolve(&shortcode, &ctx, ResolutionContext::Inline) {
+    #[test]
+    fn test_env_shortcode_handler_set_and_fallback() {
+        // The snapshot is the whole environment: a key in it wins over the
+        // fallback, a key missing from it falls back (Q1 1.5), and missing
+        // with no fallback is the Q-16-5 error. The real process
+        // environment is never consulted when a snapshot is present.
+        let handler = EnvShortcodeHandler::new(snapshot(&[("QUARTO_TEST_ENV_SC", "env-value")]));
+        assert_eq!(
+            expect_str(resolve_env(
+                &handler,
+                vec!["QUARTO_TEST_ENV_SC", "fallback"]
+            )),
+            "env-value"
+        );
+        assert_eq!(
+            expect_str(resolve_env(
+                &handler,
+                vec!["QUARTO_TEST_ENV_SC_UNSET", "fallback"]
+            )),
+            "fallback"
+        );
+        assert_eq!(
+            expect_str(resolve_env(&handler, vec!["PATH", "not-from-the-process"])),
+            "not-from-the-process"
+        );
+        match resolve_env(&handler, vec!["QUARTO_TEST_ENV_SC_UNSET"]) {
             ShortcodeResult::Error(err) => {
                 assert_eq!(err.key, "env:QUARTO_TEST_ENV_SC_UNSET");
                 assert!(format!("{:?}", err.diagnostic).contains("Q-16-5"));
@@ -2510,113 +2516,58 @@ mod tests {
     }
 
     #[test]
-    fn test_env_shortcode_quarto_profile_beats_real_env() {
-        // bd-fu16z22k: `{{< env QUARTO_PROFILE >}}` must resolve the
-        // NORMALIZED active list, even when the real environment
-        // still holds the raw pre-`--profile` value.
-        // SAFETY: test-local; nextest runs each test in its own process.
-        unsafe { std::env::set_var("QUARTO_PROFILE", "stale-raw-value") };
-        let handler =
-            EnvShortcodeHandler::new(Default::default(), Some("advanced,production".to_string()));
-        let meta = ConfigValue::new_map(vec![], dummy_source_info());
-        let shortcode = make_shortcode("env", vec!["QUARTO_PROFILE"]);
-        let ctx = ShortcodeContext {
-            metadata: &meta,
-            source_info: &shortcode.source_info,
-        };
-        match handler.resolve(&shortcode, &ctx, ResolutionContext::Inline) {
-            ShortcodeResult::Inlines(inlines) => {
-                let Inline::Str(s) = &inlines[0] else {
-                    panic!("expected Str");
-                };
-                assert_eq!(s.text, "advanced,production");
-            }
-            _ => panic!("Expected Inlines"),
-        }
-
-        // With no active profiles the special case is inert: the
-        // real environment value shows through unchanged.
-        let handler = EnvShortcodeHandler::new(Default::default(), None);
-        let shortcode = make_shortcode("env", vec!["QUARTO_PROFILE"]);
-        let ctx = ShortcodeContext {
-            metadata: &meta,
-            source_info: &shortcode.source_info,
-        };
-        match handler.resolve(&shortcode, &ctx, ResolutionContext::Inline) {
-            ShortcodeResult::Inlines(inlines) => {
-                let Inline::Str(s) = &inlines[0] else {
-                    panic!("expected Str");
-                };
-                assert_eq!(s.text, "stale-raw-value");
-            }
-            _ => panic!("Expected Inlines"),
-        }
+    fn test_env_shortcode_snapshot_carries_profile_and_file_values() {
+        // The layering (real env beats `_environment`, `QUARTO_PROFILE` is
+        // the normalized active list) is `snapshot_environment`'s job and
+        // is tested there; the handler just reads what it was given.
+        let snap = Arc::new(crate::project::environment::snapshot_environment(
+            [("QUARTO_PROFILE".to_string(), "stale-raw-value".to_string())]
+                .into_iter()
+                .collect(),
+            &[(
+                "QUARTO_TEST_ENVFILE_ONLY".to_string(),
+                "from-file".to_string(),
+            )]
+            .into_iter()
+            .collect(),
+            Some("advanced,production"),
+        ));
+        let handler = EnvShortcodeHandler::new(Some(snap));
+        assert_eq!(
+            expect_str(resolve_env(&handler, vec!["QUARTO_PROFILE"])),
+            "advanced,production"
+        );
+        assert_eq!(
+            expect_str(resolve_env(
+                &handler,
+                vec!["QUARTO_TEST_ENVFILE_ONLY", "fallback"]
+            )),
+            "from-file"
+        );
     }
 
     #[test]
-    fn test_env_shortcode_handler_project_env() {
-        let mut project_env = hashlink::LinkedHashMap::new();
-        project_env.insert(
-            "QUARTO_TEST_ENVFILE_ONLY".to_string(),
-            "from-file".to_string(),
+    fn test_env_shortcode_without_snapshot_reads_the_process_environment() {
+        // No `StageContext` (unit tests, custom pipelines): the real
+        // environment is the only source, as before the snapshot existed.
+        // SAFETY: test-local variable name; nextest runs each test in its
+        // own process, so no cross-test env races.
+        unsafe { std::env::set_var("QUARTO_TEST_ENV_SC_NOSNAP", "from-real-env") };
+        let handler = EnvShortcodeHandler::new(None);
+        assert_eq!(
+            expect_str(resolve_env(
+                &handler,
+                vec!["QUARTO_TEST_ENV_SC_NOSNAP", "fallback"]
+            )),
+            "from-real-env"
         );
-        project_env.insert(
-            "QUARTO_TEST_ENVFILE_SHADOWED".to_string(),
-            "from-file".to_string(),
+        assert_eq!(
+            expect_str(resolve_env(
+                &handler,
+                vec!["QUARTO_TEST_ENV_SC_NOSNAP_UNSET", "fb"]
+            )),
+            "fb"
         );
-        let handler = EnvShortcodeHandler::new(project_env, None);
-        let meta = ConfigValue::new_map(vec![], dummy_source_info());
-
-        // Defined only in the project env map: map value used (even
-        // when a fallback arg is present — the map is a definition,
-        // not a fallback).
-        let shortcode = make_shortcode("env", vec!["QUARTO_TEST_ENVFILE_ONLY", "fallback"]);
-        let ctx = ShortcodeContext {
-            metadata: &meta,
-            source_info: &shortcode.source_info,
-        };
-        match handler.resolve(&shortcode, &ctx, ResolutionContext::Inline) {
-            ShortcodeResult::Inlines(inlines) => {
-                let Inline::Str(s) = &inlines[0] else {
-                    panic!("expected Str");
-                };
-                assert_eq!(s.text, "from-file");
-            }
-            other => panic!("Expected Inlines, got {:?}", std::mem::discriminant(&other)),
-        }
-
-        // Defined in both the real env and the map: the real
-        // environment wins (q2 never lets file values shadow it).
-        // SAFETY: test-local variable name; nextest runs each test in
-        // its own process, so no cross-test env races.
-        unsafe { std::env::set_var("QUARTO_TEST_ENVFILE_SHADOWED", "from-real-env") };
-        let shortcode = make_shortcode("env", vec!["QUARTO_TEST_ENVFILE_SHADOWED"]);
-        let ctx = ShortcodeContext {
-            metadata: &meta,
-            source_info: &shortcode.source_info,
-        };
-        match handler.resolve(&shortcode, &ctx, ResolutionContext::Inline) {
-            ShortcodeResult::Inlines(inlines) => {
-                let Inline::Str(s) = &inlines[0] else {
-                    panic!("expected Str");
-                };
-                assert_eq!(s.text, "from-real-env");
-            }
-            _ => panic!("Expected Inlines"),
-        }
-
-        // Absent everywhere: still the Q-16-5 error.
-        let shortcode = make_shortcode("env", vec!["QUARTO_TEST_ENVFILE_ABSENT"]);
-        let ctx = ShortcodeContext {
-            metadata: &meta,
-            source_info: &shortcode.source_info,
-        };
-        match handler.resolve(&shortcode, &ctx, ResolutionContext::Inline) {
-            ShortcodeResult::Error(err) => {
-                assert!(format!("{:?}", err.diagnostic).contains("Q-16-5"));
-            }
-            _ => panic!("Expected Error"),
-        }
     }
 
     #[test]
@@ -2966,6 +2917,7 @@ mod tests {
             extensions: Vec::new(),
             runtime: None,
             target_format: String::new(),
+            env_snapshot: None,
         };
 
         let mut ast = Pandoc {
@@ -3001,6 +2953,7 @@ mod tests {
             extensions: Vec::new(),
             runtime: None,
             target_format: String::new(),
+            env_snapshot: None,
         };
 
         // Para with text + shortcode — not a block-context shortcode
@@ -3070,6 +3023,7 @@ mod tests {
             extensions: Vec::new(),
             runtime: None,
             target_format: String::new(),
+            env_snapshot: None,
         };
 
         // Para with text + shortcode — inline context, handler returns Blocks
@@ -3116,6 +3070,7 @@ mod tests {
             extensions: Vec::new(),
             runtime: None,
             target_format: String::new(),
+            env_snapshot: None,
         };
 
         // Escaped shortcode alone in Para — should preserve as literal
@@ -3515,7 +3470,6 @@ mod tests {
                 runtime,
                 "html".to_string(),
                 None,
-                hashlink::LinkedHashMap::new(),
                 None,
             );
 
@@ -3593,7 +3547,6 @@ mod tests {
                 runtime,
                 "html".to_string(),
                 None,
-                Default::default(),
                 None,
             );
 
@@ -3647,7 +3600,6 @@ mod tests {
                 make_runtime(),
                 "html".to_string(),
                 None,
-                Default::default(),
                 None,
             );
             let mut ast = Pandoc {
@@ -3705,7 +3657,6 @@ mod tests {
                 runtime,
                 "html".to_string(),
                 None,
-                Default::default(),
                 None,
             );
 
@@ -3754,7 +3705,6 @@ mod tests {
                 runtime,
                 "html".to_string(),
                 None,
-                Default::default(),
                 None,
             );
 
@@ -3803,7 +3753,6 @@ mod tests {
                 runtime,
                 "html".to_string(),
                 None,
-                Default::default(),
                 None,
             );
 
@@ -3858,7 +3807,6 @@ mod tests {
                 runtime,
                 "html".to_string(),
                 None,
-                Default::default(),
                 None,
             );
 
@@ -3905,7 +3853,6 @@ mod tests {
                 runtime,
                 "html".to_string(),
                 None,
-                Default::default(),
                 None,
             );
 
@@ -3962,7 +3909,6 @@ mod tests {
                 runtime,
                 "html".to_string(),
                 None,
-                Default::default(),
                 None,
             );
 

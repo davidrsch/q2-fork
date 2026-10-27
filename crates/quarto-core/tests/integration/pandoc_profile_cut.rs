@@ -193,7 +193,6 @@ async fn t3_1_panel_tabset_runs_under_pandoc_docx_profile() {
         "docx".to_string(),
         ctx.pipeline_profile.clone(),
         None,
-        Default::default(),
         None,
     );
 
@@ -300,7 +299,6 @@ async fn run_pandoc_docx_pipeline(ast: &mut Pandoc, ctx: &mut RenderContext<'_>)
         "docx".to_string(),
         ctx.pipeline_profile.clone(),
         None,
-        Default::default(),
         None,
     );
     let names = pipeline.transform_names();
