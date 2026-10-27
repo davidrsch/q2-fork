@@ -162,9 +162,7 @@ impl UserData for LuaVersion {
                     _ => Value::Nil,
                 })
             }
-            Value::String(s)
-                if s.to_str().is_ok_and(|s| &*s == "must_be_at_least") =>
-            {
+            Value::String(s) if s.to_str().is_ok_and(|s| &*s == "must_be_at_least") => {
                 Ok(Value::Function(lua.create_function(
                     |_, (this, expected, message): (AnyUserData, Value, Option<String>)| {
                         let actual = this.borrow::<LuaVersion>()?;

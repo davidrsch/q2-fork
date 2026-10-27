@@ -240,7 +240,10 @@ fn single_file_render_has_q1_nils_and_no_profiles() {
     assert_eq!(doc["Q2_TEST_FILE_ONLY"], "nil");
     // Paths are still known outside a project.
     let input = Path::new(&doc["input_file"]);
-    assert!(input.is_absolute() && input.ends_with("doc.qmd"), "{input:?}");
+    assert!(
+        input.is_absolute() && input.ends_with("doc.qmd"),
+        "{input:?}"
+    );
     assert_eq!(
         Path::new(&doc["output_file"]),
         input.with_file_name("doc.html")

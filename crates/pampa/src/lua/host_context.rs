@@ -202,7 +202,10 @@ mod tests {
     #[test]
     fn doc_paths_and_pandoc_state_with_a_host() {
         let input = PathBuf::from("/proj").join("sub").join("page.qmd");
-        let output = PathBuf::from("/proj").join("_site").join("sub").join("page.html");
+        let output = PathBuf::from("/proj")
+            .join("_site")
+            .join("sub")
+            .join("page.html");
         let host = HostContext {
             input_file: Some(input.clone()),
             output_file: Some(output.clone()),

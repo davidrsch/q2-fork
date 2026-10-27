@@ -24,6 +24,7 @@ pub mod mediabag;
 // quarto.metadata.get and the `meta` proxy (bd-lmd-exploration-jqv2nbl4 spike 6).
 mod metadata;
 mod nodes;
+mod os_exit;
 mod os_wasm;
 mod pandoc_doc;
 mod path;

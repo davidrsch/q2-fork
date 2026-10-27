@@ -120,6 +120,10 @@ impl LuaShortcodeEngine {
         #[cfg(not(target_arch = "wasm32"))]
         let lua = Lua::new();
 
+        // os.exit raises instead of exiting the process (GH #941); a
+        // handler that calls it fails like one that calls error().
+        super::os_exit::install_os_exit(&lua).map_err(LuaShortcodeError::LuaError)?;
+
         let mediabag = create_shared_mediabag();
         register_pandoc_namespace(&lua, runtime.clone(), mediabag)
             .map_err(LuaShortcodeError::LuaError)?;
