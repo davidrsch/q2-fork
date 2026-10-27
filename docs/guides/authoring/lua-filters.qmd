@@ -344,3 +344,88 @@ Quarto 1 accepts several other fields on a dependency: `meta`, `links`,
 yet, and warns once per dependency that names one, so a filter carried over
 from Quarto 1 tells you what was dropped rather than failing. Any other
 field is a typo and raises an error.
+
+## Where the filter is running
+
+A filter often needs to know which file it is processing and where the
+project is, for example to build a link from the current page to a file at
+the project root. Quarto 2 provides the same values Quarto 1 did:
+
+``` lua
+quarto.doc.input_file        -- absolute path of the file being rendered
+quarto.doc.output_file       -- absolute path its output will be written to
+quarto.project.directory     -- project root (nil outside a project)
+quarto.project.output_directory  -- resolved output directory (nil outside a project)
+quarto.project.offset        -- relative path from this file's directory back
+                             -- to the project root: "." or "../..", forward
+                             -- slashes (nil outside a project)
+quarto.project.profile       -- pandoc.List of active profile names, possibly empty
+```
+
+So a page at `guides/intro.qmd` links to `appendix.qmd` at the root with:
+
+``` lua
+local href = quarto.project.offset .. "/appendix.html"
+```
+
+`PANDOC_STATE.input_files` (a one-element list holding `input_file`) and
+`PANDOC_STATE.output_file` are set too, for filters written against pandoc's
+API. The other `PANDOC_STATE` fields have no equivalent here and are `nil`.
+
+### Environment variables and profiles
+
+`os.getenv` sees the environment the render started with, plus the variables
+your project's `_environment` files define (a real environment variable
+always wins over a file). `QUARTO_PROFILE` is the active profile list, so a
+filter sees `--profile drafts` the same way it sees
+`QUARTO_PROFILE=drafts`:
+
+``` lua
+if os.getenv("QUARTO_PROFILE") == "drafts" then ... end
+-- or, without string handling:
+if quarto.project.profile:includes("drafts") then ... end
+```
+
+The environment is read once, before any filter runs, and every filter and
+shortcode in the render sees the same values.
+
+## Checking versions
+
+`quarto.version` is the version of Quarto you are running, as a pandoc
+`Version` object. It compares with strings and with other versions, prints
+with `tostring`, and still works with `table.concat`:
+
+``` lua
+if quarto.version < "0.36" then
+  quarto.log.warning("this filter needs Quarto 0.36 or newer")
+end
+print(tostring(quarto.version))           -- "0.36.0"
+print(table.concat(quarto.version, "."))  -- "0.36.0"
+quarto.version:must_be_at_least("0.36")   -- raises if older
+```
+
+`pandoc.types.Version` builds one from a string, a number or a list of
+integers, and `PANDOC_VERSION` / `PANDOC_API_VERSION` are `Version` objects
+as well. Quarto 2 releases are numbered `0.x` for now, so a filter that must
+tell the two apart can test `quarto.version < "1"`: true here, false on
+Quarto 1.
+
+## Failing a render
+
+Three ways to stop, from gentlest to bluntest:
+
+- `quarto.error(message, element)` reports an error diagnostic pointing at
+  `element`'s source location. The document fails; the rest of the project
+  still renders.
+- `error(message)` fails the document with a plain Lua error. The rest of
+  the project still renders and the summary lists the failure.
+- `os.exit(code)` also fails the document. Quarto 1 filters use it because
+  there pandoc was a separate process; in Quarto 2 the filter runs inside
+  the renderer, so `os.exit` is intercepted rather than ending the process.
+  The failure message names the filter and the code; the remaining
+  documents render, errors on them are still reported, and the render as a
+  whole exits non-zero. `os.exit(0)` counts as a failure too, since no
+  output was produced.
+
+Prefer `quarto.error` in new code: it is the only one that points the author
+at a location in their document.
