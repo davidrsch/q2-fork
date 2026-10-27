@@ -234,3 +234,28 @@ and pulls in the preview twins. File it and do not do it under this bug.
   That is acceptable, but coarser than the markdown path.
 - WASM/preview: `copy_footer_images` is native-only, so option B does nothing
   for hub preview. That is the same split as today's markdown-image copy.
+
+## Direction chosen 2026-10-27: a `q2` branch in product-doc-theme
+
+Instead of a dual-tool spelling, the user chose to keep a Quarto 2 version of
+the extension on a `q2` branch of posit-dev/product-doc-theme. Both installers
+accept `org/repo@ref` and try a tag first, then a branch: Q1's
+`githubTagUrlProvider` / `githubBranchUrlProvider` in
+`src/extension/extension-host.ts`, and q2's `parse_github` in
+`crates/quarto-source-fetch/src/target.rs`. So
+`q2 add posit-dev/product-doc-theme@q2` installs the branch. Caveat: a git tag
+named `q2` would win over the branch.
+
+Because the branch is q2-only, the cookie item uses the simpler spelling
+(`[imgs](#){#open_preferences_center title=…}`, no item `href`). That keeps the
+id on the `<a>`, so the open question about the consent vendor's click handler
+no longer applies.
+
+Local branch `q2` in `~/repos/github/posit-dev/product-doc-theme` (commit
+`6e4d99c`, **not pushed**): footer → markdown images, `grid.qmd` `<style>` →
+`{=html}` block, `website.title` `<small>` → `` `<small>`{=html} ``, README
+(install `@q2`, a "Quarto 2 branch" section, markdown footer snippet,
+`q2 preview`). The example renders 6/6 pages with no errors or warnings
+(baseline: 5/6, 9 parse errors, 25 warnings). A fresh site that installs from
+the local clone with `q2 add` and follows the README footer snippet renders
+cleanly, and all four images are copied.
