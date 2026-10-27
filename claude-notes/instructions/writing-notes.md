@@ -100,18 +100,25 @@ double quotes YAML rejects it. The title is markdown, so code spans work.
 `scripts/claude-notes-plan-frontmatter.py` adds both keys to a plan that has
 only a `#` heading and a dated filename.
 
-**Every string scalar in front matter is markdown, not just the title.** Like
-Pandoc, q2 parses any string-valued YAML entry — `title:`, `description:`, a
+**Front-matter strings are markdown by default, not just the title.** Like
+Pandoc, q2 parses string-valued YAML entries — `title:`, `description:`, a
 sidebar label, a nested mapping value — as markdown, so every rule in the
-list above applies inside YAML too. The failure is Q-1-20 ("Failed to parse
-metadata value as markdown") and carries the same span diagnostics a body
-paragraph would: a possessive like `` `connect-satellites'' build.sh` ``
+list above applies inside YAML too. The exceptions are machine-facing keys
+kept as plain strings (`listing.contents`, the `brand` subtree,
+`link-external-filter`; the table is `ANNOTATIONS` in
+`crates/pampa/src/pandoc/meta_annotations.rs`): don't markdown-escape those,
+the backslashes would stay in the value. The failure is Q-1-20 ("Failed to
+parse metadata value as markdown") and carries the same span diagnostics a
+body paragraph would: a possessive like `'connect-satellites'' build.sh'`
 unescapes to apostrophe-plus-space, a close quote without an open (rule 2).
 Plain values such as `status: in-progress` parse trivially; the rule bites on
 punctuation. Rewording beats escaping, but when the text must stay verbatim,
-tag the value `!str` (`description: !str "..."`) to skip the markdown parse
-entirely — YAML quoting still applies underneath the tag (`` `!str 'don''t'` ``).
-The user-facing reference is `docs/errors/yaml/Q-1-20.qmd`.
+tag the value `!str` (`description: !str "..."`) to skip the markdown parse —
+YAML quoting still applies underneath the tag (`` `!str 'don''t'` ``). `!str`
+does not protect presentation keys that are re-parsed later (`toc-title`,
+website and sidebar titles, footer text: `MARKDOWN_CONFIG_PATHS` in
+`crates/quarto-core/src/transforms/config_markdown.rs`); those still need
+valid markdown. The user-facing reference is `docs/errors/yaml/Q-1-20.qmd`.
 
 ## Checking
 
