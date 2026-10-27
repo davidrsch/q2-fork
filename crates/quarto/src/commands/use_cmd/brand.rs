@@ -379,6 +379,13 @@ fn confirm_trust(
         .unwrap_or_default();
 
     let Some(prompter) = ctx.prompter.as_deref_mut() else {
+        // A dry run downloads too, so it needs the same consent; say so
+        // in the flags the caller should actually re-run with.
+        let rerun = if req.dry_run {
+            "Re-run with --dry-run --trust to preview, confirming you trust this source."
+        } else {
+            "Re-run with --trust to confirm you trust this source."
+        };
         return Err(CommandFailure::new(
             format!(
                 "Refusing to download {} without confirmation",
@@ -387,7 +394,7 @@ fn confirm_trust(
             format!(
                 "Downloading a brand runs someone else's content through this machine. \
                  There is no terminal to ask on, so nothing was fetched.\n\n\
-                 Re-run with --trust to confirm you trust this source.{learn_more}"
+                 {rerun}{learn_more}"
             ),
         ));
     };
@@ -642,6 +649,28 @@ mod tests {
         let text = err.0.to_text(None);
         assert!(text.contains("--trust"), "got: {text}");
         assert!(text.contains("nothing was fetched"), "got: {text}");
+    }
+
+    #[test]
+    fn the_trust_refusal_hint_matches_the_mode() {
+        let dir = project("project:\n  type: website\n");
+        for (dry_run, expect_dry_run) in [(false, false), (true, true)] {
+            let err = resolve_offline(
+                &BrandRequest {
+                    target: Some("org/repo".into()),
+                    dry_run,
+                    ..request()
+                },
+                dir.path(),
+            )
+            .unwrap_err();
+            let text = err.0.to_text(None);
+            assert_eq!(
+                text.contains("--dry-run --trust"),
+                expect_dry_run,
+                "got: {text}"
+            );
+        }
     }
 
     #[test]

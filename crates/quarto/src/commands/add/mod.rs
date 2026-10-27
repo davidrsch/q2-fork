@@ -53,21 +53,20 @@ pub struct AddArgs {
 pub fn execute(args: AddArgs) -> Result<()> {
     let cwd = std::env::current_dir().context("determine current directory")?;
 
-    // Same rule as `q2 use`: `--dry-run` reports what would happen, so
-    // pairing it with a flag whose only job is to authorize something
-    // is a contradiction worth rejecting.
-    for (flag, set) in [("--force", args.force), ("--trust", args.trust)] {
-        if args.dry_run && set {
-            let failure = CommandFailure::new(
-                format!("{flag} cannot be combined with --dry-run"),
-                format!(
-                    "--dry-run writes nothing, so there is nothing for {flag} to \
-                     authorize. Run with --dry-run alone to preview, then re-run \
-                     with {flag} to proceed."
-                ),
-            );
-            fail(&failure.0, args.json);
-        }
+    // Same rule as `q2 use`: `--dry-run` reports what would happen, and
+    // `--force` only authorizes overwriting local edits, which a dry run
+    // never does, so the pairing is a contradiction worth rejecting.
+    // `--trust` is different: a dry run of a remote source still
+    // downloads it to compute the table, and `--trust` authorizes that
+    // fetch, so it combines with `--dry-run`.
+    if args.dry_run && args.force {
+        let failure = CommandFailure::new(
+            "--force cannot be combined with --dry-run",
+            "--dry-run writes nothing, so there is nothing for --force to \
+             authorize. Run with --dry-run alone to preview, then re-run \
+             with --force to proceed.",
+        );
+        fail(&failure.0, args.json);
     }
 
     let request = AddRequest {

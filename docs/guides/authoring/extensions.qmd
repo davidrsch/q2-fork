@@ -58,6 +58,8 @@ It prints what it will do (`[Install]`, `[Update] 1.0.0 -> 1.1.0`, `[Revert]`, o
 
 Other options: `--dry-run` shows the table without writing, and `--json` prints a machine-readable result.
 
+A dry run of a remote source still downloads it to build the table, so it needs the same trust as a real install. In a terminal, `q2 add --dry-run` asks the trust question before it downloads. Without a terminal, pass `--trust` with `--dry-run`, for example `q2 add quarto-ext/fontawesome --dry-run --trust --no-prompt`. `--force` cannot be combined with `--dry-run`, because a dry run never overwrites anything.
+
 ## Custom project types
 
 An extension can define a **custom project type**: a named bundle of configuration that projects opt into by setting `project.type`. This is how a team ships a house style — theme, navigation defaults, analytics — as one reusable package.

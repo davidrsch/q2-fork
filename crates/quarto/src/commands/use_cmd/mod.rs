@@ -45,22 +45,21 @@ pub struct BrandArgs {
 pub fn execute_brand(args: BrandArgs) -> Result<()> {
     let cwd = std::env::current_dir().context("determine current directory")?;
 
-    // `--dry-run` reports what *would* happen. Combining it with a flag
-    // whose only effect is to authorize something is a contradiction
-    // worth rejecting rather than silently resolving: the user has
-    // asked both "don't do it" and "do it even though".
-    for (flag, set) in [("--force", args.force), ("--trust", args.trust)] {
-        if args.dry_run && set {
-            let failure = CommandFailure::new(
-                format!("{flag} cannot be combined with --dry-run"),
-                format!(
-                    "--dry-run writes nothing, so there is nothing for {flag} to \
-                     authorize. Run with --dry-run alone to preview, then re-run \
-                     with {flag} to proceed."
-                ),
-            );
-            fail(&failure.0, args.json);
-        }
+    // `--dry-run` reports what *would* happen. Combining it with
+    // `--force`, whose only effect is to authorize overwriting local
+    // state, is a contradiction worth rejecting rather than silently
+    // resolving: the user has asked both "don't do it" and "do it even
+    // though". `--trust` is different: a dry run of a remote source
+    // still downloads it to build the plan, and `--trust` authorizes
+    // that fetch, so it combines with `--dry-run`.
+    if args.dry_run && args.force {
+        let failure = CommandFailure::new(
+            "--force cannot be combined with --dry-run",
+            "--dry-run writes nothing, so there is nothing for --force to \
+             authorize. Run with --dry-run alone to preview, then re-run \
+             with --force to proceed.",
+        );
+        fail(&failure.0, args.json);
     }
 
     let request = brand::BrandRequest {
