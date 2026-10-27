@@ -120,4 +120,29 @@ describe('useAuthProbe', () => {
     });
     expect(mockFetchAuthMe).toHaveBeenCalledTimes(calls);
   });
+
+  it('calls the latest onAuthRejected without re-arming the interval', async () => {
+    // Characterization for the latest-callback mechanism (ref mirror, later
+    // useEffectEvent): a mid-stream callback swap must neither lose the
+    // strike count (no effect re-run) nor call the stale callback.
+    const first = vi.fn();
+    const second = vi.fn();
+    mockFetchAuthMe.mockResolvedValue(null);
+    const { rerender } = renderHook(
+      ({ cb }: { cb: () => void }) => useAuthProbe({ enabled: true, onAuthRejected: cb }),
+      { initialProps: { cb: first } },
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // Strike 1 recorded. Swap the callback; the strike count must survive
+    // (a re-armed interval would reset it and probe immediately).
+    rerender({ cb: second });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTH_PROBE_INTERVAL_MS);
+    });
+    expect(mockFetchAuthMe).toHaveBeenCalledTimes(2);
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
 });

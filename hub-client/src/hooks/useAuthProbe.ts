@@ -24,7 +24,7 @@
  * the first strike once triggered was retired in bd-s042qcxj.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useEffectEvent } from 'react';
 import { fetchAuthMe } from '../services/authService';
 
 /** Interval between probes while disconnected. */
@@ -38,12 +38,9 @@ interface AuthProbeOpts {
 }
 
 export function useAuthProbe({ enabled, onAuthRejected }: AuthProbeOpts) {
-  // Keep the latest callback in a ref so the probe effect can key on
-  // `enabled` alone without re-arming the interval when it changes.
-  const onAuthRejectedRef = useRef(onAuthRejected);
-  useEffect(() => {
-    onAuthRejectedRef.current = onAuthRejected;
-  });
+  // The probe effect keys on `enabled` alone; the effect event reaches the
+  // latest callback without re-arming the interval when it changes.
+  const onAuthRejectedEvent = useEffectEvent(onAuthRejected);
 
   useEffect(() => {
     if (!enabled) return;
@@ -61,7 +58,7 @@ export function useAuthProbe({ enabled, onAuthRejected }: AuthProbeOpts) {
         }
         strikes += 1;
         if (strikes >= 2) {
-          onAuthRejectedRef.current();
+          onAuthRejectedEvent();
         }
         // strike 1 is a no-op: record it and give the next cycle a chance
         // to confirm (or clear) the rejection before logging out.

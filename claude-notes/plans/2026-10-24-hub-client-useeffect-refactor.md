@@ -2,7 +2,7 @@
 title: 'hub-client `useEffect` audit: phased refactor'
 date: 2026-10-24
 description: 'Phased refactor of the refactor-worthy useEffect sites in hub-client: stale-dep fixes, useSyncExternalStore conversions, derived-state elimination, then measured wide-dep performance work.'
-status: in-progress  # Phases 1–4 done and open as stacked PRs (#924, #925, #931, #936). Phase 5 not started.
+status: in-progress  # All 5 phases done. Phases 1–4 open as stacked PRs (#924, #925, #931, #936); phase 5 awaiting push/PR.
 ---
 
 ## Overview
@@ -396,16 +396,52 @@ or moving invalidation into the sync-service callback.
 
 ## Phase 5 — `useEffectEvent` sweep (optional, low priority)
 
-- [ ] Replace the ~12 ref-mirror effects
-  (`useEffect(() => { ref.current = handler })`) where the ref exists only to
-  give an effect or listener the latest handler: `useAuthProbe.ts:44`,
-  `useSessionKeepAlive.ts:51`, `useWindowFileDrop.ts:22`, `useRouting.ts:80`,
-  `Editor.tsx:379`, `Editor.tsx:569`, `Editor.tsx:1400`, `Preview.tsx:198`,
-  `ReactPreview.tsx:514`, `useSlideThumbnails.tsx:182`,
-  `useDownloadAs.ts:43` and `:47`.
-- [ ] Leave alone any effect that intentionally runs on every render unless
-  `useEffectEvent` semantics match exactly; convert only where the
-  replacement is behavior-preserving.
+**Done 2026-10-27 (bd-t18384ia).** The sweep triaged all twelve sites and
+converted three; the other nine fail the `useEffectEvent` contract, which
+eslint-plugin-react-hooks v7 enforces lexically: an effect-event variable may
+only be *referenced* from inside an effect (or another effect event) in the
+same component — "It cannot be assigned to a variable or passed down" — and
+React throws if one is called during render. The nine ref-mirrors that stay
+are precisely the cases refs exist for: the read site is a render-scope
+callback, a state updater, or a function passed across a hook boundary.
+
+- [x] Converted (call sites lexically inside an effect — semantics
+  identical):
+  - `useAuthProbe.ts:44` — `onAuthRejected` → effect event called from the
+    probe interval.
+  - `useSessionKeepAlive.ts:51` — both callbacks.
+  - `useWindowFileDrop.ts:22` — the drop listener's async ingest
+    continuation. (React 19.2's `mountEvent` keeps the last committed impl
+    after unmount with no guard, so an in-flight `collectDroppedEntries`
+    resolving post-unmount behaves exactly as the ref did.)
+- [x] Left as ref-mirrors (effect-event semantics do not match):
+  - `useRouting.ts:80` — read inside `setRoute` updaters, which run during
+    render; effect events throw when called during render.
+  - `useDownloadAs.ts:43`/`:47` — read inside `start`, a click handler.
+  - `Preview.tsx:198` / `ReactPreview.tsx:514` — `previewState` read inside
+    `doRenderWithStateManagement`, a render-scope `useCallback`.
+  - `useSlideThumbnails.tsx:182` — recursive re-invocation from inside the
+    `captureThumbnails` `useCallback`.
+  - `Editor.tsx:379` (`currentFilePathRef`) — `getCurrentFilePath` is passed
+    down to `useIntelligenceProviders` and other hooks; effect events cannot
+    be passed down.
+  - `Editor.tsx:569` (`getSlideForLineRef`) — read inside
+    `handleEditorMount`, a render-scope callback handed to Monaco's
+    `onMount`.
+  - `Editor.tsx:1400` (`editorDndHandlersRef`) — the stable wrappers are
+    attached/detached inside `handleEditorMount` and an unmount effect, both
+    outside lexical effect scope.
+- [x] Characterization tests pinned before converting:
+  `useAuthProbe`/`useSessionKeepAlive` each gained a "latest callback without
+  re-arming the interval" test (green on the unmodified hooks, still green
+  after); `useWindowFileDrop` already pinned that behavior.
+- Verification: `npm run test:ci` all three legs green (unit + integration +
+  WASM); `npm run build:all` green (production `tsc -b && vite build` plus
+  sw-precache check); eslint clean on the five touched files
+  (`rules-of-hooks` accepts all three effect events). Not browser-smoked:
+  pure refactor behind characterization tests; the three hooks\' behaviors
+  (probe strikes, keep-alive callbacks, drop routing) are fully exercised by
+  their suites.
 
 ## Out of scope
 
