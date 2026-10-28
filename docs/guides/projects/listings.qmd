@@ -209,7 +209,9 @@ listing:
   contents: "guides/*.qmd"
 ```
 
-`template:` resolves relative to the page that declares the listing.
+`template:` resolves relative to the page that declares the listing;
+a leading `/` anchors it at the project root, as for every path in
+Quarto configuration (see [Paths](paths.qmd)).
 Quarto 2 custom listing templates are **doctemplates** — the
 `$variable$` syntax Pandoc templates use — not the EJS templates of
 Quarto 1. A doctemplate cannot run code; it interpolates values,
