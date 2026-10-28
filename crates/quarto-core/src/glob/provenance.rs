@@ -18,6 +18,13 @@
 //! - `blog/_metadata.yml` → `blog/`;
 //! - `_quarto.yml` → the project root.
 //!
+//! An extension's project fragment (`contributes.project`,
+//! `contributes.metadata.project`) is `_quarto.yml` content: it is
+//! registered as a virtual file under
+//! [`crate::config_paths::project_fragment_file_id`], and its patterns
+//! anchor at the project root although the bytes live under
+//! `_extensions/` ([`crate::config_paths::file_base_dir`], bd-0x1znhgb).
+//!
 //! Values with no recoverable file — runtime `--metadata`,
 //! programmatic config, extension metadata — fall back to the
 //! caller-supplied directory.
@@ -47,8 +54,14 @@ impl<'a> BaseDirContext<'a> {
     pub fn base_dir_for(&self, source: &SourceInfo) -> String {
         source
             .root_file_id()
-            .and_then(|id| self.source_context?.get_file(id))
-            .and_then(|f| project_relative_dir_of(&f.path, self.project_dir))
+            .and_then(|id| Some((id, self.source_context?.get_file(id)?)))
+            .and_then(|(id, f)| {
+                if id == crate::config_paths::project_fragment_file_id(Path::new(&f.path)) {
+                    Some(String::new())
+                } else {
+                    project_relative_dir_of(&f.path, self.project_dir)
+                }
+            })
             .unwrap_or_else(|| self.fallback_dir.to_string())
     }
 }
@@ -66,12 +79,18 @@ pub fn project_relative_dir_of(file_path: &str, project_dir: &Path) -> Option<St
         return None;
     }
     let path = Path::new(file_path);
-    let relative = if quarto_util::is_rooted(path) {
-        path.strip_prefix(project_dir).ok()?
+    project_relative_dir(path.parent().unwrap_or(Path::new("")), project_dir)
+}
+
+/// `dir` as a project-relative forward-slash string (`""` for the
+/// project root itself); `None` when it lies outside the project or
+/// is not expressible without `..`.
+fn project_relative_dir(dir: &Path, project_dir: &Path) -> Option<String> {
+    let dir = if quarto_util::is_rooted(dir) {
+        dir.strip_prefix(project_dir).ok()?
     } else {
-        path
+        dir
     };
-    let dir = relative.parent().unwrap_or(Path::new(""));
     let mut segments: Vec<&str> = Vec::new();
     for comp in dir.components() {
         match comp {
@@ -144,6 +163,29 @@ mod tests {
         // Front-matter values are Substrings into FileId(0).
         let source = SourceInfo::substring(SourceInfo::original(FileId(0), 0, 100), 10, 20);
         assert_eq!(ctx.base_dir_for(&source), "sub");
+    }
+
+    /// bd-0x1znhgb: an extension's project fragment anchors at the
+    /// project root; the manifest's own id anchors at the extension dir.
+    #[test]
+    fn project_fragment_anchors_at_the_project_root() {
+        let mut sc = SourceContext::new();
+        sc.add_file("/proj/index.qmd".to_string(), None);
+        let path = "/proj/_extensions/x/_extension.yml";
+        let manifest = quarto_yaml::file_id_for_filename(path);
+        let fragment = crate::config_paths::project_fragment_file_id(Path::new(path));
+        sc.add_file_with_id(manifest, path.to_string(), None);
+        sc.add_file_with_id(fragment, path.to_string(), None);
+        let ctx = BaseDirContext {
+            source_context: Some(&sc),
+            project_dir: Path::new("/proj"),
+            fallback_dir: "sub",
+        };
+        assert_eq!(
+            ctx.base_dir_for(&SourceInfo::original(manifest, 0, 10)),
+            "_extensions/x"
+        );
+        assert_eq!(ctx.base_dir_for(&SourceInfo::original(fragment, 0, 10)), "");
     }
 
     #[test]

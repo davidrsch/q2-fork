@@ -534,22 +534,22 @@ fn meta_at<'a>(
 #[test]
 fn extension_favicon_and_logo_rebased_to_project_root() {
     let (project, _tmp) = themed_project();
+    // Site-rooted spelling (bd-0x1znhgb): a leading `/` is the site
+    // root in URL space, so the string is self-describing.
     assert_eq!(
         meta_at(&project, &["website", "favicon"]).and_then(|v| v.as_str()),
-        Some("_extensions/acme/fancysite/assets/favicon.svg")
+        Some("/_extensions/acme/fancysite/assets/favicon.svg")
     );
     assert_eq!(
         meta_at(&project, &["website", "navbar", "logo"]).and_then(|v| v.as_str()),
-        Some("_extensions/acme/fancysite/assets/logo.svg")
+        Some("/_extensions/acme/fancysite/assets/logo.svg")
     );
     assert_eq!(
         meta_at(&project, &["website", "navbar", "logo-href"]).and_then(|v| v.as_str()),
-        Some("_extensions/acme/fancysite/assets/logo.svg")
+        Some("/_extensions/acme/fancysite/assets/logo.svg")
     );
     // Site-level values stay plain strings, as if written in
-    // `_quarto.yml`: their consumers relativize per page, so a Path
-    // kind (document-dir-adjusted by metadata_merge) would climb one
-    // level too many in subdirectories (bd-74ktvzv7).
+    // `_quarto.yml`: their consumers relativize per page.
     for key in [
         &["website", "favicon"][..],
         &["website", "navbar", "logo"],

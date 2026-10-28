@@ -103,11 +103,23 @@ Three provenance-correct mechanisms coexist today. New code should prefer
    not in the per-document `SourceContext` is **stale** since
    bd-x113wg9v / bd-fu16z22k / bd-r64mj1aa: `MetadataMergeStage`
    registers `_quarto.yml`, the profile overlays, every `_metadata.yml`
-   and every `_extension.yml` (`metadata_merge.rs:214-266`). Remaining
-   caveat: a value rebased by `rebase_fragment_paths` keeps its manifest
-   span while its string is already project-root-relative (bd-0x1znhgb;
-   the fix decided 2026-10-28 is the leading-`/` spelling, option (a) in
-   `claude-notes/plans/2026-10-28-config-path-late-binding.md` §4.4).
+   and every `_extension.yml` (`metadata_merge.rs:214-266`). The former
+   caveat that a value rebased by `rebase_fragment_paths` kept its
+   manifest span while its string was already project-root-relative is
+   **resolved** (bd-0x1znhgb, 2026-10-28): rebased `website.*` strings
+   carry the site-rooted `/…` spelling (self-describing in URL space),
+   and an extension's project fragment (`contributes.project`,
+   `contributes.metadata.project`) is a *virtual file* registered under
+   `config_paths::project_fragment_file_id` with the manifest's path and
+   bytes, so `config_paths::file_base_dir` — shared by
+   `resolve_metadata_path`, `declaring_dir` and the glob provenance —
+   resolves its values against the project root from the id alone,
+   while the manifest's other fragments keep the extension dir and
+   diagnostics still render into `_extension.yml`. (A provenance
+   wrapper on the value — `Generated` + invocation anchor — was tried
+   first and rejected: the published error-reporting crate reads
+   `start_offset()`, which is 0 for `Generated`, so every such
+   diagnostic lost its snippet.)
 2. **`ConfigValueKind::Path` + `adjust_paths_to_project_root`**
    (`crates/quarto-core/src/project/mod.rs`; `adjust_paths_to_document_dir`
    until bd-okqrjh8v) — merge-time rewrite of `Path`-kind values from the

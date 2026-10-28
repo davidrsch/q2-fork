@@ -48,11 +48,22 @@
 //! 4. An OS-absolute path (a Windows drive or UNC prefix; on Unix this
 //!    case is already step 3) is used as written.
 //! 5. Otherwise the base is the declaring file's directory, recovered
-//!    from the value's `SourceInfo` ([`declaring_dir`]). When there is
-//!    no usable span (a programmatic or runtime-layer value, a file not
-//!    registered in the context, no context at all) the base is the
-//!    **document directory**, which is what every consumer assumed
-//!    before this module existed (plan decision 2, 2026-10-28).
+//!    from the value's `SourceInfo` ([`declaring_dir`]): the registered
+//!    file's directory, except for an extension manifest's **project
+//!    fragment** (`contributes.project`, `contributes.metadata.project`),
+//!    which is `_quarto.yml` content and resolves against the project
+//!    root. The fragment is a *virtual file* of its own: at config time
+//!    its spans are re-keyed to [`project_fragment_file_id`]
+//!    ([`rekey_project_fragment`]) and the merge registers that id with
+//!    the manifest's path and content, so diagnostics still render into
+//!    `_extension.yml` while [`file_base_dir`] knows the base from the
+//!    id alone (bd-0x1znhgb; before this `resolve_metadata_path`
+//!    special-cased the manifest's file name, bd-74ktvzv7, which was
+//!    wrong for the manifest's other fragments). When there is no usable
+//!    span (a programmatic or runtime-layer value, a file not registered
+//!    in the context, no context at all) the base is the **document
+//!    directory**, which is what every consumer assumed before this
+//!    module existed (plan decision 2, 2026-10-28).
 //!
 //! The result is normalized lexically (`.`/`..` collapsed) and never
 //! canonicalized: the file may not exist, and a missing-file diagnostic
@@ -343,8 +354,77 @@ fn file(path: PathBuf) -> ResolvedConfigPath {
     ResolvedConfigPath::File(quarto_util::normalize_lexically(&path))
 }
 
-/// The directory of the file a value was written in, when `source`
-/// points at a registered file with a usable (rooted) path.
+/// The [`FileId`] of an extension manifest's **project fragment**: the
+/// `contributes.project` / `contributes.metadata.project` content of
+/// `manifest`, which is merged into the project config and means what
+/// it would mean in `_quarto.yml`.
+///
+/// The fragment is registered as a virtual file with the manifest's
+/// path and content (so a diagnostic anchored in it renders a snippet
+/// into `_extension.yml`), but under this id rather than the
+/// manifest's own `quarto_yaml::file_id_for_filename`, so that
+/// [`file_base_dir`] can tell the fragment's values (base: the project
+/// root) from the manifest's `contributes.metadata` /
+/// `contributes.formats` values (base: the extension directory).
+pub fn project_fragment_file_id(manifest: &Path) -> FileId {
+    quarto_yaml::file_id_for_filename(&format!(
+        "{}#project",
+        quarto_util::to_forward_slashes(manifest)
+    ))
+}
+
+/// Re-key every span in a project fragment from the manifest's own
+/// id to [`project_fragment_file_id`]. Called once, when the fragment
+/// is merged into the project config (`project/mod.rs`).
+pub fn rekey_project_fragment(fragment: &mut ConfigValue, manifest: &Path) {
+    let from = quarto_yaml::file_id_for_filename(&manifest.to_string_lossy());
+    let to = project_fragment_file_id(manifest);
+    if from == to {
+        return;
+    }
+    let map = move |id: FileId| if id == from { to } else { id };
+    rekey_config_value(fragment, &map);
+}
+
+fn rekey_config_value(value: &mut ConfigValue, map: &impl Fn(FileId) -> FileId) {
+    value.source_info.remap_file_ids(map);
+    match &mut value.value {
+        ConfigValueKind::Map(entries) => {
+            for entry in entries {
+                entry.key_source.remap_file_ids(map);
+                rekey_config_value(&mut entry.value, map);
+            }
+        }
+        ConfigValueKind::Array(items) => {
+            for item in items {
+                rekey_config_value(item, map);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The directory the values of the registered file `id` (at `path`)
+/// resolve against: the project root for a project fragment
+/// ([`project_fragment_file_id`]), else the file's own directory.
+///
+/// `None` when the path has no usable (rooted) directory — an
+/// in-memory `<anonymous>` document, a bare file name.
+pub fn file_base_dir(id: FileId, path: &str, project_dir: &Path) -> Option<PathBuf> {
+    let path = Path::new(path);
+    if id == project_fragment_file_id(path) {
+        return Some(project_dir.to_path_buf());
+    }
+    let dir = path.parent()?;
+    if dir.as_os_str().is_empty() || !quarto_util::is_rooted(dir) {
+        return None;
+    }
+    Some(dir.to_path_buf())
+}
+
+/// The directory a value resolves against, from the file its span
+/// points into ([`file_base_dir`]): the file's directory, or the
+/// project root for an extension's project fragment.
 ///
 /// Returns `None` for programmatic sentinels (`config-default`,
 /// `programmatic-config`, `unknown`), for spans with no single byte
@@ -359,13 +439,9 @@ pub fn declaring_dir(source: &SourceInfo, ctx: &PathCtx<'_>) -> Option<PathBuf> 
         return None;
     }
     let (file_id, _, _) = source.resolve_byte_range()?;
-    let source_file = ctx.source_context?.get_file(FileId(file_id))?;
-    let path = Path::new(&source_file.path);
-    let dir = path.parent()?;
-    if dir.as_os_str().is_empty() || !quarto_util::is_rooted(dir) {
-        return None;
-    }
-    Some(dir.to_path_buf())
+    let file_id = FileId(file_id);
+    let source_file = ctx.source_context?.get_file(file_id)?;
+    file_base_dir(file_id, &source_file.path, ctx.project_dir)
 }
 
 #[cfg(test)]
@@ -518,6 +594,84 @@ mod tests {
                 ResolvedConfigPath::External(url.to_string())
             );
         }
+    }
+
+    /// bd-0x1znhgb: an extension manifest's project fragment is a
+    /// virtual file of its own — same path and bytes, its own id — whose
+    /// values resolve against the project root, while the manifest's
+    /// other fragments keep resolving against the extension directory.
+    #[test]
+    fn project_fragment_resolves_against_the_project_root() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs/deep");
+        let c = ctx(&f, &d);
+        let manifest = "/project/_extensions/x/_extension.yml";
+        let plain = quarto_yaml::file_id_for_filename(manifest);
+        let fragment = project_fragment_file_id(Path::new(manifest));
+        assert_ne!(plain, fragment);
+        let mut sc = f.sc.clone();
+        sc.add_file_with_id(plain, manifest.to_string(), Some(String::new()));
+        sc.add_file_with_id(fragment, manifest.to_string(), Some(String::new()));
+        let c = PathCtx {
+            source_context: Some(&sc),
+            ..c
+        };
+        assert_eq!(
+            resolve("index.qmd", span(fragment), &c),
+            ResolvedConfigPath::File(p("/project/index.qmd")),
+            "a project-fragment value means what it would in _quarto.yml"
+        );
+        assert_eq!(
+            resolve("scripts/x.lua", span(plain), &c),
+            ResolvedConfigPath::File(p("/project/_extensions/x/scripts/x.lua")),
+            "a contributes.metadata value names a bundled file"
+        );
+    }
+
+    #[test]
+    fn rekey_project_fragment_moves_every_span_to_the_fragment_id() {
+        let manifest = Path::new("/project/_extensions/x/_extension.yml");
+        let plain = quarto_yaml::file_id_for_filename(&manifest.to_string_lossy());
+        let other = FileId(7);
+        let leaf = |id: FileId| ConfigValue::new_string("v", SourceInfo::original(id, 0, 1));
+        let mut value = ConfigValue::new_map(
+            vec![
+                quarto_pandoc_types::ConfigMapEntry {
+                    key: "a".into(),
+                    key_source: SourceInfo::original(plain, 0, 1),
+                    value: leaf(plain),
+                },
+                quarto_pandoc_types::ConfigMapEntry {
+                    key: "b".into(),
+                    key_source: SourceInfo::original(other, 0, 1),
+                    value: ConfigValue {
+                        value: ConfigValueKind::Array(vec![leaf(plain), leaf(other)]),
+                        source_info: SourceInfo::original(plain, 0, 1),
+                        merge_op: Default::default(),
+                    },
+                },
+            ],
+            SourceInfo::original(plain, 0, 1),
+        );
+        rekey_project_fragment(&mut value, manifest);
+        let fragment = project_fragment_file_id(manifest);
+        let id_of = |v: &ConfigValue| v.source_info.root_file_id().unwrap();
+        assert_eq!(id_of(&value), fragment);
+        assert_eq!(id_of(value.get("a").unwrap()), fragment);
+        let ConfigValueKind::Map(entries) = &value.value else {
+            panic!("map")
+        };
+        assert_eq!(entries[0].key_source.root_file_id(), Some(fragment));
+        assert_eq!(
+            entries[1].key_source.root_file_id(),
+            Some(other),
+            "other files untouched"
+        );
+        let ConfigValueKind::Array(items) = &value.get("b").unwrap().value else {
+            panic!("array")
+        };
+        assert_eq!(id_of(&items[0]), fragment);
+        assert_eq!(id_of(&items[1]), other);
     }
 
     #[test]

@@ -215,9 +215,8 @@ impl PipelineStage for MetadataMergeStage {
         // and appending to only one would desynchronize the shared
         // index space.
         {
-            let mut register = |path: &std::path::Path| {
+            let mut register_as = |id: quarto_source_map::FileId, path: &std::path::Path| {
                 let path_str = path.to_string_lossy().to_string();
-                let id = quarto_yaml::file_id_for_filename(&path_str);
                 let content = ctx.runtime.file_read_string(path).ok();
                 for source_context in [&mut doc.ast_context.source_context, &mut doc.source_context]
                 {
@@ -229,6 +228,12 @@ impl PipelineStage for MetadataMergeStage {
                         source_context.add_file_with_id(id, path_str.clone(), content.clone());
                     }
                 }
+            };
+            let mut register = |path: &std::path::Path| {
+                register_as(
+                    quarto_yaml::file_id_for_filename(&path.to_string_lossy()),
+                    path,
+                );
             };
             if let Some(config_path) = ctx.project.config.config_path.as_deref() {
                 register(config_path);
@@ -253,6 +258,12 @@ impl PipelineStage for MetadataMergeStage {
             // span-less.
             for path in &ctx.project.config.extension_manifest_paths {
                 register(path);
+            }
+            // Each manifest's project fragment is a virtual file of its
+            // own — same path and bytes, its own id — so that its values
+            // resolve against the project root (bd-0x1znhgb).
+            for path in &ctx.project.config.extension_manifest_paths {
+                register_as(crate::config_paths::project_fragment_file_id(path), path);
             }
         }
 

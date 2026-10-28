@@ -776,15 +776,22 @@ const FRAGMENT_PATH_PATTERNS: &[&[&str]] = &[
     &["brand"],
 ];
 
+/// File name of an extension manifest (`_extensions/<ext>/_extension.yml`).
+pub const EXTENSION_MANIFEST: &str = "_extension.yml";
+
 /// Site-level counterparts of [`FRAGMENT_PATH_PATTERNS`]: `website.*`
-/// keys whose consumers read the value as project-root-relative and
-/// relativize it per page themselves.
+/// keys that live in URL space — their consumers read the value as
+/// site-root-relative and relativize it per page themselves.
 ///
 /// Rebased leaves stay plain strings, exactly as if written in
-/// `_quarto.yml`. A [`ConfigValueKind::Path`] would be adjusted to the
-/// document dir by the per-document merge and then relativized again
-/// per page, climbing one level too many for pages in subdirectories
-/// (bd-74ktvzv7).
+/// `_quarto.yml`, spelled with a leading `/`
+/// (`/_extensions/x/assets/logo.svg`): in URL space a leading `/`
+/// means the site root (decision 4 of
+/// bd-root-relative-paths-design-fc5pvkcv), so the string says what
+/// it is relative to and no consumer needs the value's provenance to
+/// read it (bd-0x1znhgb, plan §4.4 option a). A file outside the
+/// project (a built-in extension extracted to a temp dir) keeps its
+/// OS-absolute form.
 const FRAGMENT_SITE_PATH_PATTERNS: &[&[&str]] = &[
     &["website", "favicon"],
     &["website", "navbar", "logo"],
@@ -793,13 +800,22 @@ const FRAGMENT_SITE_PATH_PATTERNS: &[&[&str]] = &[
 ];
 
 /// Rebase extension-bundled file references in a `contributes.project`
-/// fragment from extension-dir-relative to project-root-relative.
+/// fragment from extension-dir-relative to project-root-relative, and
+/// record the project root as the fragment's resolution base.
 ///
 /// Rebased [`FRAGMENT_PATH_PATTERNS`] values become
-/// [`ConfigValueKind::Path`] so the per-document metadata merge keeps
-/// adjusting them (project root → document dir) for documents in
-/// subdirectories; rebased [`FRAGMENT_SITE_PATH_PATTERNS`] values stay
-/// project-root-relative strings.
+/// [`ConfigValueKind::Path`] in pivot form (project-root-relative,
+/// `crate::config_paths`); rebased [`FRAGMENT_SITE_PATH_PATTERNS`]
+/// values stay strings in the site-rooted `/…` spelling.
+///
+/// Everything else in the fragment keeps its manifest span, re-keyed
+/// to the fragment's own virtual-file id
+/// ([`crate::config_paths::rekey_project_fragment`]): the fragment is
+/// `_quarto.yml` content, so an `href: index.qmd` in it names the
+/// project page, not `_extensions/<ext>/index.qmd`, and the consumers
+/// (`resolve_metadata_path`, `config_paths::declaring_dir`, the glob
+/// provenance) resolve it against the project root while diagnostics
+/// still render into `_extension.yml` (bd-0x1znhgb).
 ///
 /// The pattern walk and the bundled-file existence check are shared
 /// with the `contributes.formats` marking (bd-of20unsb) via
@@ -833,10 +849,23 @@ fn rebase_fragment_paths(
             } = &mut leaf.value
                 && let Some(rebased) = rebase_candidate(s, ext_dir, project_dir, runtime)
             {
-                *s = rebased;
+                *s = site_rooted_spelling(rebased);
             }
         },
     );
+    crate::config_paths::rekey_project_fragment(fragment, &ext_dir.join(EXTENSION_MANIFEST));
+}
+
+/// The URL-space spelling of a rebased project-relative path: a
+/// leading `/` for the site root. An OS-absolute path (a file outside
+/// the project) is left alone.
+fn site_rooted_spelling(rebased: String) -> String {
+    let path = Path::new(&rebased);
+    if quarto_util::is_rooted(path) || path.is_absolute() {
+        rebased
+    } else {
+        format!("/{rebased}")
+    }
 }
 
 /// Decide whether `s` names a file bundled with the extension, and if

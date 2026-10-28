@@ -1018,7 +1018,7 @@ pub fn resource_error_to_doc_parse_error(
             config
                 .extension_manifest_paths
                 .iter()
-                .map(|p| (hash(p), p.as_path())),
+                .flat_map(|p| crate::config_sources::config_file_ids(p)),
         )
         .chain(layer_paths.iter().map(|p| (hash(p), p.as_path())));
     let matched = crate::config_sources::bind_source_candidates(
