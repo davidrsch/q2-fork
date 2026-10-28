@@ -986,15 +986,13 @@ mod tests {
 
     #[tokio::test]
     async fn leading_slash_src_is_project_root_relative_after_marking() {
-        // The merge-time marking turns `/lib/x.js` into a document-relative
+        // The merge-time marking turns `/lib/x.js` into a project-root-relative
         // Path; here that is `../lib/x.js` from docs/page.qmd.
         let mut m = meta("components:\n  - name: counter\n    src: /lib/counter.js\n");
         let items = m.get_mut(COMPONENTS_KEY).unwrap();
         if let quarto_pandoc_types::config_value::ConfigValueKind::Array(items) = &mut items.value {
             items[0].get_mut("src").unwrap().value =
-                quarto_pandoc_types::config_value::ConfigValueKind::Path(
-                    "../lib/counter.js".into(),
-                );
+                quarto_pandoc_types::config_value::ConfigValueKind::Path("lib/counter.js".into());
         }
         let ast = Pandoc {
             meta: m,

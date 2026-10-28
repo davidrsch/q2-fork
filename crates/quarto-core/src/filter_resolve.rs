@@ -909,11 +909,11 @@ mod tests {
     }
 
     #[test]
-    fn marked_path_entry_is_joined_onto_the_document_dir() {
-        // An explicit `!path` (or a merge-marked entry) arrives already
-        // document-relative; the resolver honours that form.
+    fn marked_path_entry_is_joined_onto_the_project_root() {
+        // An explicit `!path` (or a merge-marked entry) arrives in pivot
+        // form (project-root-relative); the resolver honours that form.
         let entry = ConfigValue {
-            value: quarto_pandoc_types::ConfigValueKind::Path("../hello.lua".into()),
+            value: quarto_pandoc_types::ConfigValueKind::Path("hello.lua".into()),
             source_info: SourceInfo::for_test(),
             merge_op: Default::default(),
         };

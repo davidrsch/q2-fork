@@ -487,21 +487,74 @@ front-matter declarations are unchanged):
   a banner image, a listing template: a project-/directory-level
   declaration reaches subdirectory pages; leading `/` = project root.
 
+### Phase 1b: switch the stored form of marked values to the project-root pivot (§4.6) — strand bd-okqrjh8v
+
+Branch `braid/bd-okqrjh8v-config-paths-phase-1b`, stacked on Phase 1.
+
+**Spelling decision (deviation from §4.6, recorded for review).** The
+pivot is the project-root-relative path *without* a leading `/`
+(`config_paths::pivot_form`), absolute only for a file outside the
+project. §4.6 and §4.4 spoke of a leading-`/` spelling; that would make
+a marked `/x` ambiguous on Unix with the OS-absolute outside-project
+form (a built-in extension extracted to a temp dir), which the resolver
+cannot tell apart without probing the filesystem. A marked value's kind
+already says "resolved", so the slash buys nothing for consumers; for
+Lua the docs state the rule instead. The leading-`/` spelling of §4.4
+still applies to the *unmarked* extension-rebased website strings
+(bd-0x1znhgb, Phase 3), where the string has to be self-describing.
+
+- [x] 1b.1 `mark_entry` and `adjust_paths_to_project_root` (renamed
+      from `adjust_paths_to_document_dir`) write the pivot, normalized
+      lexically on every platform (review 2026-10-28: the inherited
+      "keep `..` off Windows for symlinks, collapse on Windows for
+      `MAX_PATH`" fork was vestigial — the resolver normalizes at use
+      anyway, and pivot form has no long chains — and gave the pivot a
+      per-OS spelling; dropped, with the symlink caveat documented on
+      `pivot_form`).
+- [x] 1b.2 `!path /x` anchors at the project root; `adjust_paths_recursive`
+      classifies URLs with `is_external_url` (the two mechanism-2 defects
+      from the sweep).
+- [x] 1b.3 A front-matter `!path` is rewritten at the merge (Document
+      layer) so every marked value is pivot form; the resolver's step 1
+      joins a relative marked value onto the project root.
+- [x] 1b.4 Below-quarto-core consumers: `ThemeContext` built on the
+      project root (HTML and reveal); pampa citeproc base = project root
+      (`UserFiltersStage` and the book single-file merge). Pampa's own
+      `resolve_against_base` is unchanged (the CLI still passes the input
+      dir).
+- [x] 1b.5 Docs: `docs/guides/authoring/lua-filters.qmd`, "How metadata
+      looks from Lua": path-shaped keys are project-root-relative, unlike
+      Quarto 1's input-relative form; build absolute paths with
+      `quarto.project.directory`.
+- [x] 1b.6 Test `lua_sees_marked_paths_in_project_root_form` pins the
+      Lua-visible form across pages; unit expectations moved from
+      document-relative to pivot strings.
+- [x] 1b.7 Goldens: smoke-all `dir-metadata-paths` unchanged natively;
+      the WASM run of the same fixture caught the one consumer that
+      emitted the stored form verbatim — `FormatCssTransform` in
+      source-served mode (no resolver / VFS root) now relativizes each
+      marked entry to the page. Hub-client pandoc-request goldens
+      unchanged (WASM suite green).
+
+Handoff: `cargo xtask verify --skip-hub-build` green with the WASM
+artifact rebuilt (17,476 Rust tests; hub-client 1,741 + 229 + 462 wasm).
+Two things the first verify caught: the `wasm32` branch of
+`UserFiltersStage` still named the removed `doc_dir` (the host build does
+not compile that arm — rebuild the WASM before trusting a quarto-core
+change), and the css emission above.
+
+Known imperfection: an *unmarked* `bibliography`/`csl` (file missing at
+merge time) declared in a subdirectory document's front matter is now
+reported relative to the project root rather than the document; the
+file is missing either way. A provenance-aware pampa API would fix the
+message (bd-0x1znhgb territory).
+
 ### Phase 2: enforcement (bd-40luf359)
 
 The `config-path-base` xtask lint with the blessed-module list
 (`config_paths.rs`, `metadata_merge.rs`, `format_paths.rs`, the
 `project/mod.rs` rebase, `glob/provenance.rs`). First cut restricted to
 `stage/` and `transforms/`.
-
-### Phase 1b: switch the stored form of marked values to the project-root pivot (§4.6) — strand bd-okqrjh8v, blocked by bd-lwvumpfk
-
-After Phase 1, in one commit: `mark_entry` and `adjust_paths_recursive`
-store `/<project-relative>` (absolute only outside the project), the
-resolver's step 1 reads it, goldens regenerated. **Docs task:** add a note
-to the Lua filter / extension docs that a marked path key is seen by
-filters in project-root form (`/x`), unlike Quarto 1's input-relative
-form, with the recommended way to resolve it.
 
 ### Phase 3: bd-0x1znhgb (§4.4 option a) and the mechanism-3 row review (§4.5)
 

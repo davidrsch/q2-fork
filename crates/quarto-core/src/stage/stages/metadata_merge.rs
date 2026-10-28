@@ -28,7 +28,7 @@ use quarto_system_runtime::SystemRuntime;
 use crate::metadata_layers::{
     DocumentLayer, LayerInputs, LayerKind, MetadataLayer, collect_metadata_layers,
 };
-use crate::project::adjust_paths_to_document_dir;
+use crate::project::adjust_paths_to_project_root;
 use crate::stage::{
     EventLevel, PipelineData, PipelineDataKind, PipelineError, PipelineStage, StageContext,
 };
@@ -36,8 +36,8 @@ use crate::stage::{
 use crate::stage::{JsonTraceObserver, SummaryTraceObserver};
 use crate::trace_event;
 
-/// Flatten one collected layer for `base_format`, adjust its paths to the
-/// document directory and mark path-shaped format values.
+/// Flatten one collected layer for `base_format`, rewrite its marked
+/// paths into pivot form and mark path-shaped format values.
 ///
 /// Returns the prepared layer and the missing-css diagnostics marking
 /// produced. The project layer's diagnostics are dropped here (the
@@ -46,7 +46,6 @@ use crate::trace_event;
 fn prepare_layer(
     layer: &MetadataLayer,
     base_format: &str,
-    document_dir: &Path,
     project_dir: &Path,
     runtime: &dyn SystemRuntime,
 ) -> (ConfigValue, Vec<quarto_error_reporting::DiagnosticMessage>) {
@@ -57,12 +56,7 @@ fn prepare_layer(
         // values are relative to the extension dir.
         LayerKind::ExtensionContribution => {
             let mut flattened = resolve_format_config(&layer.config, base_format);
-            adjust_paths_to_document_dir(
-                &mut flattened,
-                &layer.base_dir,
-                document_dir,
-                project_dir,
-            );
+            adjust_paths_to_project_root(&mut flattened, &layer.base_dir, project_dir);
             (flattened, Vec::new())
         }
         // Project config paths are relative to the project root. Marking
@@ -71,34 +65,29 @@ fn prepare_layer(
         // generalized for bd-oejuizi9 / GH #455, see project/format_paths.rs).
         LayerKind::Project => {
             let mut flattened = resolve_format_config(&layer.config, base_format);
-            adjust_paths_to_document_dir(&mut flattened, project_dir, document_dir, project_dir);
-            let _ = mark_format_path_values(
-                &mut flattened,
-                project_dir,
-                project_dir,
-                document_dir,
-                runtime,
-            );
+            adjust_paths_to_project_root(&mut flattened, project_dir, project_dir);
+            let _ = mark_format_path_values(&mut flattened, project_dir, project_dir, runtime);
             (flattened, Vec::new())
         }
         // Already specific to the target format (looked up by full format
         // name), so not flattened again.
         LayerKind::ExtensionFormat => {
             let mut config = layer.config.clone();
-            adjust_paths_to_document_dir(&mut config, &layer.base_dir, document_dir, project_dir);
+            adjust_paths_to_project_root(&mut config, &layer.base_dir, project_dir);
             (config, Vec::new())
         }
         // Directory and document entries resolve against their declaring
-        // file's directory.
+        // file's directory. An explicit `!path` in a `_metadata.yml` was
+        // already rewritten by `directory_metadata_for_document`; a
+        // front-matter `!path` is rewritten here so every marked value
+        // is in pivot form (bd-okqrjh8v).
         LayerKind::Directory | LayerKind::Document => {
             let mut flattened = resolve_format_config(&layer.config, base_format);
-            let diagnostics = mark_format_path_values(
-                &mut flattened,
-                &layer.base_dir,
-                project_dir,
-                document_dir,
-                runtime,
-            );
+            if layer.kind == LayerKind::Document {
+                adjust_paths_to_project_root(&mut flattened, &layer.base_dir, project_dir);
+            }
+            let diagnostics =
+                mark_format_path_values(&mut flattened, &layer.base_dir, project_dir, runtime);
             (flattened, diagnostics)
         }
         LayerKind::Runtime => (
@@ -277,13 +266,8 @@ impl PipelineStage for MetadataMergeStage {
         let prepared: Vec<(LayerKind, ConfigValue)> = collected
             .iter()
             .map(|layer| {
-                let (config, diagnostics) = prepare_layer(
-                    layer,
-                    base_format,
-                    &document_dir,
-                    &ctx.project.dir,
-                    ctx.runtime.as_ref(),
-                );
+                let (config, diagnostics) =
+                    prepare_layer(layer, base_format, &ctx.project.dir, ctx.runtime.as_ref());
                 css_diagnostics.extend(diagnostics);
                 (layer.kind, config)
             })
@@ -2130,14 +2114,11 @@ mod tests {
     fn build_metadata_contribution_layers(
         extensions: &[Extension],
         base_format: &str,
-        document_dir: &Path,
         project_root: &Path,
     ) -> Vec<ConfigValue> {
         extension_contribution_layers(extensions)
             .iter()
-            .map(|layer| {
-                prepare_layer(layer, base_format, document_dir, project_root, &MockRuntime).0
-            })
+            .map(|layer| prepare_layer(layer, base_format, project_root, &MockRuntime).0)
             .collect()
     }
 
@@ -2171,12 +2152,7 @@ mod tests {
         ]);
         let ext = make_metadata_extension("meta-ext", meta);
 
-        let layers = build_metadata_contribution_layers(
-            &[ext],
-            "html",
-            Path::new("/project"),
-            Path::new("/project"),
-        );
+        let layers = build_metadata_contribution_layers(&[ext], "html", Path::new("/project"));
         assert_eq!(layers.len(), 1);
         let layer = &layers[0];
         assert!(
@@ -2203,12 +2179,7 @@ mod tests {
         let meta = config_map(vec![("css", css)]);
         let ext = make_metadata_extension("meta-ext", meta);
 
-        let layers = build_metadata_contribution_layers(
-            &[ext],
-            "html",
-            Path::new("/project"),
-            Path::new("/project"),
-        );
+        let layers = build_metadata_contribution_layers(&[ext], "html", Path::new("/project"));
         assert_eq!(layers.len(), 1);
         assert_eq!(
             layers[0].get("css").and_then(|v| v.as_str()),
@@ -2224,12 +2195,7 @@ mod tests {
             config_map(vec![("pre-render", config_str("x.ts"))]),
         )]);
         let ext = make_metadata_extension("meta-ext", meta);
-        let layers = build_metadata_contribution_layers(
-            &[ext],
-            "html",
-            Path::new("/project"),
-            Path::new("/project"),
-        );
+        let layers = build_metadata_contribution_layers(&[ext], "html", Path::new("/project"));
         assert!(layers.is_empty());
     }
 
@@ -2294,7 +2260,7 @@ mod tests {
         // Extension contributes formats.html.shortcodes: [handler.lua]
         // After mark_path_valued_keys (Phase 3.1), these become ConfigValueKind::Path.
         // build_extension_metadata_layer should preserve the Path kind so that
-        // adjust_paths_to_document_dir() can rebase them during full merge.
+        // adjust_paths_to_project_root() can rebase them during full merge.
         let shortcodes_array = ConfigValue {
             value: ConfigValueKind::Array(vec![ConfigValue {
                 value: ConfigValueKind::Path("handler.lua".to_string()),

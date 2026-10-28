@@ -593,13 +593,9 @@ impl PipelineStage for CompileThemeCssStage {
             // and/or user `.scss` files). An unresolvable theme (unknown name /
             // missing file) is a user configuration error — fail loudly rather
             // than silently render the wrong theme.
-            let document_dir = ctx.document.input.parent().map_or_else(
-                || std::path::PathBuf::from("."),
-                std::path::Path::to_path_buf,
-            );
             let mut resolution = crate::revealjs::resolve_reveal_theme(
                 &doc.ast.meta,
-                &document_dir,
+                &ctx.project.dir,
                 ctx.runtime.as_ref(),
             )
             .map_err(|e| PipelineError::stage_error(self.name(), e.to_string()))?;
@@ -787,11 +783,6 @@ impl PipelineStage for CompileThemeCssStage {
             false
         };
 
-        let document_dir = doc
-            .path
-            .parent()
-            .map_or_else(|| PathBuf::from("."), |p| p.to_path_buf());
-
         // Resolve every brand and attach any dark variant the brand
         // *content* calls for (bd-0pic6 phase C + the unified split,
         // bd-unified-brand-split-ep49amad): the brand file is read
@@ -854,7 +845,9 @@ impl PipelineStage for CompileThemeCssStage {
             ctx.add_diagnostics(warnings);
         }
 
-        let mut theme_context = ThemeContext::new(document_dir.clone(), runtime.as_ref());
+        // Marked theme entries are in pivot (project-root-relative) form
+        // (bd-okqrjh8v), so the context's base is the project root.
+        let mut theme_context = ThemeContext::new(ctx.project.dir.clone(), runtime.as_ref());
         if let Some(rb) = resolved.light_brand.as_ref() {
             theme_context = theme_context.with_brand(&rb.brand);
         }
@@ -870,7 +863,7 @@ impl PipelineStage for CompileThemeCssStage {
         .await?;
 
         if let Some(dark_cfg) = theme_config.dark_variant() {
-            let mut dark_context = ThemeContext::new(document_dir, runtime.as_ref());
+            let mut dark_context = ThemeContext::new(ctx.project.dir.clone(), runtime.as_ref());
             if let Some(rb) = resolved.dark_brand.as_ref() {
                 dark_context = dark_context.with_brand(&rb.brand);
             }

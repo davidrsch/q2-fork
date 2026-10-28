@@ -234,10 +234,10 @@ impl std::error::Error for CiteprocFilterError {}
 /// filters (Citeproc, JSON) ignore the handle.
 ///
 /// `base_dir` is the directory the citeproc filter resolves relative
-/// `bibliography`/`csl` paths against (bd-oqoozmtr) — the caller must
-/// pass the declaration site's directory (the document's directory for a
-/// single-file render, the merged document's anchor directory for a
-/// book). Filters that never touch the filesystem ignore it.
+/// `bibliography`/`csl` paths against (bd-oqoozmtr). Quarto's metadata
+/// merge stores those values project-root-relative (bd-okqrjh8v), so
+/// quarto-core passes the project root; the pampa CLI passes the input
+/// file's directory. Filters that never touch the filesystem ignore it.
 pub async fn apply_filter(
     pandoc: Pandoc,
     context: ASTContext,

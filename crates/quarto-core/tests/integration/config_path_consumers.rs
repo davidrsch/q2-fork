@@ -373,3 +373,31 @@ fn project_typst_template_partials_reach_subdir_pages() {
         "a project-level typst partial is staged for a subdirectory page; got:\n{typ}"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Phase 1b (bd-okqrjh8v): the stored form of a marked path is the
+// project-root pivot, the same for every page, and that is what Lua sees
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn lua_sees_marked_paths_in_project_root_form() {
+    let (project_dir, _) = render_project(|p| {
+        two_page_site(
+            "format:\n  html:\n    include-in-header:\n      - assets/hdr.html\nfilters:\n  - show.lua\n",
+        )(p);
+        write(&p.join("assets/hdr.html"), "<!-- hdr -->\n");
+        write(
+            &p.join("show.lua"),
+            "function Pandoc(doc)\n  local inc = doc.meta[\"include-in-header\"]\n  local first = inc[1]\n  local s = type(first) == \"string\" and first or first.value\n  doc.blocks:insert(pandoc.Para(pandoc.Str(\"PIVOT<\" .. s .. \">\")))\n  return doc\nend\n",
+        );
+    });
+    for page in ["_site/index.html", "_site/sub/page.html"] {
+        let html = read(&project_dir.join(page));
+        assert!(
+            html.contains("PIVOT&lt;assets/hdr.html&gt;")
+                || html.contains("PIVOT<assets/hdr.html>"),
+            "{page}: a marked path is stored project-root-relative, identically for every page \
+             (not ../assets/hdr.html for the subdirectory page); got:\n{html}"
+        );
+    }
+}

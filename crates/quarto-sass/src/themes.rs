@@ -339,9 +339,11 @@ impl std::fmt::Display for ThemeSpec {
 /// let context = ThemeContext::native(PathBuf::from("/project/doc"));
 /// ```
 pub struct ThemeContext<'a> {
-    /// Directory containing the input document.
+    /// Base directory for relative paths in custom theme specifications.
     ///
-    /// Relative paths in custom theme specifications are resolved relative to this directory.
+    /// Historically the input document's directory; since Quarto's
+    /// metadata merge stores marked `theme` entries project-root-relative
+    /// (bd-okqrjh8v), quarto-core passes the project root here.
     document_dir: PathBuf,
 
     /// Additional load paths for @import resolution.

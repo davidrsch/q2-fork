@@ -62,9 +62,9 @@ resolved path has a different terminal form in each:
   deploy subpath.
 
 The stable pivot between declaration and either exit is the
-**project-root-relative canonical form with forward slashes** (or,
-equivalently under mechanism 2 below, the doc-relative form produced by a
-provenance-aware rebase). Resolution to a native absolute path or a final
+**project-root-relative canonical form with forward slashes**; since
+bd-okqrjh8v that is also the stored form of every marked
+(`ConfigValueKind::Path`) value. Resolution to a native absolute path or a final
 href is always a lazy, terminal operation — never stored state, because
 these values round-trip through serialization, hashing, and the qmd writer.
 
@@ -108,9 +108,11 @@ Three provenance-correct mechanisms coexist today. New code should prefer
    span while its string is already project-root-relative (bd-0x1znhgb;
    the fix decided 2026-10-28 is the leading-`/` spelling, option (a) in
    `claude-notes/plans/2026-10-28-config-path-late-binding.md` §4.4).
-2. **`ConfigValueKind::Path` + `adjust_paths_to_document_dir`**
-   (`crates/quarto-core/src/project/mod.rs:253-296`) — merge-time rebase of
-   `Path`-kind values from declaring dir to consuming-doc dir. Fed by
+2. **`ConfigValueKind::Path` + `adjust_paths_to_project_root`**
+   (`crates/quarto-core/src/project/mod.rs`; `adjust_paths_to_document_dir`
+   until bd-okqrjh8v) — merge-time rewrite of `Path`-kind values from the
+   declaring dir into the project-root pivot (absolute outside the
+   project; a leading `/` anchors at the project root). Fed by
    explicit `!path` tags and by the extension marking tables
    (`FRAGMENT_PATH_PATTERNS`, `FORMAT_ASSET_PATTERNS`, `PATH_VALUED_KEYS`).
    Blind spot: user-authored plain strings are never marked.
@@ -136,9 +138,11 @@ Three provenance-correct mechanisms coexist today. New code should prefer
    bd-nqq41zgx / GH #945, 2026-10-28) — **the convergence target below,
    in tree.** Takes the `ConfigValue` (not the extracted string) plus a
    `PathCtx { source_context, project_dir, document_dir }` and binds the
-   base late: a `Path`-kind value is already document-relative, or
-   OS-absolute for a file outside the project (mechanisms 2/3 output,
-   honoured as-is); a URL is classified by `is_external_url`; a leading
+   base late: a `Path`-kind value is already in **pivot form** —
+   project-root-relative, or OS-absolute for a file outside the project
+   (mechanisms 2/3 output, `config_paths::pivot_form`, bd-okqrjh8v;
+   before Phase 1b it was document-relative); a URL is classified by
+   `is_external_url`; a leading
    `/` anchors at the project root; an OS-absolute path (Windows
    drive/UNC) is used as written; otherwise the base is the declaring
    file's directory from the value's `SourceInfo`, with the document
@@ -155,12 +159,11 @@ Three provenance-correct mechanisms coexist today. New code should prefer
    filesystem-space violators migrated in bd-lwvumpfk (Phase 1), which
    also routed the mechanism-3 consumers inside quarto-core through it.
    Parsed types carry a `ConfigPath` (unresolved string + span, or the
-   marked form) and resolve where a `PathCtx` is known. Mechanism 3's
-   stored form switches to the project-root pivot next (Phase 1b,
-   bd-okqrjh8v); `quarto-sass`\'s `ThemeContext::resolve_path` and
-   pampa's citeproc base dir are the two below-quarto-core consumers
-   still joining a marked value onto the document dir, which 1b must
-   change at the hand-over.
+   marked form) and resolve where a `PathCtx` is known. Since Phase 1b
+   (bd-okqrjh8v) mechanisms 2 and 3 store the project-root pivot, so a
+   value's spelling no longer varies with the consuming document;
+   `quarto-sass`\'s `ThemeContext` and pampa's citeproc base are built on
+   the project root by quarto-core.
 
 **Convergence target** (assessment §6.2, tracked under bd-oejuizi9 +
 bd-hjv5o): generalize mechanism 3 into a single path-shaped-key registry
@@ -212,7 +215,6 @@ Update this table when adding keys or migrating sites.
 | `project_resources.rs:705-722,827-836` | engine/filter-declared resources | doc-dir join — runtime output, not YAML; out of this class unless a key is added | bd-hjv5o scope |
 | `revealjs/footer_logo.rs:168-176` | revealjs `logo` | raw string emitted, no `page_url_for`, no copy (URL space) | bd-7328beha |
 | `project/listing/item.rs:285-291,431-465`, `project/listing/helpers.rs:70-73,96-102`, `transforms/listing_generate.rs:503-507` | front-matter `image`, `listing-item.image` | hand-written external-prefix list; `/` treated as external (URL space) | bd-epk8cmdl |
-| `project/mod.rs:290-294` (`adjust_paths_recursive`, mechanism 2 itself) | every explicit `!path` | `http://`/`https://` prefix list instead of `is_external_url`; `!path /x` never anchored at the project root (the resolver's step 1 now compensates at consumption) | Phase 1b of bd-nqq41zgx |
 | ~~`pampa/src/citeproc_filter.rs:133,151`~~ | `csl`, `bibliography` | ~~**process-CWD** read (no base at all)~~ **FIXED 2026-09-24** (book-projects P2): declaration-site base dir threaded into `apply_citeproc_filter` from both call paths (`UserFiltersStage` = document dir; book single-file merge = first file-chapter's dir); both keys added to `FORMAT_PATH_KEYS` (`ExistenceSilent` — URLs stay scalar) | ~~bd-oqoozmtr~~ (closed) |
 
 Related open strands: bd-nqq41zgx (the convergence plan,

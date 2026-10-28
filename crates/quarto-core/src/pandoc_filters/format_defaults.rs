@@ -888,11 +888,11 @@ mod tests {
             joined,
             vec![
                 "--reference-doc",
-                "/doc/dir/custom.docx",
+                "/doc/custom.docx",
                 "--default-image-extension",
                 "png"
             ],
-            "the document-relative Path value must be rebased against doc_dir"
+            "the pivot-form Path value resolves against the project root"
         );
     }
 

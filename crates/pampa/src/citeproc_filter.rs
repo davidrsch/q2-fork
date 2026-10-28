@@ -202,9 +202,12 @@ pub fn apply_citeproc_filter(
 }
 
 /// Resolve a declared `bibliography`/`csl` path against `base_dir`
-/// (bd-oqoozmtr). `quarto_util::is_rooted`, not `is_absolute`: a leading `/`
-/// means the *project root* on native and the VFS root on wasm32, so rooted
-/// paths are left untouched; only genuinely relative paths are anchored.
+/// (bd-oqoozmtr). A value Quarto's metadata merge marked is already
+/// project-root-relative (or absolute for a file outside the project), and
+/// quarto-core passes the project root as `base_dir` (bd-okqrjh8v).
+/// `quarto_util::is_rooted`, not `is_absolute`: a rooted path is used as
+/// written on native and names the VFS root on wasm32; only genuinely
+/// relative paths are anchored.
 fn resolve_against_base(base_dir: &Path, declared: &str) -> PathBuf {
     let path = Path::new(declared);
     if quarto_util::is_rooted(path) {

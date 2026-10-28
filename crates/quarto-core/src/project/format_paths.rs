@@ -22,12 +22,12 @@
 //! project root regardless of the declaring layer (rule 2).
 //!
 //! Marked values become [`ConfigValueKind::Path`] holding the
-//! equivalent **document-relative** path, so downstream consumers
-//! that join the consuming document's directory
-//! ([`IncludeResolveStage`](crate::stage::stages::IncludeResolveStage)'s
-//! `doc_dir.join`, `quarto-sass`'s `ThemeContext::resolve_path`, the
-//! [`FormatCssTransform`](crate::transforms::FormatCssTransform))
-//! read them correctly with no change of their own.
+//! **pivot form** (`crate::config_paths::pivot_form`): the path relative
+//! to the project root, or absolute for a file outside the project.
+//! Consumers turn that into a filesystem path with
+//! `crate::config_paths::resolve_config_path` (bd-okqrjh8v; until Phase
+//! 1b the stored form was document-relative and consumers joined the
+//! document's directory themselves).
 //!
 //! The key table ([`FORMAT_PATH_KEYS`]) is the in-tree seed of the
 //! contract's unified path-shaped-key registry. Per-key marking
@@ -201,12 +201,11 @@ fn candidate_path(declared: &str, layer_base: &Path, project_dir: &Path) -> Path
 struct MarkCtx<'a> {
     layer_base: &'a Path,
     project_dir: &'a Path,
-    document_dir: &'a Path,
     runtime: &'a dyn SystemRuntime,
 }
 
-/// Mark path-shaped format values in one metadata layer as
-/// document-relative `Path` values ([`FORMAT_PATH_KEYS`]).
+/// Mark path-shaped format values in one metadata layer as pivot-form
+/// `Path` values ([`FORMAT_PATH_KEYS`]; `crate::config_paths::pivot_form`).
 ///
 /// `layer_base` is the directory the layer's relative paths are
 /// authored against (project root for `_quarto.yml`, the metadata
@@ -225,14 +224,12 @@ pub(crate) fn mark_format_path_values(
     metadata: &mut ConfigValue,
     layer_base: &Path,
     project_dir: &Path,
-    document_dir: &Path,
     runtime: &dyn SystemRuntime,
 ) -> Vec<DiagnosticMessage> {
     let mut diagnostics = Vec::new();
     let ctx = MarkCtx {
         layer_base,
         project_dir,
-        document_dir,
         runtime,
     };
     for (key, policy, forms) in FORMAT_PATH_KEYS {
@@ -312,9 +309,7 @@ fn mark_entry(
             }
         }
     }
-    let doc_relative =
-        pathdiff::diff_paths(&source, ctx.document_dir).unwrap_or_else(|| source.clone());
-    entry.value = ConfigValueKind::Path(quarto_util::to_forward_slashes(&doc_relative));
+    entry.value = ConfigValueKind::Path(crate::config_paths::pivot_form(&source, ctx.project_dir));
 }
 
 /// Build the Q-5-29 warning for a declared stylesheet whose file does
@@ -413,19 +408,13 @@ mod tests {
         std::fs::create_dir_all(&doc_dir).unwrap();
 
         let mut meta = css_map(vec![scalar("styles.css")]);
-        let diags = mark_format_path_values(
-            &mut meta,
-            &project,
-            &project,
-            &doc_dir,
-            &NativeRuntime::new(),
-        );
+        let diags = mark_format_path_values(&mut meta, &project, &project, &NativeRuntime::new());
         assert!(diags.is_empty(), "existing file must not diagnose");
         let css = meta.get("css").unwrap();
         assert_eq!(
             css.value,
-            ConfigValueKind::Path("../../styles.css".to_string()),
-            "expected Path kind rebased to the document dir"
+            ConfigValueKind::Path("styles.css".to_string()),
+            "expected Path kind in pivot (project-relative) form"
         );
     }
 
@@ -466,24 +455,15 @@ mod tests {
                 scalar("not-a-map"),
             ],
         );
-        let diags = mark_format_path_values(
-            &mut meta,
-            &project,
-            &project,
-            &doc_dir,
-            &NativeRuntime::new(),
-        );
+        let diags = mark_format_path_values(&mut meta, &project, &project, &NativeRuntime::new());
         assert!(
             diags.is_empty(),
             "components never diagnose at marking: {diags:?}"
         );
         let items = meta.get("components").unwrap().as_array().unwrap();
         let src = |i: usize| items[i].get("src").unwrap().value.clone();
-        assert_eq!(
-            src(0),
-            ConfigValueKind::Path("../lib/missing.js".to_string())
-        );
-        assert_eq!(src(1), ConfigValueKind::Path("../root.js".to_string()));
+        assert_eq!(src(0), ConfigValueKind::Path("lib/missing.js".to_string()));
+        assert_eq!(src(1), ConfigValueKind::Path("root.js".to_string()));
         assert!(
             matches!(src(2), ConfigValueKind::Scalar { .. }),
             "npm: source stays Scalar"
@@ -502,13 +482,7 @@ mod tests {
         let project = temp.path().canonicalize().unwrap();
 
         let mut meta = css_map(vec![scalar("nope.css")]);
-        let diags = mark_format_path_values(
-            &mut meta,
-            &project,
-            &project,
-            &project,
-            &NativeRuntime::new(),
-        );
+        let diags = mark_format_path_values(&mut meta, &project, &project, &NativeRuntime::new());
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].code.as_deref(), Some("Q-5-29"));
         assert!(diags[0].title.contains("nope.css"));
@@ -536,13 +510,7 @@ mod tests {
             scalar("https://example.com/x.css"),
             scalar("gone.css"),
         ]);
-        let diags = mark_format_path_values(
-            &mut meta,
-            &project,
-            &project,
-            &project,
-            &NativeRuntime::new(),
-        );
+        let diags = mark_format_path_values(&mut meta, &project, &project, &NativeRuntime::new());
         assert_eq!(diags.len(), 1, "only the missing local file diagnoses");
         assert!(diags[0].title.contains("gone.css"));
         let items = meta.get("css").unwrap().as_array().unwrap();
@@ -571,13 +539,12 @@ mod tests {
             &mut meta,
             &doc_dir, // layer base is the doc dir — must not be used
             &project,
-            &doc_dir,
             &NativeRuntime::new(),
         );
         assert!(diags.is_empty());
         assert_eq!(
             meta.get("css").unwrap().value,
-            ConfigValueKind::Path("../styles.css".to_string())
+            ConfigValueKind::Path("styles.css".to_string())
         );
     }
 
@@ -592,13 +559,7 @@ mod tests {
             "already/rebased.css".to_string(),
             SourceInfo::for_test(),
         )]);
-        let diags = mark_format_path_values(
-            &mut meta,
-            &project,
-            &project,
-            &project,
-            &NativeRuntime::new(),
-        );
+        let diags = mark_format_path_values(&mut meta, &project, &project, &NativeRuntime::new());
         assert!(diags.is_empty());
         assert_eq!(
             meta.get("css").unwrap().value,
@@ -621,18 +582,13 @@ mod tests {
 
         for declared in ["hdr.html", "missing.html"] {
             let mut meta = key_map("include-in-header", vec![scalar(declared)]);
-            let diags = mark_format_path_values(
-                &mut meta,
-                &project,
-                &project,
-                &doc_dir,
-                &NativeRuntime::new(),
-            );
+            let diags =
+                mark_format_path_values(&mut meta, &project, &project, &NativeRuntime::new());
             assert!(diags.is_empty(), "include marking never diagnoses");
             assert_eq!(
                 meta.get("include-in-header").unwrap().value,
-                ConfigValueKind::Path(format!("../{declared}")),
-                "entry '{declared}' must be rebased regardless of existence"
+                ConfigValueKind::Path(declared.to_string()),
+                "entry '{declared}' must be marked regardless of existence"
             );
         }
     }
@@ -663,18 +619,12 @@ mod tests {
             SourceInfo::for_test(),
         );
         let mut meta = key_map("include-in-header", vec![file_entry, text_entry]);
-        let diags = mark_format_path_values(
-            &mut meta,
-            &project,
-            &project,
-            &doc_dir,
-            &NativeRuntime::new(),
-        );
+        let diags = mark_format_path_values(&mut meta, &project, &project, &NativeRuntime::new());
         assert!(diags.is_empty());
         let items = meta.get("include-in-header").unwrap().as_array().unwrap();
         assert_eq!(
             items[0].get("file").unwrap().value,
-            ConfigValueKind::Path("../hdr.html".to_string()),
+            ConfigValueKind::Path("hdr.html".to_string()),
             "file: value must be marked"
         );
         assert!(
@@ -700,13 +650,12 @@ mod tests {
             &mut meta,
             &doc_dir, // layer base must not be used for rooted entries
             &project,
-            &doc_dir,
             &NativeRuntime::new(),
         );
         assert!(diags.is_empty());
         assert_eq!(
             meta.get("include-in-header").unwrap().value,
-            ConfigValueKind::Path("../hdr.html".to_string())
+            ConfigValueKind::Path("hdr.html".to_string())
         );
     }
 
@@ -720,13 +669,7 @@ mod tests {
         let project = temp.path().canonicalize().unwrap();
 
         let mut meta = key_map("theme", vec![scalar("cosmo")]);
-        let diags = mark_format_path_values(
-            &mut meta,
-            &project,
-            &project,
-            &project,
-            &NativeRuntime::new(),
-        );
+        let diags = mark_format_path_values(&mut meta, &project, &project, &NativeRuntime::new());
         assert!(diags.is_empty(), "theme marking must never diagnose");
         assert!(
             matches!(
@@ -748,19 +691,13 @@ mod tests {
         std::fs::create_dir_all(&doc_dir).unwrap();
 
         let mut meta = key_map("theme", vec![scalar("cosmo"), scalar("custom.scss")]);
-        let diags = mark_format_path_values(
-            &mut meta,
-            &project,
-            &project,
-            &doc_dir,
-            &NativeRuntime::new(),
-        );
+        let diags = mark_format_path_values(&mut meta, &project, &project, &NativeRuntime::new());
         assert!(diags.is_empty());
         let items = meta.get("theme").unwrap().as_array().unwrap();
         assert!(matches!(items[0].value, ConfigValueKind::Scalar { .. }));
         assert_eq!(
             items[1].value,
-            ConfigValueKind::Path("../custom.scss".to_string())
+            ConfigValueKind::Path("custom.scss".to_string())
         );
     }
 
@@ -793,24 +730,18 @@ mod tests {
             SourceInfo::for_test(),
         );
         let mut meta = key_map("theme", vec![theme]);
-        let diags = mark_format_path_values(
-            &mut meta,
-            &project,
-            &project,
-            &doc_dir,
-            &NativeRuntime::new(),
-        );
+        let diags = mark_format_path_values(&mut meta, &project, &project, &NativeRuntime::new());
         assert!(diags.is_empty());
         let theme = meta.get("theme").unwrap();
         let light = theme.get("light").unwrap().as_array().unwrap();
         assert!(matches!(light[0].value, ConfigValueKind::Scalar { .. }));
         assert_eq!(
             light[1].value,
-            ConfigValueKind::Path("../light.scss".to_string())
+            ConfigValueKind::Path("light.scss".to_string())
         );
         assert_eq!(
             theme.get("dark").unwrap().value,
-            ConfigValueKind::Path("../dark.scss".to_string())
+            ConfigValueKind::Path("dark.scss".to_string())
         );
     }
 
@@ -834,20 +765,18 @@ mod tests {
         // in its own `_metadata.yml`.
         let declaring_dir = project.join("posts").join("2026");
         std::fs::create_dir_all(&declaring_dir).unwrap();
-        let doc_dir = declaring_dir.clone();
 
         let mut meta = key_map("reference-doc", vec![scalar("../../shared/ref.docx")]);
         let diags = mark_format_path_values(
             &mut meta,
             &declaring_dir, // layer_base: the `_metadata.yml`'s own directory
             &project,
-            &doc_dir,
             &NativeRuntime::new(),
         );
         assert!(diags.is_empty());
         assert_eq!(
             meta.get("reference-doc").unwrap().value,
-            ConfigValueKind::Path("../../shared/ref.docx".to_string()),
+            ConfigValueKind::Path("shared/ref.docx".to_string()),
             "expected resolution against the declaring directory, not the project root \
              (which would instead resolve to a nonexistent path and stay Scalar)"
         );
@@ -868,13 +797,12 @@ mod tests {
             &mut meta,
             &doc_dir, // layer base is the doc dir — must not be used
             &project,
-            &doc_dir,
             &NativeRuntime::new(),
         );
         assert!(diags.is_empty());
         assert_eq!(
             meta.get("reference-doc").unwrap().value,
-            ConfigValueKind::Path("../../ref.docx".to_string())
+            ConfigValueKind::Path("ref.docx".to_string())
         );
     }
 
@@ -889,13 +817,7 @@ mod tests {
         let project = temp.path().canonicalize().unwrap();
 
         let mut meta = key_map("reference-doc", vec![scalar("missing.docx")]);
-        let diags = mark_format_path_values(
-            &mut meta,
-            &project,
-            &project,
-            &project,
-            &NativeRuntime::new(),
-        );
+        let diags = mark_format_path_values(&mut meta, &project, &project, &NativeRuntime::new());
         assert!(
             diags.is_empty(),
             "reference-doc must never diagnose at merge time (ExistenceSilent)"
@@ -920,17 +842,12 @@ mod tests {
         std::fs::create_dir_all(&declaring_dir).unwrap();
 
         let mut meta = key_map("template", vec![scalar("../../shared/custom.docx")]);
-        let diags = mark_format_path_values(
-            &mut meta,
-            &declaring_dir,
-            &project,
-            &declaring_dir,
-            &NativeRuntime::new(),
-        );
+        let diags =
+            mark_format_path_values(&mut meta, &declaring_dir, &project, &NativeRuntime::new());
         assert!(diags.is_empty());
         assert_eq!(
             meta.get("template").unwrap().value,
-            ConfigValueKind::Path("../../shared/custom.docx".to_string())
+            ConfigValueKind::Path("shared/custom.docx".to_string())
         );
     }
 
@@ -943,17 +860,11 @@ mod tests {
         std::fs::create_dir_all(&doc_dir).unwrap();
 
         let mut meta = key_map("template", vec![scalar("/custom.docx")]);
-        let diags = mark_format_path_values(
-            &mut meta,
-            &doc_dir,
-            &project,
-            &doc_dir,
-            &NativeRuntime::new(),
-        );
+        let diags = mark_format_path_values(&mut meta, &doc_dir, &project, &NativeRuntime::new());
         assert!(diags.is_empty());
         assert_eq!(
             meta.get("template").unwrap().value,
-            ConfigValueKind::Path("../custom.docx".to_string())
+            ConfigValueKind::Path("custom.docx".to_string())
         );
     }
 }

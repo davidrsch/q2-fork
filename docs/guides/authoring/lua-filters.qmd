@@ -177,6 +177,17 @@ its richer configuration model:
 - Values Quarto tracks specially — `!path`, `!glob`, `!expr` tagged
   strings — appear as small typed values with a `.value` string
   property, and survive a filter round-trip losslessly.
+- **Path-shaped keys are project-root-relative.** Keys Quarto knows hold
+  file paths (`css`, `theme`, `include-in-header` and the other include
+  slots, `bibliography`, `csl`, `reference-doc`, `template`, the `epub-*`
+  files, a component's `src`) reach filters as `!path` values whose
+  `.value` is the path relative to the project root (or absolute, for a
+  file outside the project), whatever file declared it and whatever
+  directory the current document is in. Quarto 1 handed filters the
+  path relative to the input document instead, so a filter ported from
+  Quarto 1 that opens such a file should build the absolute path with
+  `quarto.project.directory` (see [Where the filter is running](#where-the-filter-is-running))
+  rather than the document's directory.
 
 Besides the `meta` argument of a `Meta` or `Pandoc` handler, every filter
 can read the document metadata directly through `quarto.metadata.get("a.b")`
