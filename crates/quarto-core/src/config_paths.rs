@@ -23,8 +23,8 @@
 //! [`resolve_config_path`] is that resolver. Consumers call it with the
 //! `ConfigValue` they read (not the string they extracted from it) and
 //! a [`PathCtx`]; they never `doc_dir.join(..)` a config string
-//! themselves (contract author rule 1; the `config-path-base` lint,
-//! bd-40luf359, will enforce it).
+//! themselves (contract author rule 1; the `config-path-base` xtask lint,
+//! bd-40luf359, enforces it in `stage/` and `transforms/`).
 //!
 //! Resolution order:
 //!

@@ -33,6 +33,7 @@ use quarto_pandoc_types::inline::{Image, Inline, split_string_to_inlines};
 use quarto_pandoc_types::pandoc::Pandoc;
 use quarto_source_map::{By, SourceInfo};
 
+use crate::config_paths::{PathCtx, resolve_config_path};
 use crate::project::ProjectKind;
 use crate::render::RenderContext;
 use crate::transform::{AstTransform, TransformPhase};
@@ -66,26 +67,30 @@ impl CoverRequest {
     fn find(
         ast_meta: &ConfigValue,
         project_meta: Option<&ConfigValue>,
-        doc_dir: &Path,
-        project_dir: &Path,
+        path_ctx: &PathCtx<'_>,
     ) -> Option<CoverRequest> {
-        if let Some(raw) = ast_meta
-            .get("cover-image")
-            .and_then(|v| v.as_plain_text())
-            .filter(|s| !s.is_empty())
+        if let Some(value) = ast_meta.get("cover-image")
+            && value.as_plain_text().is_some_and(|s| !s.is_empty())
         {
             return Some(CoverRequest {
-                src: resolve_declared_path(&raw, doc_dir, project_dir),
+                src: resolve_config_path(value, path_ctx)?.file()?,
                 alt: config_plain_text(ast_meta, "cover-image-alt"),
             });
         }
         let book = project_meta.and_then(|m| m.get("book"))?;
-        let raw = book
-            .get("cover-image")
-            .and_then(|v| v.as_plain_text())
-            .filter(|s| !s.is_empty())?;
+        let value = book.get("cover-image")?;
+        if !value.as_plain_text().is_some_and(|s| !s.is_empty()) {
+            return None;
+        }
+        // `book.cover-image` is `_quarto.yml`-only: the project root is
+        // its anchor and, for a span the context cannot place, its
+        // fallback (never the index page's directory).
+        let project_ctx = PathCtx {
+            document_dir: path_ctx.project_dir,
+            ..*path_ctx
+        };
         Some(CoverRequest {
-            src: resolve_declared_path(&raw, project_dir, project_dir),
+            src: resolve_config_path(value, &project_ctx)?.file()?,
             alt: config_plain_text(book, "cover-image-alt"),
         })
     }
@@ -95,16 +100,6 @@ fn config_plain_text(meta: &ConfigValue, key: &str) -> Option<String> {
     meta.get(key)
         .and_then(|v| v.as_plain_text())
         .filter(|s| !s.is_empty())
-}
-
-/// Config-authored paths resolve relative to the declaring file's
-/// directory; a leading `/` means the project root (never the
-/// filesystem root). See claude-notes/designs/path-resolution-model.md.
-fn resolve_declared_path(raw: &str, declared_dir: &Path, project_dir: &Path) -> PathBuf {
-    match raw.strip_prefix('/') {
-        Some(rest) => project_dir.join(rest),
-        None => declared_dir.join(raw),
-    }
 }
 
 /// Express the cover's source path as a URL the renderer resolves the
@@ -149,8 +144,12 @@ impl AstTransform for BookCoverImageTransform {
             return Ok(());
         };
         let project_meta = ctx.project.config.metadata.as_ref();
-        let Some(request) = CoverRequest::find(&ast.meta, project_meta, doc_dir, &ctx.project.dir)
-        else {
+        // Config-authored paths resolve relative to the declaring file's
+        // directory; a leading `/` means the project root
+        // (`crate::config_paths`; claude-notes/designs/path-resolution-model.md).
+        let path_ctx =
+            PathCtx::for_document(ctx.source_context, &ctx.project.dir, &ctx.document.input);
+        let Some(request) = CoverRequest::find(&ast.meta, project_meta, &path_ctx) else {
             return Ok(());
         };
         let Some(target) = cover_target(&request.src, doc_dir, &ctx.project.dir) else {
