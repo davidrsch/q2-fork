@@ -121,6 +121,8 @@ Files the extension ships next to its manifest — SCSS themes, CSS, header incl
 
 A path that does not name a bundled file keeps its `_quarto.yml` meaning: it is relative to the project root. A navbar or sidebar entry with `href: index.qmd` links to the project's own `index.qmd`, not to a file inside the extension.
 
+In the merged configuration (`q2 get-config`), a bundled site asset such as `website.favicon` or `website.navbar.logo` appears in site-root form, `/_extensions/acme/fancy-docs/assets/logo.svg`; bundled files under `format:` appear as project-root-relative `!path` values.
+
 The same resolution applies to format contributions (`contributes: formats:`): a format extension can bundle theme SCSS, CSS, or header includes next to its manifest and reference them by bare name. A `theme:` entry that names a `.scss`/`.css` file Quarto cannot find — bundled or otherwise — fails the render with [Q-14-4](../../errors/theme/Q-14-4.qmd).
 
 ### Errors you might see

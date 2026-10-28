@@ -560,6 +560,56 @@ The `config-path-base` xtask lint with the blessed-module list
 
 Separate strands, after Phase 1 shows which rows still earn their place.
 
+#### Phase 3 handoff (2026-10-28, branch `braid/bd-0x1znhgb-defer-metadata-path-resolution`, stacked on PR #958)
+
+- [x] 3.1 §4.4 option (a): `rebase_fragment_paths` spells a rebased
+      `FRAGMENT_SITE_PATH_PATTERNS` value (`website.favicon`,
+      `navbar.logo`, `navbar.logo-href`, `sidebar.logo`) as
+      `/_extensions/<ext>/…` — self-describing in URL space; every
+      consumer (`resolve_metadata_path` → `resolve_to_project_root`,
+      `normalize_favicon_path`, `copy_navbar_logo`,
+      `resolve_href_for_html`) already strips the `/`. A file outside
+      the project keeps its OS-absolute form. Visible in `get-config`.
+- [x] 3.2 The `_extension.yml` file-name rule in `resolve_metadata_path`
+      is gone. What replaces it is not a per-value recorded base (see
+      the note below) but a **virtual file**: the project fragment
+      (`contributes.project`, `contributes.metadata.project`) is
+      re-keyed at config time to `config_paths::project_fragment_file_id`
+      (`rekey_project_fragment`, called from `rebase_fragment_paths`),
+      and the merge stage / every config-source binder
+      (`config_sources::config_file_ids`, `register_config_source`,
+      `bind_config_source`, `project_resources`, `compile_theme_css`)
+      registers that id with the manifest's path and bytes. One rule,
+      `config_paths::file_base_dir(id, path, project_dir)`, gives the
+      project root for a fragment id and the file's directory otherwise;
+      `declaring_dir`, `resolve_metadata_path` and
+      `glob::provenance::BaseDirContext::base_dir_for` all call it. So a
+      fragment `href: index.qmd` (bd-74ktvzv7 finding 2) and a fragment
+      `listing.contents` glob anchor at the project root, while the
+      manifest's `contributes.metadata` / `contributes.formats` values
+      keep resolving against the extension directory.
+- [x] 3.3 The Phase-2 half of bd-74ktvzv7 (`Path` values
+      doc-relativized then page-relativized) is moot since Phase 1b:
+      marked values are the project-root pivot and are never
+      document-relativized.
+- [ ] 3.4 §4.5 mechanism-3 row review — not started; separate strand
+      when a row is measured to break a cache key or block a consumer.
+
+**Why not "carry the base on the value".** The first cut wrapped each
+fragment leaf's `SourceInfo` in `Generated { by: config-base {base},
+from: [Invocation anchor = the authored span] }`. `resolve_byte_range`
+and `root_file_id` follow the anchor, but the published
+`quarto-error-reporting` renders a location from `start_offset()` /
+`length()`, which are `0` for `Generated`, so three CLI tests lost their
+`_extension.yml` snippet (`extension_config_spans`,
+`render_scripts_cli`). `ConfigValue` has ~216 struct-literal sites, so a
+new field was out too. The virtual-file id keeps every span `Original`
+and needs no plumbing: the base is a function of the id. If the
+source-map crate later gains a first-class resolution base (or
+error-reporting learns to render anchored `Generated` spans), the
+per-value form becomes available again; `file_base_dir` is the one
+place to switch.
+
 ### Not in scope
 
 Include-shortcode nested retargeting (bd-udrn0q47; markdown space), listing

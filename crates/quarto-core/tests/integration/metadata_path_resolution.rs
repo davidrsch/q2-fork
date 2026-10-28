@@ -412,6 +412,31 @@ fn extension_fragment_navbar_href_resolves_against_project_root() {
     assert!(missing.is_empty(), "unexpected Q-13-2: {missing:?}");
 }
 
+/// bd-0x1znhgb: a fragment value that is *not* a bundled file resolves
+/// against the project root for globs too — a `project.resources`
+/// pattern contributed by an extension names project files, exactly as
+/// it would in `_quarto.yml`, not files under `_extensions/<ext>/`.
+#[test]
+fn extension_fragment_resource_glob_anchors_at_project_root() {
+    let (dir, _outputs, diags) = render_project(|project_dir| {
+        write(
+            &project_dir.join("_extensions/x/_extension.yml"),
+            "title: X\nauthor: Test\nversion: 1.0.0\ncontributes:\n  project:\n    project:\n      type: website\n      output-dir: _site\n      resources:\n        - \"data/*.csv\"\n",
+        );
+        write(&project_dir.join("_quarto.yml"), "project:\n  type: x\n");
+        write(
+            &project_dir.join("index.qmd"),
+            "---\ntitle: Home\n---\n\nH.\n",
+        );
+        write(&project_dir.join("data/table.csv"), "a,b\n1,2\n");
+    });
+    assert!(
+        dir.join("_site/data/table.csv").is_file(),
+        "a fragment `resources:` glob must anchor at the project root; diagnostics: {:?}",
+        diags.iter().map(|d| &d.title).collect::<Vec<_>>()
+    );
+}
+
 // ----- helpers ------------------------------------------------------------
 
 fn snippet<'a>(html: &'a str, needle: &str) -> &'a str {

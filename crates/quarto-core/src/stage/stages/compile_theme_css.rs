@@ -1175,7 +1175,9 @@ fn theme_error_candidates(
         candidates.push((hash(p), p.clone()));
     }
     for p in &ctx.project.config.extension_manifest_paths {
-        candidates.push((hash(p), p.clone()));
+        for (id, path) in crate::config_sources::config_file_ids(p) {
+            candidates.push((id, path.to_path_buf()));
+        }
     }
     for p in crate::project::directory_metadata_paths_for_document(
         &ctx.project,

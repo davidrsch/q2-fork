@@ -773,9 +773,13 @@ pub fn rewrite_config_inlines(
 /// - The source file's path can't be expressed relative to `project_root`
 ///   (file lives outside the project).
 ///
-/// Values authored in an extension manifest (`_extension.yml`) resolve
-/// against the project root, as if written in `_quarto.yml`
-/// (bd-74ktvzv7).
+/// The base is the span's file's directory as
+/// [`crate::config_paths::file_base_dir`] defines it: for an
+/// extension's project fragment (registered under
+/// [`crate::config_paths::project_fragment_file_id`]) that is the
+/// project root, so fragment values resolve as if written in
+/// `_quarto.yml` (bd-74ktvzv7 → bd-0x1znhgb; the manifest's file name
+/// is no longer consulted).
 pub fn resolve_metadata_path(
     raw: &str,
     source: &SourceInfo,
@@ -801,7 +805,8 @@ pub fn resolve_metadata_path(
         // Concat / FilterProvenance — no single contiguous range.
         return raw.to_string();
     };
-    let Some(source_file) = source_context.get_file(FileId(file_id_val)) else {
+    let file_id = FileId(file_id_val);
+    let Some(source_file) = source_context.get_file(file_id) else {
         // Source file not registered in this document's SourceContext.
         // Most commonly: a `_quarto.yml` value whose hash-based FileId
         // isn't in the per-doc context. Such paths are already
@@ -809,9 +814,15 @@ pub fn resolve_metadata_path(
         // correct.
         return raw.to_string();
     };
-    let source_path = Path::new(&source_file.path);
-    // Express the source file's directory relative to project_root.
-    let source_dir = source_path.parent().unwrap_or_else(|| Path::new(""));
+    // The file's directory, or the project root for an extension's
+    // project fragment. An unrooted registered path (an in-memory
+    // document) has no usable base: keep the raw href.
+    let Some(source_dir) =
+        crate::config_paths::file_base_dir(file_id, &source_file.path, project_root)
+    else {
+        return raw.to_string();
+    };
+    // Express the base directory relative to project_root.
     let rel_dir = match source_dir.strip_prefix(project_root) {
         Ok(rel) => rel,
         Err(_) => {
@@ -821,20 +832,6 @@ pub fn resolve_metadata_path(
             return raw.to_string();
         }
     };
-    // Extension manifests inside the project (bd-74ktvzv7): values from
-    // `contributes.project` / `metadata` / `formats` mean what they
-    // would in `_quarto.yml`. Bundled files were already rebased to
-    // `_extensions/<ext>/…` at config time (keeping their manifest
-    // span for diagnostics), so resolving against the manifest's
-    // directory would prepend the extension dir a second time.
-    // TODO(bd-0x1znhgb): carry the resolution base with the value
-    // instead of re-deriving it from the source span.
-    if source_path
-        .file_name()
-        .is_some_and(|name| name == "_extension.yml")
-    {
-        return resolve_to_project_root("_", raw);
-    }
     let rel_dir_str = rel_dir.to_string_lossy().replace('\\', "/");
     // Use the same path-normalizer the body-link helper uses so `..`
     // and leading `/` behaviour stays consistent across navigation
@@ -1167,15 +1164,20 @@ mod tests {
         );
     }
 
-    /// bd-74ktvzv7 — values authored in an extension manifest
-    /// (`contributes.project` / `metadata` / `formats`) are
-    /// project-root-relative, not relative to the extension dir:
-    /// bundled files were already rebased to `_extensions/<ext>/…` at
-    /// config time, and other hrefs mean project pages (Q1 parity).
+    /// bd-74ktvzv7 / bd-0x1znhgb — values from an extension's project
+    /// fragment (registered as a virtual file under
+    /// `project_fragment_file_id`) resolve as if written in
+    /// `_quarto.yml`: bundled files were already rebased to
+    /// `_extensions/<ext>/…` at config time, and other hrefs mean
+    /// project pages (Q1 parity).
     #[test]
-    fn metadata_path_extension_manifest_is_project_root_relative() {
+    fn metadata_path_project_fragment_is_project_root_relative() {
         let root = PathBuf::from("/project");
-        let (ctx, src) = source_for("_extensions/acme/x/_extension.yml", &root);
+        let manifest = root.join("_extensions/acme/x/_extension.yml");
+        let mut ctx = SourceContext::new();
+        let fragment = crate::config_paths::project_fragment_file_id(&manifest);
+        ctx.add_file_with_id(fragment, manifest.to_string_lossy().into_owned(), None);
+        let src = SourceInfo::original(fragment, 0, 0);
         assert_eq!(
             resolve_metadata_path("_extensions/acme/x/assets/logo.svg", &src, &ctx, &root),
             "_extensions/acme/x/assets/logo.svg"
@@ -1187,6 +1189,20 @@ mod tests {
         assert_eq!(
             resolve_metadata_path("/docs/../about.qmd", &src, &ctx, &root),
             "about.qmd"
+        );
+    }
+
+    /// The manifest's own id buys nothing: a value written in a file
+    /// named `_extension.yml` resolves against that file's directory
+    /// like any other (the file-name rule of bd-74ktvzv7 is gone; the
+    /// manifest's `contributes.metadata` values do name bundled files).
+    #[test]
+    fn metadata_path_manifest_itself_resolves_against_its_dir() {
+        let root = PathBuf::from("/project");
+        let (ctx, src) = source_for("_extensions/acme/x/_extension.yml", &root);
+        assert_eq!(
+            resolve_metadata_path("assets/logo.svg", &src, &ctx, &root),
+            "_extensions/acme/x/assets/logo.svg"
         );
     }
 

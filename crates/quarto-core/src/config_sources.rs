@@ -64,11 +64,22 @@ pub fn bind_config_source<'a>(
     bind_source_candidates(
         source_context,
         info,
-        candidates.into_iter().map(|p| {
-            let fid = quarto_yaml::file_id_for_filename(&p.to_string_lossy());
-            (fid, p)
-        }),
+        candidates.into_iter().flat_map(config_file_ids),
     )
+}
+
+/// The ids a config file's spans may carry: its own
+/// `quarto_yaml::file_id_for_filename`, and for an extension manifest
+/// also its project fragment's
+/// ([`crate::config_paths::project_fragment_file_id`], bd-0x1znhgb).
+/// Each is paired with the path so a binder can register it.
+pub fn config_file_ids(path: &Path) -> impl Iterator<Item = (FileId, &Path)> {
+    let own = quarto_yaml::file_id_for_filename(&path.to_string_lossy());
+    let fragment = path
+        .file_name()
+        .is_some_and(|name| name == crate::project::EXTENSION_MANIFEST)
+        .then(|| crate::config_paths::project_fragment_file_id(path));
+    std::iter::once((own, path)).chain(fragment.map(|id| (id, path)))
 }
 
 /// Generalization of [`bind_config_source`] for candidate lists that
@@ -181,15 +192,22 @@ pub fn rebase_source_candidates<'a>(
 /// candidates by a diagnostic's resolved id). Returns `true` when the
 /// file was registered (or already present).
 pub fn register_config_source(source_context: &mut SourceContext, path: &Path) -> bool {
-    let name = path.to_string_lossy();
-    let fid = quarto_yaml::file_id_for_filename(&name);
-    if source_context.get_file(fid).is_some() {
+    // Every id the file's spans may carry ([`config_file_ids`]): an
+    // extension manifest's project fragment is registered alongside the
+    // manifest itself, under the same path and content.
+    let ids: Vec<FileId> = config_file_ids(path).map(|(id, _)| id).collect();
+    if ids.iter().all(|id| source_context.get_file(*id).is_some()) {
         return true;
     }
     let Ok(content) = std::fs::read_to_string(path) else {
         return false;
     };
-    source_context.add_file_with_id(fid, name.into_owned(), Some(content));
+    let name = path.to_string_lossy().into_owned();
+    for id in ids {
+        if source_context.get_file(id).is_none() {
+            source_context.add_file_with_id(id, name.clone(), Some(content.clone()));
+        }
+    }
     true
 }
 
