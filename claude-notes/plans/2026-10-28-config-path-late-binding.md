@@ -2,7 +2,7 @@
 title: 'bd-nqq41zgx — config-path resolution: converge on provenance-based late binding (issue #945)'
 date: 2026-10-28
 description: 'Assessment of how Quarto 2 resolves relative paths written in YAML, why project-level `filters:` (GH #945) still fails for subdirectory pages, and a plan to replace the five coexisting mechanisms with one resolver that binds the base directory late, from each value''s SourceInfo.'
-status: draft  # assessment done 2026-10-28; plan awaiting review before execution
+status: draft  # assessment done 2026-10-28; decisions 1,2,3,5 taken, Q4 open; execution not yet authorized
 braid:
   strand: bd-nqq41zgx
   priority: P1
@@ -349,6 +349,57 @@ quarto-core resolves before handing over (the bibliography pattern) and the
 row still goes. Deleting a row is a one-line change once the consumer is
 migrated; adding one for #945 today would be a line we expect to delete.
 
+### 4.6 The stored form of a marked value (open: see §6 Q4)
+
+Today every merge-time mechanism (2, 3, 5) stores a marked value as a
+`ConfigValueKind::Path` holding a **document-relative** string (absolute
+only when the file lies outside the project, bd-9z2258af). That string is a
+contract with its consumers, all of which join it onto the consuming
+document's directory without looking at the key or the provenance:
+
+| Consumer | Key(s) | Join today |
+|---|---|---|
+| `stage/stages/include_resolve.rs:559-570` | `include-*` | `doc_dir.join` |
+| `transforms/format_css.rs:113-121` | `css` | `doc_dir.join`, then the `<link href>` is derived from the resolved source |
+| `quarto-sass/src/themes.rs:463` (`ThemeContext::resolve_path`), `compile_theme_css.rs:462` | `theme` | `document_dir.join` (quarto-sass has no project context) |
+| `pandoc_filters/format_defaults.rs:216-256` | `reference-doc`, `template` | `doc_dir.join` |
+| `pandoc_write.rs:153,578,1262,1700` | `epub-*`, Typst `template-partials`, Typst `bibliography`/`csl`, Typst `template` | `doc_dir.join` |
+| `pampa/src/citeproc_filter.rs:204` | `bibliography`, `csl` | base dir passed in by quarto-core (= document dir) |
+| `transforms/components_resolve.rs:146`, `components/config.rs:222` | `components[].src` | `doc_dir.join` |
+| `transforms/shortcode_resolve.rs:1193`, `apply_template.rs:415` | extension `shortcodes`, `template-partials` | `doc_dir.join` |
+| Lua filters (`pampa/src/lua/config_value.rs:167`) | any marked key | user code sees the stored string as a `Path` special |
+| smoke test `smoke-all/metadata/dir-metadata-paths` | `css` | asserts `href="../../shared/styles.css"` |
+
+Switching the stored form to the project-root pivot (written with a leading
+`/`, the same self-describing spelling decided for extension values in
+§4.4) therefore means: **every row above must stop joining onto the document
+dir in the same change**, either by calling the resolver (step 1 then reads
+"pivot form" instead of "doc-relative") or, for crates below quarto-core,
+by receiving an already-resolved path. Nothing else is coupled: the marking
+code changes in one place each (`mark_entry`, `adjust_paths_recursive`), the
+cache-key class (bd-79c4do6g) disappears because the stored value no longer
+varies per document, `get-config` prints one answer per declaration, and
+`..` chains stop existing (bd-s0jupmmv).
+
+Two user-visible consequences to weigh:
+
+- A Lua filter that reads a marked key (`meta["include-in-header"]`) sees
+  `/custom-header.html` instead of `../custom-header.html`. Quarto 1 shows
+  filters the *input-relative* form (`toInputRelativePaths`), so the
+  doc-relative stored form is the Q1-compatible one for Lua. Mitigation:
+  `quarto.project.*` / a `quarto.utils.resolve_path` (bd-cic0dfdp is the
+  URL-space cousin), or convert at the Lua boundary.
+- Golden fixtures that embed the stored form (the smoke test above, the
+  hub-client pandoc-request goldens if the request carries metadata) need
+  regenerating; that is bookkeeping, not risk.
+
+Proposed sequencing if we switch: not in Phase 0. Phase 1 first routes
+every row above through the resolver with the stored form unchanged
+(behaviour-preserving, each row a one-call swap). Phase 1b then flips the
+stored form in the two marking sites and the resolver's step 1, in one
+commit, with the full suite as the guard. That gets the uniform form within
+the same strand sequence without coupling it to the `filters` pilot.
+
 ## 5. Phased plan
 
 ### Phase 0: #945 pilot (this strand, small)
@@ -411,23 +462,19 @@ record `path:` emission (bd-yghnqcfg; URL-space emission question), schema-
 driven interpretation (the `meta_annotations.rs` "delete me when schemas
 land" note stands; with B, schemas are for validation/LSP, not resolution).
 
-## 6. Open questions for review
+## 6. Review decisions (2026-10-28, with the user)
 
-1. **Phase 0 shape**: pilot the resolver on `filters` (recommended), or ship
-   the table row first and pilot on `template-partials`?
-2. **Fallback base when there is no span** (runtime `-M`, Lua): document dir
-   (today) or project dir? Document dir keeps behaviour; project dir matches
-   what a CLI user probably means. Recommend document dir now, revisit with
-   a diagnostic if it bites.
-3. **§4.4**: leading-`/` spelling for rebased extension values (a), or the
-   typed base (b)?
-4. **Stored form going forward**: keep mechanism 3\'s doc-relative output
-   until rows are retired, or switch its output to the project-root pivot in
-   the same work (would fix the cache-key class once, but changes what
-   `include_resolve.rs`/`ThemeContext` receive)?
-5. **WASM / hub-client**: the VFS `SourceContext` registers the same files;
-   existence probes against an unsynced VFS degrade as they do for css today.
-   Acceptable for Phase 0?
+1. **Phase 0 shape**: pilot the resolver on `filters`. Decided.
+2. **Fallback base when there is no span** (runtime `-M`, Lua): document
+   dir, today's behaviour. Decided.
+3. **§4.4**: option (a), the leading-`/` spelling for rebased extension
+   values. Decided.
+4. **Stored form going forward**: the user leans toward switching to one
+   uniform form sooner rather than later; §4.6 lays out what the switch
+   touches and proposes doing it as Phase 1b. **Open** pending the user's
+   read of §4.6.
+5. **WASM / hub-client**: existence probes against an unsynced VFS degrade
+   as css does today. Accepted for Phase 0.
 
 ## 7. Verification
 
