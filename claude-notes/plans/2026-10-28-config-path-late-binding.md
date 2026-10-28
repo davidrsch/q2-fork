@@ -2,7 +2,7 @@
 title: 'bd-nqq41zgx — config-path resolution: converge on provenance-based late binding (issue #945)'
 date: 2026-10-28
 description: 'Assessment of how Quarto 2 resolves relative paths written in YAML, why project-level `filters:` (GH #945) still fails for subdirectory pages, and a plan to replace the five coexisting mechanisms with one resolver that binds the base directory late, from each value''s SourceInfo.'
-status: draft  # assessment done 2026-10-28; decisions 1,2,3,5 taken, Q4 open; execution not yet authorized
+status: in-progress  # assessment 2026-10-28; all review decisions taken; Phase 0 executing
 braid:
   strand: bd-nqq41zgx
   priority: P1
@@ -451,6 +451,15 @@ The `config-path-base` xtask lint with the blessed-module list
 `project/mod.rs` rebase, `glob/provenance.rs`). First cut restricted to
 `stage/` and `transforms/`.
 
+### Phase 1b: switch the stored form of marked values to the project-root pivot (§4.6)
+
+After Phase 1, in one commit: `mark_entry` and `adjust_paths_recursive`
+store `/<project-relative>` (absolute only outside the project), the
+resolver's step 1 reads it, goldens regenerated. **Docs task:** add a note
+to the Lua filter / extension docs that a marked path key is seen by
+filters in project-root form (`/x`), unlike Quarto 1's input-relative
+form, with the recommended way to resolve it.
+
 ### Phase 3: bd-0x1znhgb (§4.4 option a) and the mechanism-3 row review (§4.5)
 
 Separate strands, after Phase 1 shows which rows still earn their place.
@@ -469,10 +478,13 @@ land" note stands; with B, schemas are for validation/LSP, not resolution).
    dir, today's behaviour. Decided.
 3. **§4.4**: option (a), the leading-`/` spelling for rebased extension
    values. Decided.
-4. **Stored form going forward**: the user leans toward switching to one
-   uniform form sooner rather than later; §4.6 lays out what the switch
-   touches and proposes doing it as Phase 1b. **Open** pending the user's
-   read of §4.6.
+4. **Stored form going forward**: switch to the project-root pivot as
+   Phase 1b (§4.6). Decided. The Lua-visible change (a filter extension
+   that reads a marked key sees `/x` where Quarto 1 showed it the
+   input-relative form) is an accepted behaviour change and **must be
+   documented** in the user docs when 1b lands (Phase 1b task).
+6. **Execution authorized 2026-10-28.** Phase 0 is this strand's PR;
+   Phases 1, 1b, 2 and 3 get their own strands and PRs.
 5. **WASM / hub-client**: existence probes against an unsynced VFS degrade
    as css does today. Accepted for Phase 0.
 
