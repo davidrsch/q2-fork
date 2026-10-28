@@ -139,27 +139,21 @@ pub fn resolve_and_gate_pandoc(
 /// one file (Q1's `merge-includes: false`) — passing two separate
 /// `--include-in-header` flags already keeps them from colliding, with no
 /// merge step to disable.
-/// Collects the string-bearing leaves of a scalar-or-array metadata value
-/// (mirrors `project::format_paths::for_each_entry`, which is private to
-/// that module).
-fn entry_strings(value: &quarto_pandoc_types::ConfigValue) -> Vec<String> {
-    match value.as_array() {
-        Some(items) => items.iter().filter_map(|v| v.as_plain_text()).collect(),
-        None => value.as_plain_text().into_iter().collect(),
-    }
-}
 
-/// Resolves a `mark_format_path_values`-normalized path value (already
-/// document-relative — see `project::format_paths`) against the
-/// document's own directory, producing an absolute path pandoc's
-/// subprocess can open regardless of its own cwd.
-fn resolve_doc_relative(doc_dir: &Path, declared: &str) -> PathBuf {
-    doc_dir.join(declared)
+/// The string-bearing leaves of a scalar-or-array metadata value, as
+/// values (so each keeps its provenance for `resolve_config_path`).
+fn entry_values(
+    value: &quarto_pandoc_types::ConfigValue,
+) -> Vec<&quarto_pandoc_types::ConfigValue> {
+    match value.as_array() {
+        Some(items) => items.iter().collect(),
+        None => vec![value],
+    }
 }
 
 fn epub_extra_args(
     temp_root: &Path,
-    doc_dir: &Path,
+    path_ctx: &crate::config_paths::PathCtx<'_>,
     meta: &quarto_pandoc_types::ConfigValue,
     request_path: impl Fn(&Path) -> Result<String, PipelineError>,
 ) -> Result<(Vec<PandocArg>, Vec<RequestFile>), PipelineError> {
@@ -200,18 +194,23 @@ fn epub_extra_args(
         args.push(PandocArg::text(format!("--split-level={level}")));
     }
 
-    // Single-valued path keys: mark_format_path_values normalized these
+    // Single-valued path keys: `mark_format_path_values` normalized these
     // to a document-relative `Path` value at merge time (see
-    // `project::format_paths::FORMAT_PATH_KEYS`); resolve against the
-    // document's own directory to hand pandoc an absolute path.
+    // `project::format_paths::FORMAT_PATH_KEYS`); `resolve_config_path`
+    // turns that into the absolute path pandoc's subprocess can open
+    // regardless of its own cwd.
     for (key, flag) in [
         ("epub-cover-image", "--epub-cover-image="),
         ("epub-metadata", "--epub-metadata="),
     ] {
-        if let Some(declared) = meta.get(key).and_then(|v| v.as_plain_text()) {
+        if let Some(path) = meta
+            .get(key)
+            .and_then(|v| crate::config_paths::resolve_config_path(v, path_ctx))
+            .and_then(|r| r.file())
+        {
             args.push(PandocArg::FlagPath {
                 flag: flag.to_string(),
-                path: resolve_doc_relative(doc_dir, &declared),
+                path,
             });
         }
     }
@@ -220,11 +219,15 @@ fn epub_extra_args(
     // --css flags, one per file.
     for (key, flag) in [("epub-embed-font", "--epub-embed-font="), ("css", "--css=")] {
         if let Some(value) = meta.get(key) {
-            for declared in entry_strings(value) {
-                args.push(PandocArg::FlagPath {
-                    flag: flag.to_string(),
-                    path: resolve_doc_relative(doc_dir, &declared),
-                });
+            for entry in entry_values(value) {
+                if let Some(path) =
+                    crate::config_paths::resolve_config_path(entry, path_ctx).and_then(|r| r.file())
+                {
+                    args.push(PandocArg::FlagPath {
+                        flag: flag.to_string(),
+                        path,
+                    });
+                }
             }
         }
     }
@@ -393,6 +396,7 @@ fn stage_typst_brand_fonts(brand: Option<&quarto_brand::ResolvedBrand>, ctx: &mu
 fn resolve_typst_available_fonts(
     stage_name: &str,
     meta: &quarto_pandoc_types::ConfigValue,
+    source_context: &quarto_source_map::SourceContext,
     brand: Option<&quarto_brand::ResolvedBrand>,
     input_path: &Path,
     ctx: &mut StageContext,
@@ -412,16 +416,14 @@ fn resolve_typst_available_fonts(
         )
     })?;
     let typst_path = ctx.runtime.find_binary("typst", "QUARTO_TYPST");
-    let input_dir = input_path
-        .parent()
-        .map_or_else(|| ctx.project.dir.clone(), std::path::Path::to_path_buf);
+    let path_ctx = crate::config_paths::PathCtx::for_document(
+        Some(source_context),
+        &ctx.project.dir,
+        input_path,
+    );
     let extra_font_paths = super::typst_compile::with_google_font_cache(
         super::typst_compile::with_brand_file_fonts(
-            super::typst_compile::resolve_font_paths(
-                &super::typst_compile::string_array(meta.get("font-paths")),
-                &ctx.project.dir,
-                &input_dir,
-            ),
+            super::typst_compile::resolve_font_paths(meta.get("font-paths"), &path_ctx),
             brand,
             &ctx.project.dir,
         ),
@@ -471,19 +473,19 @@ pub struct PreparedPandoc {
 
 /// The local file names a metadata key holds, scalar or array (URLs are not
 /// files; non-string entries are skipped).
-fn meta_path_values(meta: &quarto_pandoc_types::ConfigValue, key: &str) -> Vec<String> {
+fn meta_path_files(
+    meta: &quarto_pandoc_types::ConfigValue,
+    key: &str,
+    path_ctx: &crate::config_paths::PathCtx<'_>,
+) -> Vec<PathBuf> {
     let Some(value) = meta.get(key) else {
         return Vec::new();
     };
-    let mut entries: Vec<&quarto_pandoc_types::ConfigValue> = Vec::new();
-    match value.as_array() {
-        Some(items) => entries.extend(items.iter()),
-        None => entries.push(value),
-    }
-    entries
+    entry_values(value)
         .into_iter()
-        .filter_map(|e| e.as_plain_text())
-        .filter(|t| !t.is_empty() && !quarto_util::is_external_url(t))
+        .filter(|e| e.as_plain_text().is_some_and(|t| !t.is_empty()))
+        .filter_map(|e| crate::config_paths::resolve_config_path(e, path_ctx))
+        .filter_map(|r| r.file())
         .collect()
 }
 
@@ -520,7 +522,7 @@ fn request_path(stage: &str, project_dir: &Path, path: &Path) -> Result<String, 
 fn typst_template_files(
     name: &str,
     temp_root: &Path,
-    doc_dir: &Path,
+    path_ctx: &crate::config_paths::PathCtx<'_>,
     meta: &quarto_pandoc_types::ConfigValue,
     runtime: &dyn quarto_system_runtime::SystemRuntime,
 ) -> Result<(PathBuf, Vec<(PathBuf, Vec<u8>)>), PipelineError> {
@@ -552,7 +554,7 @@ fn typst_template_files(
     // (`command/render/pandoc.ts:784-810`). The vendored partials
     // stay staged alongside it unchanged, so a custom template can
     // still reference them (`$numbering.typ()$` etc).
-    if let Some(user_template) = resolve_user_template_path(meta, doc_dir) {
+    if let Some(user_template) = resolve_user_template_path(meta, path_ctx) {
         let bytes = runtime.file_read(&user_template).map_err(|e| {
             PipelineError::stage_error(
                 name,
@@ -573,21 +575,20 @@ fn typst_template_files(
     // fail with `unknown variable: part`; book-projects P2 item 79).
     // Entries arrive as `ConfigValueKind::Path` (extension contributions,
     // rebased document-relative at metadata-merge time) or as plain
-    // scalars/inlines (front matter); both resolve against `doc_dir`.
-    // Shadowing is by file name, matching pandoc's partial resolution and Q1.
+    // scalars/inlines (`_quarto.yml`, `_metadata.yml`, front matter);
+    // each resolves against the file that declared it
+    // (`crate::config_paths`, bd-lwvumpfk). Shadowing is by file name,
+    // matching pandoc's partial resolution and Q1.
     if let Some(partials) = meta.get("template-partials").and_then(|v| v.as_array()) {
         for partial in partials {
-            let rel = match &partial.value {
-                quarto_pandoc_types::config_value::ConfigValueKind::Path(s) => s.clone(),
-                _ => match partial.as_plain_text() {
-                    Some(s) => s,
-                    None => continue,
-                },
-            };
-            let Some(file_name) = Path::new(&rel).file_name() else {
+            let Some(src) =
+                crate::config_paths::resolve_config_path(partial, path_ctx).and_then(|r| r.file())
+            else {
                 continue;
             };
-            let src = doc_dir.join(&rel);
+            let Some(file_name) = src.file_name().map(|f| f.to_os_string()) else {
+                continue;
+            };
             let bytes = runtime.file_read(&src).map_err(|e| {
                 PipelineError::stage_error(
                     name,
@@ -722,7 +723,14 @@ impl PandocWriteStage {
         // the fonts we are about to make available.
         stage_typst_brand_fonts(light, ctx);
         stage_typst_brand_fonts(dark, ctx);
-        resolve_typst_available_fonts(self.name(), &doc.ast.meta, active_brand, &doc.path, ctx)
+        resolve_typst_available_fonts(
+            self.name(),
+            &doc.ast.meta,
+            &doc.source_context,
+            active_brand,
+            &doc.path,
+            ctx,
+        )
     }
 
     /// The wasm build stages no fonts and runs no `typst fonts`: Google
@@ -1115,9 +1123,17 @@ impl PandocWriteStage {
                 project_dir.join(dir)
             }
         };
+        // Config-authored paths resolve against the file that declared
+        // them (`crate::config_paths`); `doc_dir_abs` is the base for
+        // marked values and the fallback for span-less ones.
+        let path_ctx = crate::config_paths::PathCtx {
+            source_context: Some(&doc.source_context),
+            project_dir: &project_dir,
+            document_dir: &doc_dir_abs,
+        };
 
         let (format_extra_args, extra_files) = if ctx.format.identifier == FormatIdentifier::Epub {
-            epub_extra_args(&temp_root, &doc_dir_abs, &doc.ast.meta, |p| rp(p))?
+            epub_extra_args(&temp_root, &path_ctx, &doc.ast.meta, |p| rp(p))?
         } else {
             (Vec::new(), Vec::new())
         };
@@ -1132,7 +1148,7 @@ impl PandocWriteStage {
             let (template, template_files) = typst_template_files(
                 name,
                 &temp_root,
-                &doc_dir_abs,
+                &path_ctx,
                 &doc.ast.meta,
                 ctx.runtime.as_ref(),
             )?;
@@ -1155,11 +1171,11 @@ impl PandocWriteStage {
         // `reference-doc`/`template` entry's `FORMAT_PATH_KEYS`-resolved,
         // document-relative `Path` value is rebased against.
         let mut forwarded_args =
-            build_forwarded_args(name, &doc_dir_abs, &doc.ast.meta, ctx.format.identifier)?;
+            build_forwarded_args(name, &path_ctx, &doc.ast.meta, ctx.format.identifier)?;
 
         if is_typst {
             let args = crate::pandoc_filters::typst_highlight::typst_highlight_args(
-                &doc_dir_abs,
+                &path_ctx,
                 &doc.ast.meta,
                 typst_brand_mode.as_deref(),
                 typst.code_block_bg.as_deref(),
@@ -1267,11 +1283,7 @@ impl PandocWriteStage {
                 // leading `/` is project-root-relative for typst, as for
                 // the other config paths.
                 for key in ["bibliography", "csl"] {
-                    for declared in meta_path_values(&doc.ast.meta, key) {
-                        let path = match declared.strip_prefix('/') {
-                            Some(rooted) => project_dir.join(rooted),
-                            None => doc_dir_abs.join(&declared),
-                        };
+                    for path in meta_path_files(&doc.ast.meta, key, &path_ctx) {
                         collector.add_file(&path, crate::pandoc_request::ResourceKind::Other);
                     }
                 }
@@ -1695,22 +1707,18 @@ fn shift_heading_level_by_for(
 /// pandoc-hybrid-typst Phase 1's "Pandoc-defaults forwarding allow-list"
 /// bullet, `template` entry: resolves a user-configured `template:` value
 /// (already flattened from `format: typst: template: ...` into a plain
-/// top-level `template` key by `resolve_format_config`, and marked
-/// `ConfigValueKind::Path` — document-relative — by `FORMAT_PATH_KEYS` at
-/// merge time) into an absolute filesystem path, joined against the
-/// document's own directory. Mirrors Q1's `userTemplate`
-/// (`command/render/pandoc.ts:784-810`). Only the `Path` variant is
-/// handled: `MarkPolicy::Always` guarantees any string entry is marked, so
-/// an unmarked value here means no `template:` key was set at all.
+/// top-level `template` key by `resolve_format_config`) into an absolute
+/// filesystem path against the file that declared it
+/// (`crate::config_paths`). Mirrors Q1's `userTemplate`
+/// (`command/render/pandoc.ts:784-810`). A value `FORMAT_PATH_KEYS` left
+/// unmarked (the file did not exist at merge time) still resolves here, so
+/// the staging read reports the declaration-resolved path instead of
+/// silently using the vendored template.
 fn resolve_user_template_path(
     meta: &quarto_pandoc_types::ConfigValue,
-    doc_dir: &Path,
+    path_ctx: &crate::config_paths::PathCtx<'_>,
 ) -> Option<PathBuf> {
-    let value = meta.get("template")?;
-    match &value.value {
-        quarto_pandoc_types::config_value::ConfigValueKind::Path(s) => Some(doc_dir.join(s)),
-        _ => None,
-    }
+    crate::config_paths::resolve_config_path(meta.get("template")?, path_ctx)?.file()
 }
 
 /// `format-typst.ts:82-90`'s `section-numbering: "1.1.a"`, inserted into

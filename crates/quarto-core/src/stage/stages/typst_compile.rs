@@ -206,10 +206,11 @@ impl PipelineStage for TypstCompileStage {
             ]);
         }
 
-        let input_dir = rendered
-            .input_path
-            .parent()
-            .map_or_else(|| ctx.project.dir.clone(), std::path::Path::to_path_buf);
+        let path_ctx = crate::config_paths::PathCtx::for_document(
+            Some(&rendered.source_context),
+            &ctx.project.dir,
+            &rendered.input_path,
+        );
         // Best-effort: an invalid brand is reported by `PandocWriteStage`
         // (which resolves it with full diagnostics) before this stage runs.
         let (light, dark) = quarto_sass::resolve_brand_variants(
@@ -229,11 +230,7 @@ impl PipelineStage for TypstCompileStage {
         );
         let extra_font_paths = with_google_font_cache(
             with_brand_file_fonts(
-                resolve_font_paths(
-                    &string_array(rendered.metadata.get("font-paths")),
-                    &ctx.project.dir,
-                    &input_dir,
-                ),
+                resolve_font_paths(rendered.metadata.get("font-paths"), &path_ctx),
                 brand,
                 &ctx.project.dir,
             ),
@@ -402,24 +399,26 @@ pub(crate) fn font_path_args(
 /// project-relative rewrite from the final absolute-path resolution the
 /// way Q1 does across two files). A path beginning with `/` is
 /// project-root-relative — a Quarto-wide convention, unrelated to
-/// filesystem-absolute paths — and resolves against `project_dir`;
-/// anything else resolves against `input_dir` (the document's own
-/// directory), matching Q1's `resolve(inputDir, p)` fallback. This is
-/// checked as a string prefix *before* falling through to `PathBuf::join`,
-/// because on Unix `input_dir.join("/foo")` would otherwise discard
-/// `input_dir` entirely (Rust's `Path::join` replaces the base when the
-/// joined component is itself absolute) — exactly the filesystem-absolute
-/// reading this convention exists to avoid.
+/// filesystem-absolute paths — and resolves against the project root;
+/// anything else resolves against the file that declared it, with the
+/// document's own directory as the fallback for span-less values
+/// (`crate::config_paths`, bd-lwvumpfk; Q1 resolved every relative
+/// entry against the input dir).
 pub(crate) fn resolve_font_paths(
-    raw: &[String],
-    project_dir: &Path,
-    input_dir: &Path,
+    value: Option<&ConfigValue>,
+    path_ctx: &crate::config_paths::PathCtx<'_>,
 ) -> Vec<std::path::PathBuf> {
-    raw.iter()
-        .map(|p| match p.strip_prefix('/') {
-            Some(rest) => project_dir.join(rest),
-            None => input_dir.join(p),
-        })
+    let Some(value) = value else {
+        return Vec::new();
+    };
+    let entries: Vec<&ConfigValue> = match &value.value {
+        quarto_pandoc_types::config_value::ConfigValueKind::Array(items) => items.iter().collect(),
+        _ => vec![value],
+    };
+    entries
+        .into_iter()
+        .filter_map(|e| crate::config_paths::resolve_config_path(e, path_ctx))
+        .filter_map(|r| r.file())
         .collect()
 }
 
@@ -686,6 +685,16 @@ mod tests {
         assert_eq!(string_array(None), Vec::<String>::new());
     }
 
+    fn font_paths_value(entries: &[&str]) -> ConfigValue {
+        ConfigValue::new_array(
+            entries
+                .iter()
+                .map(|e| ConfigValue::new_string(*e, quarto_source_map::SourceInfo::for_test()))
+                .collect(),
+            quarto_source_map::SourceInfo::for_test(),
+        )
+    }
+
     /// bd-3ij4nokp: a leading `/` is project-root-relative (Quarto's
     /// resource-path convention), not filesystem-absolute — verified
     /// against Q1's own `relative-font-path` smoke-all fixture, where
@@ -694,12 +703,14 @@ mod tests {
     /// regardless of which document (possibly nested) is rendering.
     #[test]
     fn test_resolve_font_paths_leading_slash_is_project_relative() {
-        let project_dir = Path::new("/project");
-        let input_dir = Path::new("/project/report1");
-        let resolved =
-            resolve_font_paths(&["/artifacts/fonts".to_string()], project_dir, input_dir);
+        let ctx = crate::config_paths::PathCtx {
+            source_context: None,
+            project_dir: Path::new("/project"),
+            document_dir: Path::new("/project/report1"),
+        };
+        let value = font_paths_value(&["/artifacts/fonts"]);
         assert_eq!(
-            resolved,
+            resolve_font_paths(Some(&value), &ctx),
             vec![std::path::PathBuf::from("/project/artifacts/fonts")]
         );
     }
@@ -711,12 +722,15 @@ mod tests {
     /// `<project-dir>/fonts` (one level up from `subdir/`).
     #[test]
     fn test_resolve_font_paths_relative_resolves_against_input_dir() {
-        let project_dir = Path::new("/project");
-        let input_dir = Path::new("/project/subdir");
-        let resolved = resolve_font_paths(&["../fonts".to_string()], project_dir, input_dir);
+        let ctx = crate::config_paths::PathCtx {
+            source_context: None,
+            project_dir: Path::new("/project"),
+            document_dir: Path::new("/project/subdir"),
+        };
+        let value = font_paths_value(&["../fonts"]);
         assert_eq!(
-            resolved,
-            vec![std::path::PathBuf::from("/project/subdir/../fonts")]
+            resolve_font_paths(Some(&value), &ctx),
+            vec![std::path::PathBuf::from("/project/fonts")]
         );
     }
 

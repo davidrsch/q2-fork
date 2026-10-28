@@ -24,8 +24,6 @@
 //!   `test_allow_list_excludes_number_sections` below and the epic's
 //!   Missing-test-pass item 2.
 
-use std::path::Path;
-
 use quarto_error_reporting::{DiagnosticMessage, DiagnosticMessageBuilder};
 use quarto_pandoc_types::ConfigValue;
 use quarto_pandoc_types::config_value::ConfigValueKind;
@@ -212,7 +210,7 @@ fn missing_pandoc_path_error(key: &str, declared: &str, entry: &ConfigValue) -> 
 /// reason (e.g. a shared `_metadata.yml`).
 pub fn build_forwarded_args(
     stage_name: &str,
-    doc_dir: &Path,
+    path_ctx: &crate::config_paths::PathCtx<'_>,
     meta: &ConfigValue,
     base_format: FormatIdentifier,
 ) -> Result<Vec<PandocArg>, PipelineError> {
@@ -238,12 +236,17 @@ pub fn build_forwarded_args(
             // `FORMAT_PATH_KEYS`' `MarkPolicy::ExistenceSilent` resolves
             // this to a **document-relative** path at merge time. Pandoc
             // is spawned without a `current_dir` override
-            // (`PandocWriteStage::run` inherits the process cwd), so this
-            // must be rebased to an absolute path here, not passed
-            // verbatim.
-            ConfigValueKind::Path(p) => {
+            // (`PandocWriteStage::run` inherits the process cwd), so
+            // `resolve_config_path` turns it into an absolute path here;
+            // it is never passed verbatim.
+            ConfigValueKind::Path(_) => {
+                let Some(path) = crate::config_paths::resolve_config_path(value, path_ctx)
+                    .and_then(|r| r.file())
+                else {
+                    continue;
+                };
                 args.push(PandocArg::text(format!("--{key}")));
-                args.push(PandocArg::Path(doc_dir.join(p)));
+                args.push(PandocArg::Path(path));
             }
             _ => {
                 let declared = value.as_plain_text().unwrap_or_default();
@@ -258,17 +261,21 @@ pub fn build_forwarded_args(
     // Typst's highlighting is owned by `typst_highlight`, which also
     // honors `syntax-highlighting:` and generates the definitions block.
     if base_format != FormatIdentifier::Typst
-        && let Some(v) = meta.get("highlight-style").and_then(|v| v.as_plain_text())
+        && let Some(value) = meta.get("highlight-style")
+        && let Some(v) = value.as_plain_text()
     {
         args.push(PandocArg::text("--highlight-style"));
         // A theme file (`.theme`/`.xml`) is a path: pandoc would resolve a
         // relative one against its cwd, which differs between native and
-        // wasm, so rebase it onto the document's directory. Built-in style
-        // names pass verbatim.
-        if v.ends_with(".theme") || v.ends_with(".xml") {
-            args.push(PandocArg::Path(doc_dir.join(&v)));
-        } else {
-            args.push(PandocArg::Text(v));
+        // wasm, so resolve it against the file that declared it
+        // (`crate::config_paths`). Built-in style names pass verbatim.
+        let theme_file = (v.ends_with(".theme") || v.ends_with(".xml"))
+            .then(|| crate::config_paths::resolve_config_path(value, path_ctx))
+            .flatten()
+            .and_then(|r| r.file());
+        match theme_file {
+            Some(path) => args.push(PandocArg::Path(path)),
+            None => args.push(PandocArg::Text(v)),
         }
     }
     // Typst never consumes pandoc's own `--toc`/`--toc-depth`-driven
@@ -389,6 +396,17 @@ mod tests {
     use crate::format::Format;
     use quarto_source_map::SourceInfo;
 
+    use std::path::Path;
+
+    /// No provenance: every value resolves against `/doc/dir`.
+    fn test_ctx() -> crate::config_paths::PathCtx<'static> {
+        crate::config_paths::PathCtx {
+            source_context: None,
+            project_dir: Path::new("/doc"),
+            document_dir: Path::new("/doc/dir"),
+        }
+    }
+
     fn scalar_meta(entries: &[(&str, &str)]) -> ConfigValue {
         use quarto_pandoc_types::ConfigMapEntry;
         ConfigValue::new_map(
@@ -491,8 +509,7 @@ mod tests {
     #[test]
     fn test_highlight_style_forwarding_is_typst_skipped() {
         let meta = scalar_meta(&[("highlight-style", "tango")]);
-        let args_for =
-            |id| build_forwarded_args("pandoc-write", Path::new("/doc/dir"), &meta, id).unwrap();
+        let args_for = |id| build_forwarded_args("pandoc-write", &test_ctx(), &meta, id).unwrap();
         let has_flag = |args: &[PandocArg]| {
             args.iter()
                 .any(|a| a.to_string_lossy() == "--highlight-style")
@@ -520,13 +537,9 @@ mod tests {
             SourceInfo::for_test(),
         );
 
-        let docx_args = build_forwarded_args(
-            "pandoc-write",
-            Path::new("/doc/dir"),
-            &meta,
-            FormatIdentifier::Docx,
-        )
-        .unwrap();
+        let docx_args =
+            build_forwarded_args("pandoc-write", &test_ctx(), &meta, FormatIdentifier::Docx)
+                .unwrap();
         assert!(
             docx_args
                 .iter()
@@ -534,13 +547,9 @@ mod tests {
             "docx must forward --template: {docx_args:?}"
         );
 
-        let typst_args = build_forwarded_args(
-            "pandoc-write",
-            Path::new("/doc/dir"),
-            &meta,
-            FormatIdentifier::Typst,
-        )
-        .unwrap();
+        let typst_args =
+            build_forwarded_args("pandoc-write", &test_ctx(), &meta, FormatIdentifier::Typst)
+                .unwrap();
         assert!(
             !typst_args
                 .iter()
@@ -605,13 +614,8 @@ mod tests {
             SourceInfo::for_test(),
         );
 
-        let args = build_forwarded_args(
-            "pandoc-write",
-            Path::new("/doc/dir"),
-            &meta,
-            FormatIdentifier::Docx,
-        )
-        .expect("no path-shaped keys present, must not error");
+        let args = build_forwarded_args("pandoc-write", &test_ctx(), &meta, FormatIdentifier::Docx)
+            .expect("no path-shaped keys present, must not error");
         let joined: Vec<String> = args
             .iter()
             .map(|s| s.to_string_lossy().into_owned())
@@ -626,7 +630,7 @@ mod tests {
 
         let typst_args = build_forwarded_args(
             "pandoc-write",
-            Path::new("/doc/dir"),
+            &test_ctx(),
             &scalar_meta(&[("reference-location", "margin")]),
             FormatIdentifier::Typst,
         )
@@ -640,7 +644,7 @@ mod tests {
 
         let docx_args = build_forwarded_args(
             "pandoc-write",
-            Path::new("/doc/dir"),
+            &test_ctx(),
             &scalar_meta(&[("reference-location", "section")]),
             FormatIdentifier::Docx,
         )
@@ -694,13 +698,9 @@ mod tests {
             SourceInfo::for_test(),
         );
 
-        let args = build_forwarded_args(
-            "pandoc-write",
-            Path::new("/doc/dir"),
-            &meta,
-            FormatIdentifier::Typst,
-        )
-        .expect("no path-shaped keys present, must not error");
+        let args =
+            build_forwarded_args("pandoc-write", &test_ctx(), &meta, FormatIdentifier::Typst)
+                .expect("no path-shaped keys present, must not error");
         let joined: Vec<String> = args
             .iter()
             .map(|s| s.to_string_lossy().into_owned())
@@ -773,13 +773,8 @@ mod tests {
             SourceInfo::for_test(),
         );
 
-        let args = build_forwarded_args(
-            "pandoc-write",
-            Path::new("/doc/dir"),
-            &meta,
-            FormatIdentifier::Docx,
-        )
-        .expect("no path-shaped keys present, must not error");
+        let args = build_forwarded_args("pandoc-write", &test_ctx(), &meta, FormatIdentifier::Docx)
+            .expect("no path-shaped keys present, must not error");
         let joined: Vec<String> = args
             .iter()
             .map(|s| s.to_string_lossy().into_owned())
@@ -805,26 +800,18 @@ mod tests {
             meta.source_info.clone(),
         );
 
-        let pptx_args = build_forwarded_args(
-            "pandoc-write",
-            Path::new("/doc/dir"),
-            &meta,
-            FormatIdentifier::Pptx,
-        )
-        .unwrap();
+        let pptx_args =
+            build_forwarded_args("pandoc-write", &test_ctx(), &meta, FormatIdentifier::Pptx)
+                .unwrap();
         assert!(
             pptx_args
                 .iter()
                 .any(|a| a.to_string_lossy() == "--slide-level")
         );
 
-        let docx_args = build_forwarded_args(
-            "pandoc-write",
-            Path::new("/doc/dir"),
-            &meta,
-            FormatIdentifier::Docx,
-        )
-        .unwrap();
+        let docx_args =
+            build_forwarded_args("pandoc-write", &test_ctx(), &meta, FormatIdentifier::Docx)
+                .unwrap();
         assert!(
             !docx_args
                 .iter()
@@ -845,8 +832,7 @@ mod tests {
         let meta = scalar_meta(&[("top-level-division", "chapter")]);
 
         for base in [FormatIdentifier::Typst, FormatIdentifier::Pdf] {
-            let args =
-                build_forwarded_args("pandoc-write", Path::new("/doc/dir"), &meta, base).unwrap();
+            let args = build_forwarded_args("pandoc-write", &test_ctx(), &meta, base).unwrap();
             let joined: Vec<String> = args
                 .iter()
                 .map(|s| s.to_string_lossy().into_owned())
@@ -859,8 +845,7 @@ mod tests {
         }
 
         for base in [FormatIdentifier::Docx, FormatIdentifier::Epub] {
-            let args =
-                build_forwarded_args("pandoc-write", Path::new("/doc/dir"), &meta, base).unwrap();
+            let args = build_forwarded_args("pandoc-write", &test_ctx(), &meta, base).unwrap();
             assert!(
                 !args
                     .iter()
@@ -893,13 +878,8 @@ mod tests {
             }],
             SourceInfo::for_test(),
         );
-        let args = build_forwarded_args(
-            "pandoc-write",
-            Path::new("/doc/dir"),
-            &meta,
-            FormatIdentifier::Docx,
-        )
-        .unwrap();
+        let args = build_forwarded_args("pandoc-write", &test_ctx(), &meta, FormatIdentifier::Docx)
+            .unwrap();
         let joined: Vec<String> = args
             .iter()
             .map(|s| s.to_string_lossy().into_owned())
@@ -922,13 +902,8 @@ mod tests {
     #[test]
     fn test_missing_reference_doc_is_fatal_q_5_30() {
         let meta = scalar_meta(&[("reference-doc", "missing.docx")]);
-        let err = build_forwarded_args(
-            "pandoc-write",
-            Path::new("/doc/dir"),
-            &meta,
-            FormatIdentifier::Docx,
-        )
-        .expect_err("a missing reference-doc must be a hard error");
+        let err = build_forwarded_args("pandoc-write", &test_ctx(), &meta, FormatIdentifier::Docx)
+            .expect_err("a missing reference-doc must be a hard error");
         let msg = err.to_string();
         assert!(
             msg.contains("missing.docx"),
@@ -1054,13 +1029,9 @@ mod tests {
     fn test_tier_a_forwarded_args_emit_image_extension() {
         for name in ["odt", "fb2", "plain", "rtf"] {
             let f = Format::from_format_string(name).unwrap();
-            let args = build_forwarded_args(
-                "pandoc-write",
-                Path::new("/doc/dir"),
-                &scalar_meta(&[]),
-                f.identifier,
-            )
-            .unwrap();
+            let args =
+                build_forwarded_args("pandoc-write", &test_ctx(), &scalar_meta(&[]), f.identifier)
+                    .unwrap();
             let joined: Vec<String> = args
                 .iter()
                 .map(|s| s.to_string_lossy().into_owned())
