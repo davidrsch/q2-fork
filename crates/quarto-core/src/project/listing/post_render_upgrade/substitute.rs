@@ -253,7 +253,8 @@ fn substitute_images(
 
         let replacement = if let Some(pi) = preview {
             // Engine-rendered preview image found.
-            let resolved = resolve_preview_url(host_path, &sibling_abs, &pi.src);
+            let resolved =
+                resolve_preview_url(host_path, &sibling_abs, &project.output_dir, &pi.src);
             build_thumbnail_img(&resolved, &pi, attrs)
         } else if inner.contains("<img") {
             // The envelope wraps the image L1 derived from the body
@@ -323,25 +324,33 @@ fn escape_attr(s: &str) -> String {
 /// - `host_path`: absolute path of the host page (rendered file
 ///   currently being substituted).
 /// - `sibling_abs`: absolute path of the sibling output file.
+/// - `site_root`: absolute path of the output tree's root, the
+///   anchor for a site-root-relative src.
 /// - `preview_src`: the `src` attribute of the preview `<img>` in
-///   the sibling. May be relative (to sibling's dir), absolute
-///   path-style (`/leading-slash`), absolute URL (`http://...`),
+///   the sibling. May be relative (to sibling's dir), site-root
+///   relative (`/leading-slash`), absolute URL (`http://...`),
 ///   or a `data:` URI.
 ///
 /// Returns the URL to embed in the host page's `<img src=...>`.
-fn resolve_preview_url(host_path: &Path, sibling_abs: &Path, preview_src: &str) -> String {
+/// A leading `/` is site-root-relative (decision 4 of
+/// bd-root-relative-paths-design-fc5pvkcv; bd-epk8cmdl): the target
+/// is `site_root/<rest>` and it relativizes to the host page like a
+/// sibling-relative src, so it survives a deploy subpath.
+fn resolve_preview_url(
+    host_path: &Path,
+    sibling_abs: &Path,
+    site_root: &Path,
+    preview_src: &str,
+) -> String {
     if quarto_util::is_external_url(preview_src) {
         return preview_src.to_string();
     }
     let host_dir = host_path.parent().unwrap_or(Path::new(""));
     let sibling_dir = sibling_abs.parent().unwrap_or(Path::new(""));
-    // For relative `preview_src`, the absolute target is
-    // `sibling_dir/preview_src`. For `/leading-slash`, treat as
-    // already-absolute path (rare in Q2 output; pass through).
-    if preview_src.starts_with('/') {
-        return preview_src.to_string();
-    }
-    let preview_abs = sibling_dir.join(preview_src);
+    let preview_abs = match preview_src.strip_prefix('/') {
+        Some(rooted) => site_root.join(rooted),
+        None => sibling_dir.join(preview_src),
+    };
     pathdiff::diff_paths(&preview_abs, host_dir).map_or_else(
         || preview_src.to_string(),
         |p| {
@@ -445,14 +454,56 @@ mod tests {
     fn resolve_preview_url_passes_any_scheme_through() {
         let host = Path::new("/site/index.html");
         let sibling = Path::new("/site/posts/foo.html");
+        let root = Path::new("/site");
         for src in [
             "positron://settings/x",
             "vscode://schemas/settings",
             "data:image/png;base64,AAAA",
             "https://example.com/x.png",
+            "//cdn.example.com/x.png",
         ] {
-            assert_eq!(resolve_preview_url(host, sibling, src), src);
+            assert_eq!(resolve_preview_url(host, sibling, root, src), src);
         }
+    }
+
+    #[test]
+    fn resolve_preview_url_relativizes_sibling_relative_src() {
+        let root = Path::new("/site");
+        let sibling = Path::new("/site/posts/foo.html");
+        assert_eq!(
+            resolve_preview_url(Path::new("/site/index.html"), sibling, root, "cover.png"),
+            "posts/cover.png"
+        );
+        assert_eq!(
+            resolve_preview_url(
+                Path::new("/site/posts/index.html"),
+                sibling,
+                root,
+                "cover.png"
+            ),
+            "cover.png"
+        );
+    }
+
+    // bd-epk8cmdl: a leading `/` is the site root, relativized per
+    // host page instead of passed through as a host-absolute link.
+    #[test]
+    fn resolve_preview_url_anchors_leading_slash_at_the_site_root() {
+        let root = Path::new("/site");
+        let sibling = Path::new("/site/posts/foo.html");
+        assert_eq!(
+            resolve_preview_url(Path::new("/site/index.html"), sibling, root, "/img/c.png"),
+            "img/c.png"
+        );
+        assert_eq!(
+            resolve_preview_url(
+                Path::new("/site/posts/index.html"),
+                sibling,
+                root,
+                "/img/c.png"
+            ),
+            "../img/c.png"
+        );
     }
 
     /// Build a minimal ProjectContext rooted in a tempdir.

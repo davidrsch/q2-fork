@@ -206,6 +206,7 @@ Update this table when adding keys or migrating sites.
 | `project/book/render_item.rs` (`find_inputs`) | `book.chapters` / `appendices` / `references` | (5) with `project_dir` as both bases (`_quarto.yml`-only keys); leading `/` = project root; stored project-relative (bd-lwvumpfk) |
 | `stage/stages/include_resolve.rs` (`read_include_file`) | `include-*` | (3) marking + (5) at the read (bd-lwvumpfk; was a bare `doc_dir.join` on the marked value) |
 | `transforms/format_css.rs`, `transforms/components_resolve.rs` + `components/config.rs` (`ComponentSource::File(ConfigPath)`) | `css`, `components[].src` | (3) marking + (5) at the consumer (bd-lwvumpfk) |
+| `revealjs/footer_logo.rs` (`resolve_logo`) | revealjs `logo` | (5) for the file, then the URL-space exit: `page_url_for` for the `src`, `ResourceCopyIntent` for the copy (bd-7328beha; tests `tests/integration/config_path_consumers.rs`) |
 
 ### VIOLATIONS (each tracked by a strand — do not fix one without checking its siblings)
 
@@ -213,8 +214,8 @@ Update this table when adding keys or migrating sites.
 |---|---|---|---|
 | ~~`filter_resolve.rs:255-273`~~ | `filters` | ~~same~~ **FIXED 2026-10-28** (bd-nqq41zgx): mechanism 5 | ~~bd-rdcvjy2s~~ (filters half) |
 | `project_resources.rs:705-722,827-836` | engine/filter-declared resources | doc-dir join — runtime output, not YAML; out of this class unless a key is added | bd-hjv5o scope |
-| `revealjs/footer_logo.rs:168-176` | revealjs `logo` | raw string emitted, no `page_url_for`, no copy (URL space) | bd-7328beha |
-| `project/listing/item.rs:285-291,431-465`, `project/listing/helpers.rs:70-73,96-102`, `transforms/listing_generate.rs:503-507` | front-matter `image`, `listing-item.image` | hand-written external-prefix list; `/` treated as external (URL space) | bd-epk8cmdl |
+| ~~`revealjs/footer_logo.rs`~~ | revealjs `logo` | ~~raw string emitted, no `page_url_for`, no copy (URL space)~~ **FIXED 2026-10-28**: `resolve_logo` = (5) for the file, then `page_url_for` + a `ResourceCopyIntent` (skipped in VFS-root mode) | ~~bd-7328beha~~ |
+| ~~`project/listing/item.rs`, `project/listing/helpers.rs`, `transforms/listing_generate.rs`, `listing/post_render_upgrade/substitute.rs`~~ | front-matter `image`, `listing-item.image`, sibling preview `src` | ~~hand-written external-prefix list; `/` treated as external (URL space)~~ **FIXED 2026-10-28**: one classifier (`is_remote_src` = `quarto_util::is_external_url`); a leading `/` rebases to the bare project-relative path at hydration, so relativization, the copy intent and the feed all see one spelling; `resolve_preview_url` anchors `/x` at the output root | ~~bd-epk8cmdl~~ |
 | ~~`pampa/src/citeproc_filter.rs:133,151`~~ | `csl`, `bibliography` | ~~**process-CWD** read (no base at all)~~ **FIXED 2026-09-24** (book-projects P2): declaration-site base dir threaded into `apply_citeproc_filter` from both call paths (`UserFiltersStage` = document dir; book single-file merge = first file-chapter's dir); both keys added to `FORMAT_PATH_KEYS` (`ExistenceSilent` — URLs stay scalar) | ~~bd-oqoozmtr~~ (closed) |
 
 Related open strands: bd-nqq41zgx (the convergence plan,

@@ -44,13 +44,24 @@
 //! a future enhancement). `.qmd` hrefs inside a Text-region footer pass through
 //! unrewritten, matching html's `FooterRenderTransform` (which defers
 //! Text-region rewriting). WASM-safe (pure AST/metadata manipulation).
+//!
+//! `logo:` is a config-authored path (bd-7328beha). It resolves through
+//! [`crate::config_paths`] — relative to the file that declared it, a leading
+//! `/` meaning the project root — and then leaves through the resource-resolver
+//! exit like any other static asset: the `<img src>` is page-relative
+//! ([`ResourceResolverContext::page_url_for`](crate::resource_resolver::ResourceResolverContext::page_url_for)),
+//! and a copy intent puts the file in the output tree, since no slide body
+//! references it. A project-level `logo:` therefore serves a deck at any depth.
+
+use std::path::Path;
 
 use quarto_pandoc_types::pandoc::Pandoc;
 use quarto_pandoc_types::{ConfigValue, ConfigValueKind};
 use quarto_source_map::{By, SourceInfo};
 
 use crate::Result;
-use crate::render::RenderContext;
+use crate::config_paths::{PathCtx, ResolvedConfigPath, pivot_form, resolve_config_path};
+use crate::render::{RenderContext, ResourceCopyIntent};
 use crate::transform::{AstTransform, TransformPhase};
 
 // --- config alias: footer: → page-footer: -----------------------------------
@@ -124,7 +135,7 @@ impl AstTransform for RevealFooterLogoTransform {
         TransformPhase::Navigation
     }
 
-    async fn transform(&self, ast: &mut Pandoc, _ctx: &mut RenderContext) -> Result<()> {
+    async fn transform(&self, ast: &mut Pandoc, ctx: &mut RenderContext) -> Result<()> {
         if !ast.meta.contains_path(&["rendered", "reveal", "footer"])
             && let Some(html) = footer_slot_html(&ast.meta)
         {
@@ -135,16 +146,73 @@ impl AstTransform for RevealFooterLogoTransform {
         }
 
         if !ast.meta.contains_path(&["rendered", "reveal", "logo"])
-            && let Some(html) = logo_slot_html(&ast.meta)
+            && let Some(logo) = resolve_logo(&ast.meta, ctx)
         {
+            if let Some(copy) = logo.copy {
+                ctx.resource_copies.push(copy);
+            }
             ast.meta.insert_path(
                 &["rendered", "reveal", "logo"],
-                ConfigValue::new_string(&html, SourceInfo::generated(By::revealjs())),
+                ConfigValue::new_string(
+                    logo_slot_html(&logo.src),
+                    SourceInfo::generated(By::revealjs()),
+                ),
             );
         }
 
         Ok(())
     }
+}
+
+/// The deck's `logo:` after resolution: the `src` to emit and, for a
+/// file inside the project, the copy that puts it in the output tree.
+struct ResolvedLogo {
+    src: String,
+    copy: Option<ResourceCopyIntent>,
+}
+
+/// Resolve `logo:` for emission, or `None` when unset/blank.
+///
+/// - An external URL is emitted verbatim.
+/// - A file inside the project is emitted page-relative through the
+///   resource resolver (project-relative when the render has none —
+///   out-of-band drivers) and registered for copying — except in
+///   VFS-root mode, where the hub serves it straight from the VFS
+///   (the listing-image rule, bd-yqlbfrln).
+/// - A file outside the project cannot be served from the site; it is
+///   emitted as written, today's behaviour.
+fn resolve_logo(meta: &ConfigValue, ctx: &RenderContext) -> Option<ResolvedLogo> {
+    let value = meta.get("logo")?;
+    let raw = value.as_plain_text()?;
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let path_ctx = PathCtx::for_document(ctx.source_context, &ctx.project.dir, &ctx.document.input);
+    let abs = match resolve_config_path(value, &path_ctx)? {
+        ResolvedConfigPath::External(url) => {
+            return Some(ResolvedLogo {
+                src: url,
+                copy: None,
+            });
+        }
+        ResolvedConfigPath::File(abs) => abs,
+    };
+    let rel = pivot_form(&abs, &ctx.project.dir);
+    if quarto_util::is_rooted(Path::new(&rel)) || Path::new(&rel).is_absolute() {
+        return Some(ResolvedLogo {
+            src: raw.to_string(),
+            copy: None,
+        });
+    }
+    let resolver = ctx.resource_resolver.as_ref();
+    let src = resolver.map_or_else(|| rel.clone(), |r| r.page_url_for(&rel));
+    let copy = (!resolver.is_some_and(|r| r.is_vfs_root_mode())).then(|| ResourceCopyIntent {
+        src: abs,
+        dest: ctx.project.output_dir.join(&rel),
+        origin: value.source_info.clone(),
+    });
+    Some(ResolvedLogo { src, copy })
 }
 
 /// Build the reveal footer markup from `navigation.footer`'s `center` region,
@@ -164,16 +232,9 @@ fn footer_slot_html(meta: &ConfigValue) -> Option<String> {
     ))
 }
 
-/// Build the reveal logo `<img>` from `logo:`, or `None` when unset/blank.
-fn logo_slot_html(meta: &ConfigValue) -> Option<String> {
-    let path = meta
-        .get("logo")
-        .and_then(|v| v.as_plain_text())
-        .filter(|s| !s.trim().is_empty())?;
-    Some(format!(
-        r#"<img class="slide-logo" src="{}">"#,
-        attr_escape(path.trim())
-    ))
+/// Build the reveal logo `<img>` for an already-resolved `src`.
+fn logo_slot_html(src: &str) -> String {
+    format!(r#"<img class="slide-logo" src="{}">"#, attr_escape(src))
 }
 
 /// Render a metadata field's inline/block Pandoc content to HTML (preserving
@@ -313,26 +374,108 @@ mod tests {
 
     #[test]
     fn logo_slot_builds_img() {
-        let m = map(vec![("logo", s("logo.png"))]);
         assert_eq!(
-            logo_slot_html(&m).unwrap(),
+            logo_slot_html("logo.png"),
             r#"<img class="slide-logo" src="logo.png">"#
         );
     }
 
     #[test]
     fn logo_slot_escapes_path_attr() {
-        let m = map(vec![("logo", s(r#"a"b.png"#))]);
         assert_eq!(
-            logo_slot_html(&m).unwrap(),
+            logo_slot_html(r#"a"b.png"#),
             r#"<img class="slide-logo" src="a&quot;b.png">"#
         );
     }
 
+    /// The borrowed pieces a `RenderContext` needs: project at
+    /// `/project` with output tree `_site`, deck at `talks/deck.qmd`.
+    struct LogoFixture {
+        project: crate::project::ProjectContext,
+        document: crate::project::DocumentInfo,
+        format: crate::format::Format,
+        binaries: crate::render::BinaryDependencies,
+    }
+
+    fn logo_fixture() -> LogoFixture {
+        LogoFixture {
+            project: crate::project::ProjectContext {
+                dir: std::path::PathBuf::from("/project"),
+                output_dir: std::path::PathBuf::from("/project/_site"),
+                is_single_file: false,
+                ..Default::default()
+            },
+            document: crate::project::DocumentInfo::from_path("/project/talks/deck.qmd"),
+            format: crate::format::Format::from_format_string("revealjs").unwrap(),
+            binaries: crate::render::BinaryDependencies::new(),
+        }
+    }
+
+    /// A render context for `resolve_logo` with a website resolver for
+    /// the deck's page.
+    fn logo_ctx(f: &LogoFixture) -> RenderContext<'_> {
+        let resolver = crate::resource_resolver::ResourceResolverContext::website(
+            "/project/_site",
+            "/project/_site/talks/deck.html",
+            "site_libs",
+            "deck",
+        );
+        RenderContext::new(&f.project, &f.document, &f.format, &f.binaries)
+            .with_resource_resolver(resolver)
+    }
+
     #[test]
-    fn logo_slot_none_when_absent_or_blank() {
-        assert!(logo_slot_html(&map(vec![("title", s("T"))])).is_none());
-        assert!(logo_slot_html(&map(vec![("logo", s("  "))])).is_none());
+    fn logo_without_provenance_resolves_against_the_deck_dir() {
+        let f = logo_fixture();
+        let ctx = logo_ctx(&f);
+        let m = map(vec![("logo", s("img/logo.png"))]);
+        let logo = resolve_logo(&m, &ctx).unwrap();
+        assert_eq!(logo.src, "img/logo.png");
+        let copy = logo.copy.expect("in-project logo is copied");
+        assert_eq!(
+            copy.src,
+            std::path::PathBuf::from("/project/talks/img/logo.png")
+        );
+        assert_eq!(
+            copy.dest,
+            std::path::PathBuf::from("/project/_site/talks/img/logo.png")
+        );
+    }
+
+    #[test]
+    fn rooted_logo_anchors_at_the_project_root_and_relativizes() {
+        let f = logo_fixture();
+        let ctx = logo_ctx(&f);
+        let m = map(vec![("logo", s("/brand/logo.png"))]);
+        let logo = resolve_logo(&m, &ctx).unwrap();
+        assert_eq!(logo.src, "../brand/logo.png");
+        let copy = logo.copy.unwrap();
+        assert_eq!(
+            copy.src,
+            std::path::PathBuf::from("/project/brand/logo.png")
+        );
+        assert_eq!(
+            copy.dest,
+            std::path::PathBuf::from("/project/_site/brand/logo.png")
+        );
+    }
+
+    #[test]
+    fn external_logo_passes_through_uncopied() {
+        let f = logo_fixture();
+        let ctx = logo_ctx(&f);
+        let m = map(vec![("logo", s("https://example.com/logo.png"))]);
+        let logo = resolve_logo(&m, &ctx).unwrap();
+        assert_eq!(logo.src, "https://example.com/logo.png");
+        assert!(logo.copy.is_none());
+    }
+
+    #[test]
+    fn blank_logo_is_unset() {
+        let f = logo_fixture();
+        let ctx = logo_ctx(&f);
+        assert!(resolve_logo(&map(vec![("logo", s("  "))]), &ctx).is_none());
+        assert!(resolve_logo(&map(vec![("title", s("T"))]), &ctx).is_none());
     }
 
     // --- transform-level: slot writing + override hook + alias ---------------

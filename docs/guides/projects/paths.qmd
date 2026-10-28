@@ -40,6 +40,11 @@ single literal path could be correct on all of them — this is exactly
 what the per-page rewrite is for. It applies to:
 
 - `website.navbar.logo`
+- `logo:` on a reveal.js deck (relative to the file that declares it,
+  or site-root-relative with a leading `/`; the file is copied into
+  the output directory)
+- a listing item's `image:` (front matter or inline record), which a
+  leading `/` anchors at the project root
 - markdown images and links inside `page-footer` regions and the
   navbar title
 - navbar, sidebar, and footer item `href`s

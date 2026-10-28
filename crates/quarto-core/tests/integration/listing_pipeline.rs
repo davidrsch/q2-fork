@@ -1225,6 +1225,52 @@ fn front_matter_image_rebase_nested_host() {
     assert!(dir.join("_site/posts/cover.png").exists());
 }
 
+/// bd-epk8cmdl: a front-matter `image: /assets/…` is site-root
+/// relative — the same project-relative path as `assets/…` — so it is
+/// relativized per host page and copied, instead of being passed
+/// through as a host-absolute link that breaks under a deploy subpath.
+#[test]
+fn front_matter_rooted_image_anchors_at_project_root() {
+    let (dir, outputs) = render_project(|p| {
+        write(
+            &p.join("_quarto.yml"),
+            "project:\n  type: website\n  output-dir: _site\nwebsite:\n  title: \"Blog\"\n",
+        );
+        write(
+            &p.join("index.qmd"),
+            "---\ntitle: Home\nformat: html\n---\n",
+        );
+        write(
+            &p.join("posts/index.qmd"),
+            "---\ntitle: Posts\nlisting:\n  contents: \"*.qmd\"\nformat: html\n---\n",
+        );
+        write(
+            &p.join("posts/first.qmd"),
+            "---\ntitle: First\ndate: 2026-01-15\nimage: \"/assets/cover.png\"\nformat: html\n---\n\nBody.\n",
+        );
+        write(&p.join("assets/cover.png"), "not-really-a-png");
+    });
+
+    let host = outputs
+        .iter()
+        .find(|(_, h)| h.contains("quarto-listing"))
+        .map(|(_, h)| h.as_str())
+        .expect("posts listing output");
+    assert!(
+        host.contains(r#"src="../assets/cover.png""#),
+        "rooted image src must be relativized to the nested host; got:\n{}",
+        host
+    );
+    assert!(
+        !host.contains(r#"src="/assets/cover.png""#),
+        "host-absolute src must not survive into the page"
+    );
+    assert!(
+        dir.join("_site/assets/cover.png").exists(),
+        "rooted front-matter image must be copied into the output tree"
+    );
+}
+
 /// The listing SCSS layer must reach the *rendered site's* theme CSS
 /// (bd-57y4). quarto-sass unit tests can't see whether the pipeline
 /// wired the layer; this is the brand_render.rs-shaped guard. The

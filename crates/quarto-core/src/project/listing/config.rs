@@ -1126,9 +1126,9 @@ pub fn flatten_content_globs(meta: &ConfigValue) -> Vec<ListingContents> {
 fn record_path_as_glob(value: &ConfigValue) -> Option<ListingContents> {
     let path_value = value.get("path")?;
     let raw = path_value.as_plain_text()?;
-    // `is_remote_src`, not `is_external_src`: a leading `/` is the
-    // project root and *is* a dependency (plan §D4). The resolver
-    // re-anchors it, exactly as it does for a `/`-anchored glob.
+    // A leading `/` is the project root and *is* a dependency (plan
+    // §D4). The resolver re-anchors it, exactly as it does for a
+    // `/`-anchored glob.
     if super::helpers::is_remote_src(&raw)
         || crate::glob::has_metacharacters(&raw)
         || !is_markdown_document_path(&raw)
