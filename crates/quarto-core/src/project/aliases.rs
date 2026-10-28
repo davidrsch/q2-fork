@@ -205,7 +205,7 @@ fn normalize_segments(base: &str, rel: &str) -> Result<String, AliasError> {
 
 /// One alias as the author wrote it, with enough provenance for a
 /// diagnostic to point at it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct AliasRef {
     /// The alias verbatim, e.g. `"/cookbook/runtime-caches/#delete"`.
     pub alias: String,
@@ -226,6 +226,49 @@ pub struct PlannedStub {
     /// fragment with the default (`""`) first, so the rendered stub is
     /// byte-stable across runs.
     pub redirects: Vec<(String, String)>,
+    /// Something else in the site occupies this path under
+    /// case-folding. Only ever set when
+    /// [`AliasPlanOptions::case_sensitive_paths`] is on — otherwise
+    /// the same situation is an [`AliasConflict`] and the stub is not
+    /// planned at all. The writer uses it to avoid clobbering the
+    /// occupant on a case-insensitive output directory.
+    pub case_fold_twin: Option<CaseFoldTwin>,
+    /// The alias that claimed the default route; the first claim in
+    /// the bucket. Kept so [`CaseFoldTwin`] can name it.
+    pub claimant: AliasRef,
+}
+
+/// What a planned stub would overwrite on a case-insensitive
+/// filesystem.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CaseFoldTwin {
+    /// The alias that claimed the stub's default route — the one to
+    /// name when the stub is skipped.
+    pub alias: AliasRef,
+    /// The file already at the folded path.
+    pub occupant: CaseFoldOccupant,
+}
+
+/// The file a stub collides with under case-folding.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CaseFoldOccupant {
+    /// A page the project renders.
+    Page {
+        page_href: String,
+        page_source: PathBuf,
+    },
+    /// Another alias stub, written first because it sorts first.
+    Stub { stub_href: String },
+}
+
+/// Project-level settings the planner reads.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AliasPlanOptions {
+    /// `website.case-sensitive-paths: true`: the host the site is
+    /// served from keeps `R/index.html` and `r/index.html` apart, so a
+    /// pair that differs only by case is two files, not a collision.
+    /// Off by default — see `Q-5-25` (GH #944).
+    pub case_sensitive_paths: bool,
 }
 
 /// A reason the alias pass refuses to render.
@@ -319,15 +362,32 @@ struct Claim {
 /// which avoids the surprises of full Unicode case folding (Turkish
 /// dotless ı, ligatures, normalization forms) at the cost of missing
 /// collisions no real filesystem is likely to conflate.
-pub fn plan_alias_stubs(profiles: &[DocumentProfile]) -> AliasPlan {
+///
+/// With [`AliasPlanOptions::case_sensitive_paths`] the author has
+/// declared the deployment target case-sensitive (GH #944: Posit
+/// Connect's docs are served from S3, where `R/` and `r/` are distinct
+/// keys and the old `/R/` URLs must keep redirecting). Paths are then
+/// compared exactly, a case-only pair plans two stubs, and each stub
+/// that *would* have collided carries a [`CaseFoldTwin`] so the writer
+/// can still refuse to clobber a page on a case-insensitive build
+/// host.
+pub fn plan_alias_stubs(profiles: &[DocumentProfile], options: AliasPlanOptions) -> AliasPlan {
     let mut plan = AliasPlan::default();
+    let key = |href: &str| -> String {
+        if options.case_sensitive_paths {
+            href.to_string()
+        } else {
+            fold(href)
+        }
+    };
 
-    // Every rendered page's output href, keyed by its folded form.
-    // Drafts are included: they render, so they occupy a path.
+    // Every rendered page's output href, keyed by its folded form (or
+    // exactly, when the target is case-sensitive). Drafts are
+    // included: they render, so they occupy a path.
     let mut pages: BTreeMap<String, (&str, &Path)> = BTreeMap::new();
     for profile in profiles {
         pages.insert(
-            fold(&profile.output_href),
+            key(&profile.output_href),
             (profile.output_href.as_str(), profile.source_path.as_path()),
         );
     }
@@ -355,7 +415,7 @@ pub fn plan_alias_stubs(profiles: &[DocumentProfile]) -> AliasPlan {
                 Ok(resolved) => {
                     let target_href = relative_href(&resolved.stub_href, &profile.output_href);
                     buckets
-                        .entry(fold(&resolved.stub_href))
+                        .entry(key(&resolved.stub_href))
                         .or_default()
                         .push(Claim {
                             stub_spelling: resolved.stub_href,
@@ -378,7 +438,58 @@ pub fn plan_alias_stubs(profiles: &[DocumentProfile]) -> AliasPlan {
         }
     }
 
+    if options.case_sensitive_paths {
+        mark_case_fold_twins(&mut plan.stubs, profiles);
+    }
+
     plan
+}
+
+/// Record, on every planned stub, what it would overwrite on a
+/// case-insensitive filesystem.
+///
+/// Only called when paths are compared exactly, so the buckets above
+/// never saw these as collisions. Pages always win against a stub (a
+/// redirect replacing the page it points at is a loop). Between two
+/// stubs the one that sorts first wins — an arbitrary but stable
+/// choice, and the loser is named in the warning either way.
+fn mark_case_fold_twins(stubs: &mut [PlannedStub], profiles: &[DocumentProfile]) {
+    let pages: BTreeMap<String, (&str, &Path)> = profiles
+        .iter()
+        .map(|p| {
+            (
+                fold(&p.output_href),
+                (p.output_href.as_str(), p.source_path.as_path()),
+            )
+        })
+        .collect();
+
+    // `stubs` is sorted by `stub_href` (BTreeMap iteration order), so
+    // "first stub seen under this folded key" is "the one that sorts
+    // first" and therefore the one written first.
+    let mut seen: BTreeMap<String, String> = BTreeMap::new();
+    for stub in stubs.iter_mut() {
+        let folded = fold(&stub.stub_href);
+        let occupant = match (pages.get(&folded), seen.get(&folded)) {
+            (Some((page_href, page_source)), _) if *page_href != stub.stub_href => {
+                Some(CaseFoldOccupant::Page {
+                    page_href: (*page_href).to_string(),
+                    page_source: page_source.to_path_buf(),
+                })
+            }
+            (None, Some(earlier)) => Some(CaseFoldOccupant::Stub {
+                stub_href: earlier.clone(),
+            }),
+            _ => None,
+        };
+        seen.entry(folded).or_insert_with(|| stub.stub_href.clone());
+        if let Some(occupant) = occupant {
+            stub.case_fold_twin = Some(CaseFoldTwin {
+                alias: stub.claimant.clone(),
+                occupant,
+            });
+        }
+    }
 }
 
 /// Turn one folded bucket's claims into a stub, or into conflicts.
@@ -501,6 +612,8 @@ fn plan_one_bucket(
     Some(PlannedStub {
         stub_href: stub_spelling,
         redirects,
+        case_fold_twin: None,
+        claimant: claims[0].who.clone(),
     })
 }
 
@@ -859,20 +972,26 @@ mod tests {
 
     #[test]
     fn plan_is_empty_without_aliases() {
-        let plan = plan_alias_stubs(&[page("index.qmd", "index.html", &[])]);
+        let plan = plan_alias_stubs(
+            &[page("index.qmd", "index.html", &[])],
+            AliasPlanOptions::default(),
+        );
         assert_eq!(plan, AliasPlan::default());
     }
 
     #[test]
     fn plan_maps_each_alias_to_its_own_stub() {
-        let plan = plan_alias_stubs(&[
-            page("index.qmd", "index.html", &[]),
-            page(
-                "current/index.qmd",
-                "current/index.html",
-                &["/old-name.html", "../previous/index.html"],
-            ),
-        ]);
+        let plan = plan_alias_stubs(
+            &[
+                page("index.qmd", "index.html", &[]),
+                page(
+                    "current/index.qmd",
+                    "current/index.html",
+                    &["/old-name.html", "../previous/index.html"],
+                ),
+            ],
+            AliasPlanOptions::default(),
+        );
         assert!(plan.conflicts.is_empty(), "{:?}", plan.conflicts);
         assert_eq!(stub_paths(&plan), ["old-name.html", "previous/index.html"]);
         assert_eq!(
@@ -889,14 +1008,17 @@ mod tests {
     fn plan_merges_fragments_from_two_pages_into_one_stub() {
         // The Connect-docs shape: two pages route different fragments
         // through one old URL, and one of them owns the bare URL.
-        let plan = plan_alias_stubs(&[
-            page(
-                "build/index.qmd",
-                "build/index.html",
-                &["/hub", "/hub/#image"],
-            ),
-            page("deploy/index.qmd", "deploy/index.html", &["/hub/#deploy"]),
-        ]);
+        let plan = plan_alias_stubs(
+            &[
+                page(
+                    "build/index.qmd",
+                    "build/index.html",
+                    &["/hub", "/hub/#image"],
+                ),
+                page("deploy/index.qmd", "deploy/index.html", &["/hub/#deploy"]),
+            ],
+            AliasPlanOptions::default(),
+        );
         assert!(plan.conflicts.is_empty(), "{:?}", plan.conflicts);
         assert_eq!(stub_paths(&plan), ["hub/index.html"]);
         assert_eq!(
@@ -915,7 +1037,10 @@ mod tests {
         // One page, one fragment, no bare alias: that page is the
         // unambiguous owner of the bare URL. Q1 would have sent a
         // fragment-less visitor to the site root.
-        let plan = plan_alias_stubs(&[page("p/index.qmd", "p/index.html", &["/old.html#sec"])]);
+        let plan = plan_alias_stubs(
+            &[page("p/index.qmd", "p/index.html", &["/old.html#sec"])],
+            AliasPlanOptions::default(),
+        );
         assert!(plan.conflicts.is_empty(), "{:?}", plan.conflicts);
         assert_eq!(
             plan.stubs[0].redirects,
@@ -930,10 +1055,13 @@ mod tests {
     fn plan_refuses_when_no_page_owns_the_bare_url() {
         // Two pages, fragments only, no bare alias. Choosing an owner
         // would be a guess about intent.
-        let plan = plan_alias_stubs(&[
-            page("a/index.qmd", "a/index.html", &["/hub/#one"]),
-            page("b/index.qmd", "b/index.html", &["/hub/#two"]),
-        ]);
+        let plan = plan_alias_stubs(
+            &[
+                page("a/index.qmd", "a/index.html", &["/hub/#one"]),
+                page("b/index.qmd", "b/index.html", &["/hub/#two"]),
+            ],
+            AliasPlanOptions::default(),
+        );
         assert!(plan.stubs.is_empty(), "no stub without an owner");
         match plan.conflicts.as_slice() {
             [
@@ -951,10 +1079,13 @@ mod tests {
 
     #[test]
     fn plan_rejects_a_stub_over_a_rendered_page() {
-        let plan = plan_alias_stubs(&[
-            page("index.qmd", "index.html", &[]),
-            page("p/index.qmd", "p/index.html", &["/index.html"]),
-        ]);
+        let plan = plan_alias_stubs(
+            &[
+                page("index.qmd", "index.html", &[]),
+                page("p/index.qmd", "p/index.html", &["/index.html"]),
+            ],
+            AliasPlanOptions::default(),
+        );
         assert!(plan.stubs.is_empty());
         match plan.conflicts.as_slice() {
             [
@@ -973,10 +1104,13 @@ mod tests {
 
     #[test]
     fn plan_rejects_two_pages_claiming_one_route() {
-        let plan = plan_alias_stubs(&[
-            page("one/index.qmd", "one/index.html", &["/shared.html"]),
-            page("two/index.qmd", "two/index.html", &["/shared.html"]),
-        ]);
+        let plan = plan_alias_stubs(
+            &[
+                page("one/index.qmd", "one/index.html", &["/shared.html"]),
+                page("two/index.qmd", "two/index.html", &["/shared.html"]),
+            ],
+            AliasPlanOptions::default(),
+        );
         assert!(plan.stubs.is_empty());
         match plan.conflicts.as_slice() {
             [
@@ -999,21 +1133,27 @@ mod tests {
     fn plan_tolerates_a_page_repeating_its_own_alias() {
         // Redundant, not contradictory: the route asked for twice is
         // the one the page would get anyway.
-        let plan = plan_alias_stubs(&[page(
-            "p/index.qmd",
-            "p/index.html",
-            &["/old.html", "/old.html"],
-        )]);
+        let plan = plan_alias_stubs(
+            &[page(
+                "p/index.qmd",
+                "p/index.html",
+                &["/old.html", "/old.html"],
+            )],
+            AliasPlanOptions::default(),
+        );
         assert!(plan.conflicts.is_empty(), "{:?}", plan.conflicts);
         assert_eq!(stub_paths(&plan), ["old.html"]);
     }
 
     #[test]
     fn plan_rejects_a_case_only_collision_between_aliases() {
-        let plan = plan_alias_stubs(&[
-            page("one/index.qmd", "one/index.html", &["/Shared.html"]),
-            page("two/index.qmd", "two/index.html", &["/shared.html"]),
-        ]);
+        let plan = plan_alias_stubs(
+            &[
+                page("one/index.qmd", "one/index.html", &["/Shared.html"]),
+                page("two/index.qmd", "two/index.html", &["/shared.html"]),
+            ],
+            AliasPlanOptions::default(),
+        );
         assert!(plan.stubs.is_empty());
         assert!(
             plan.conflicts
@@ -1026,10 +1166,13 @@ mod tests {
 
     #[test]
     fn plan_rejects_a_case_only_collision_with_a_page() {
-        let plan = plan_alias_stubs(&[
-            page("readme.qmd", "README.html", &[]),
-            page("p/index.qmd", "p/index.html", &["/readme.html"]),
-        ]);
+        let plan = plan_alias_stubs(
+            &[
+                page("readme.qmd", "README.html", &[]),
+                page("p/index.qmd", "p/index.html", &["/readme.html"]),
+            ],
+            AliasPlanOptions::default(),
+        );
         assert!(plan.stubs.is_empty());
         match plan.conflicts.as_slice() {
             [
@@ -1051,19 +1194,135 @@ mod tests {
         // The collision above must be found on Linux too, where the
         // filesystem would happily keep both files. Shipping such a
         // site breaks it the moment it is served from macOS.
-        let plan = plan_alias_stubs(&[
-            page("one/index.qmd", "one/index.html", &["/A/B.html"]),
-            page("two/index.qmd", "two/index.html", &["/a/b.html"]),
-        ]);
+        let plan = plan_alias_stubs(
+            &[
+                page("one/index.qmd", "one/index.html", &["/A/B.html"]),
+                page("two/index.qmd", "two/index.html", &["/a/b.html"]),
+            ],
+            AliasPlanOptions::default(),
+        );
         assert!(
             !plan.conflicts.is_empty(),
             "case-only collision must be detected regardless of host filesystem"
         );
     }
 
+    // ── `website.case-sensitive-paths` (GH #944) ─────────────────
+
+    const CASE_SENSITIVE: AliasPlanOptions = AliasPlanOptions {
+        case_sensitive_paths: true,
+    };
+
+    #[test]
+    fn case_sensitive_paths_plans_a_stub_beside_its_case_twin_page() {
+        // The Connect docs shape: `r/index.qmd` keeps the old `/R/`
+        // URL alive. On a case-sensitive host these are two files.
+        let plan = plan_alias_stubs(
+            &[
+                page("index.qmd", "index.html", &[]),
+                page("r/index.qmd", "r/index.html", &["/R/"]),
+            ],
+            CASE_SENSITIVE,
+        );
+        assert!(plan.conflicts.is_empty(), "{:?}", plan.conflicts);
+        assert_eq!(stub_paths(&plan), ["R/index.html"]);
+        assert_eq!(
+            plan.stubs[0].redirects,
+            [(String::new(), "../r/index.html".to_string())]
+        );
+        // ...but the writer must know it would clobber the page on a
+        // case-insensitive build host.
+        match &plan.stubs[0].case_fold_twin {
+            Some(CaseFoldTwin {
+                alias,
+                occupant:
+                    CaseFoldOccupant::Page {
+                        page_href,
+                        page_source,
+                    },
+            }) => {
+                assert_eq!(alias.alias, "/R/");
+                assert_eq!(page_href, "r/index.html");
+                assert_eq!(page_source, Path::new("r/index.qmd"));
+            }
+            other => panic!("expected a Page twin, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn case_sensitive_paths_plans_both_stubs_of_a_case_only_pair() {
+        let plan = plan_alias_stubs(
+            &[
+                page("one/index.qmd", "one/index.html", &["/Shared.html"]),
+                page("two/index.qmd", "two/index.html", &["/shared.html"]),
+            ],
+            CASE_SENSITIVE,
+        );
+        assert!(plan.conflicts.is_empty(), "{:?}", plan.conflicts);
+        // Byte order: uppercase sorts first, so it is the one written
+        // first and the one the other is a twin of.
+        assert_eq!(stub_paths(&plan), ["Shared.html", "shared.html"]);
+        assert_eq!(plan.stubs[0].case_fold_twin, None);
+        match &plan.stubs[1].case_fold_twin {
+            Some(CaseFoldTwin {
+                alias,
+                occupant: CaseFoldOccupant::Stub { stub_href },
+            }) => {
+                assert_eq!(alias.alias, "/shared.html");
+                assert_eq!(alias.source_path, Path::new("two/index.qmd"));
+                assert_eq!(stub_href, "Shared.html");
+            }
+            other => panic!("expected a Stub twin, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn case_sensitive_paths_keeps_the_exact_collisions() {
+        // Only the *case-only* rule relaxes. An alias landing exactly
+        // on a page, or two pages claiming one spelling, are still
+        // errors — and stubs with no twin carry none.
+        let plan = plan_alias_stubs(
+            &[
+                page("index.qmd", "index.html", &[]),
+                page(
+                    "one/index.qmd",
+                    "one/index.html",
+                    &["/index.html", "/old.html"],
+                ),
+                page("two/index.qmd", "two/index.html", &["/old.html"]),
+            ],
+            CASE_SENSITIVE,
+        );
+        assert!(plan.stubs.is_empty());
+        assert!(
+            plan.conflicts
+                .iter()
+                .any(|c| matches!(c, AliasConflict::OverwritesPage { .. })),
+            "{:?}",
+            plan.conflicts
+        );
+        assert!(
+            plan.conflicts
+                .iter()
+                .any(|c| matches!(c, AliasConflict::DuplicateClaim { .. })),
+            "{:?}",
+            plan.conflicts
+        );
+
+        let plan = plan_alias_stubs(
+            &[page("p/index.qmd", "p/index.html", &["/old.html"])],
+            CASE_SENSITIVE,
+        );
+        assert_eq!(stub_paths(&plan), ["old.html"]);
+        assert_eq!(plan.stubs[0].case_fold_twin, None);
+    }
+
     #[test]
     fn plan_rejects_an_alias_escaping_the_output_dir() {
-        let plan = plan_alias_stubs(&[page("index.qmd", "index.html", &["../escaped.html"])]);
+        let plan = plan_alias_stubs(
+            &[page("index.qmd", "index.html", &["../escaped.html"])],
+            AliasPlanOptions::default(),
+        );
         assert!(plan.stubs.is_empty());
         match plan.conflicts.as_slice() {
             [AliasConflict::EscapesOutputDir { alias }] => {
@@ -1077,15 +1336,21 @@ mod tests {
     #[test]
     fn plan_skips_draft_pages_but_still_guards_their_output() {
         // A draft contributes no redirect...
-        let plan = plan_alias_stubs(&[draft("wip.qmd", "wip.html", &["/old.html"])]);
+        let plan = plan_alias_stubs(
+            &[draft("wip.qmd", "wip.html", &["/old.html"])],
+            AliasPlanOptions::default(),
+        );
         assert!(plan.stubs.is_empty(), "a draft's alias must not go live");
         assert!(plan.conflicts.is_empty());
 
         // ...but it still renders, so its output path is occupied.
-        let plan = plan_alias_stubs(&[
-            draft("wip.qmd", "wip.html", &[]),
-            page("p/index.qmd", "p/index.html", &["/wip.html"]),
-        ]);
+        let plan = plan_alias_stubs(
+            &[
+                draft("wip.qmd", "wip.html", &[]),
+                page("p/index.qmd", "p/index.html", &["/wip.html"]),
+            ],
+            AliasPlanOptions::default(),
+        );
         assert!(
             matches!(
                 plan.conflicts.as_slice(),
@@ -1100,15 +1365,18 @@ mod tests {
     fn plan_reports_every_conflict_in_one_pass() {
         // A project with several mistakes should learn about all of
         // them from a single render.
-        let plan = plan_alias_stubs(&[
-            page("index.qmd", "index.html", &[]),
-            page(
-                "one/index.qmd",
-                "one/index.html",
-                &["/shared.html", "/index.html", "../../escaped.html"],
-            ),
-            page("two/index.qmd", "two/index.html", &["/shared.html"]),
-        ]);
+        let plan = plan_alias_stubs(
+            &[
+                page("index.qmd", "index.html", &[]),
+                page(
+                    "one/index.qmd",
+                    "one/index.html",
+                    &["/shared.html", "/index.html", "../../escaped.html"],
+                ),
+                page("two/index.qmd", "two/index.html", &["/shared.html"]),
+            ],
+            AliasPlanOptions::default(),
+        );
         assert!(plan.stubs.is_empty());
         assert!(
             plan.conflicts
@@ -1136,6 +1404,8 @@ mod tests {
                 .iter()
                 .map(|(f, t)| (f.to_string(), t.to_string()))
                 .collect(),
+            case_fold_twin: None,
+            claimant: AliasRef::default(),
         })
     }
 
@@ -1233,16 +1503,22 @@ mod tests {
         // byte-identical sites.
         // Stub names deliberately unrelated to the page names, so no
         // alias lands on a rendered page.
-        let forward = plan_alias_stubs(&[
-            page("a.qmd", "a.html", &["/old-z.html"]),
-            page("b.qmd", "b.html", &["/old-m.html"]),
-            page("c.qmd", "c.html", &["/old-a.html"]),
-        ]);
-        let reversed = plan_alias_stubs(&[
-            page("c.qmd", "c.html", &["/old-a.html"]),
-            page("b.qmd", "b.html", &["/old-m.html"]),
-            page("a.qmd", "a.html", &["/old-z.html"]),
-        ]);
+        let forward = plan_alias_stubs(
+            &[
+                page("a.qmd", "a.html", &["/old-z.html"]),
+                page("b.qmd", "b.html", &["/old-m.html"]),
+                page("c.qmd", "c.html", &["/old-a.html"]),
+            ],
+            AliasPlanOptions::default(),
+        );
+        let reversed = plan_alias_stubs(
+            &[
+                page("c.qmd", "c.html", &["/old-a.html"]),
+                page("b.qmd", "b.html", &["/old-m.html"]),
+                page("a.qmd", "a.html", &["/old-z.html"]),
+            ],
+            AliasPlanOptions::default(),
+        );
         assert!(forward.conflicts.is_empty(), "{:?}", forward.conflicts);
         assert_eq!(
             stub_paths(&forward),

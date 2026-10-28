@@ -1,0 +1,70 @@
+---
+title: "Alias Redirect Skipped on a Case-Insensitive Output Directory"
+description: "`website.case-sensitive-paths: true` allowed an alias that differs from an existing file only by case, but the directory being rendered into treats the two as one file, so the redirect was not written."
+code: Q-5-51
+subsystem: project
+status: complete
+since: "99.9.9"
+categories:
+  - project
+---
+
+# `Q-5-51` — Alias Redirect Skipped on a Case-Insensitive Output Directory
+
+> `website.case-sensitive-paths: true` allowed an alias that differs
+> from an existing file only by case, but the directory being
+> rendered into treats the two as one file, so the redirect was not
+> written.
+
+## What this means
+
+With `website.case-sensitive-paths: true` you have told Quarto that
+the host your site is served from keeps `R/index.html` and
+`r/index.html` apart, so an alias that differs from a page (or from
+another alias) only by case is a redirect to write rather than a
+[`Q-5-25`](Q-5-25.qmd) collision:
+
+```yaml
+# _quarto.yml
+website:
+  case-sensitive-paths: true
+
+# r/index.qmd
+aliases:
+  - /R/           # the old URL, before the directory was renamed
+```
+
+That is true of the deployment target. It is not necessarily true of
+the machine doing the rendering. On a default macOS or Windows
+filesystem, `_site/R/index.html` and `_site/r/index.html` *are* one
+file, and writing the redirect would replace the page with a redirect
+— here, a redirect to itself.
+
+Quarto checks the output directory before writing — by experiment,
+not by operating system, since a macOS volume can be formatted either
+way. When the directory folds case, the redirect is skipped and this
+warning names it. The page is left intact. Everything else about the
+render is unaffected, and on this machine the page already answers
+for the redirect's URL, so nothing is missing locally.
+
+When two *aliases* differ only by case, the one that sorts first is
+written and the other is skipped.
+
+## How to fix it
+
+Nothing is wrong with the project. To produce the redirect, render on
+a case-sensitive filesystem — typically the Linux CI job that builds
+the published site. The output there contains both files.
+
+If you did not mean to declare the host case-sensitive, remove
+`website.case-sensitive-paths` and rename the alias so it differs from
+the page by more than capitalization; see [`Q-5-25`](Q-5-25.qmd).
+
+## Difference from Quarto 1
+
+Quarto 1 has no such check and no such option. It compares paths
+exactly, so on Linux it writes both files, and on macOS or Windows it
+silently overwrites the page with the redirect. Quarto 2 never
+overwrites the page: it either refuses the pair (`Q-5-25`, the
+default) or, with `website.case-sensitive-paths: true`, writes the
+redirect where the filesystem allows and warns where it does not.

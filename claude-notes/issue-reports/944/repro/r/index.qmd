@@ -1,0 +1,7 @@
+---
+title: R example
+aliases:
+  - /R/
+---
+
+The page that used to live at `/R/`.

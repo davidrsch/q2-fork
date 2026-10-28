@@ -89,6 +89,20 @@ pub fn website_llms_txt_enabled(meta: &ConfigValue) -> bool {
         .unwrap_or(false)
 }
 
+/// Read `website.case-sensitive-paths` from a merged metadata value.
+///
+/// `true` declares that the host the site is served from keeps paths
+/// that differ only by case apart (S3, most Linux web servers), so an
+/// alias such as `/R/` on a page rendered to `r/index.html` is a
+/// redirect to write rather than a `Q-5-25` collision. Absent,
+/// `false`, and non-boolean values all read as `false` — the default
+/// assumes the stricter, case-insensitive host (GH #944).
+pub fn website_case_sensitive_paths(meta: &ConfigValue) -> bool {
+    meta.get_path(&["website", "case-sensitive-paths"])
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
 /// Read `website.favicon` from a merged metadata value.
 ///
 /// Returns the favicon path as written by the user. **Does not

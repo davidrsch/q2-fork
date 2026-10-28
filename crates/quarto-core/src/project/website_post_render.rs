@@ -821,16 +821,29 @@ pub(super) fn write_robots_txt(
 ///
 /// Unlike the other hooks here this one is not gated on a config key:
 /// `aliases:` is per-document, so the plan is simply empty when no
-/// page declares any.
+/// page declares any. `website.case-sensitive-paths` only changes
+/// what counts as a collision (GH #944): with it set, a stub that
+/// differs from a page only by case is planned — and then written
+/// only if the output directory can actually hold both, otherwise it
+/// is skipped with `Q-5-51` rather than overwriting the page.
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) fn write_alias_redirects(
     project: &ProjectContext,
     index: &ProjectIndex,
     runtime: &dyn SystemRuntime,
+    diagnostics: &mut Vec<DiagnosticMessage>,
 ) -> Result<()> {
-    use crate::project::aliases::{plan_alias_stubs, render_stub};
+    use crate::project::aliases::{AliasPlanOptions, plan_alias_stubs, render_stub};
+    use crate::project::website_config::website_case_sensitive_paths;
 
-    let plan = plan_alias_stubs(index.profiles());
+    let options = AliasPlanOptions {
+        case_sensitive_paths: project
+            .config
+            .metadata
+            .as_ref()
+            .is_some_and(website_case_sensitive_paths),
+    };
+    let plan = plan_alias_stubs(index.profiles(), options);
 
     if !plan.conflicts.is_empty() {
         return Err(QuartoError::Parse(alias_conflicts_to_parse_error(
@@ -840,7 +853,19 @@ pub(super) fn write_alias_redirects(
         )));
     }
 
+    // Probe once, and only when something would actually collide:
+    // the common case has no twins and never touches the probe file.
+    let output_dir_folds_case = if plan.stubs.iter().any(|s| s.case_fold_twin.is_some()) {
+        dir_is_case_insensitive(runtime, &project.output_dir)?
+    } else {
+        false
+    };
+
     for stub in &plan.stubs {
+        if output_dir_folds_case && let Some(twin) = &stub.case_fold_twin {
+            diagnostics.push(skipped_case_fold_stub_warning(stub, twin));
+            continue;
+        }
         let dst = project.output_dir.join(&stub.stub_href);
         if let Some(parent) = dst.parent() {
             runtime.dir_create(parent, true).map_err(|e| {
@@ -865,6 +890,110 @@ pub(super) fn write_alias_redirects(
     Ok(())
 }
 
+/// Does `dir` treat two spellings that differ only by case as one
+/// file?
+///
+/// Answered by experiment, not by `cfg!(target_os)`: a macOS volume
+/// can be formatted either way, Windows can be told per directory,
+/// and a Linux build can write to a mounted case-insensitive share.
+/// The probe goes in the **output** directory specifically — it is the
+/// directory the stubs land in, and it need not be on the same volume
+/// as the project.
+///
+/// A probe file is created under a lowercase name and looked up under
+/// an uppercase one. The nanosecond nonce keeps two concurrent renders
+/// into one directory from reading each other's probe.
+#[cfg(not(target_arch = "wasm32"))]
+fn dir_is_case_insensitive(runtime: &dyn SystemRuntime, dir: &Path) -> Result<bool> {
+    use std::time::UNIX_EPOCH;
+
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let lower = dir.join(format!(".q2-case-probe-{nonce}"));
+    let upper = dir.join(format!(".Q2-CASE-PROBE-{nonce}"));
+
+    let io_err = |what: &str, e: quarto_system_runtime::RuntimeError| {
+        QuartoError::other(format!(
+            "Failed to {what} case-sensitivity probe in {}: {}",
+            dir.display(),
+            e
+        ))
+    };
+
+    runtime
+        .dir_create(dir, true)
+        .map_err(|e| io_err("create the output directory for the", e))?;
+    runtime
+        .file_write(&lower, b"")
+        .map_err(|e| io_err("write", e))?;
+    let folds = runtime.path_exists(&upper, Some(quarto_system_runtime::PathKind::File));
+    // Remove before inspecting the result so the probe never lingers
+    // in the site, whichever way the lookup went.
+    runtime
+        .file_remove(&lower)
+        .map_err(|e| io_err("remove", e))?;
+    folds.map_err(|e| io_err("check", e))
+}
+
+/// `Q-5-51`: a stub allowed by `website.case-sensitive-paths` could not
+/// be written here because this output directory would have put it on
+/// top of the file it differs from only by case.
+///
+/// A warning, not an error: the author asked for a case-sensitive
+/// site and will get one from a case-sensitive build host. On this
+/// host the occupant already answers for the stub's URL, so nothing
+/// 404s locally; the warning says which redirect is missing and why.
+///
+/// Span-less on purpose. Project-level diagnostics are rendered
+/// without a shared `SourceContext`, and the message names the file
+/// and alias in text.
+#[cfg(not(target_arch = "wasm32"))]
+fn skipped_case_fold_stub_warning(
+    stub: &crate::project::aliases::PlannedStub,
+    twin: &crate::project::aliases::CaseFoldTwin,
+) -> DiagnosticMessage {
+    use crate::project::aliases::CaseFoldOccupant;
+
+    let (occupant, consequence) = match &twin.occupant {
+        CaseFoldOccupant::Page {
+            page_href,
+            page_source,
+        } => (
+            format!(
+                "`{page_href}`, the page rendered by `{}`",
+                page_source.display()
+            ),
+            "Writing it would have replaced that page with a redirect.",
+        ),
+        CaseFoldOccupant::Stub { stub_href } => (
+            format!("`{stub_href}`, another alias redirect"),
+            "Writing it would have replaced that redirect, sending its visitors to the wrong page.",
+        ),
+    };
+
+    quarto_error_reporting::DiagnosticMessageBuilder::warning(
+        "Alias redirect skipped on a case-insensitive output directory",
+    )
+    .with_code("Q-5-51")
+    .problem(format!(
+        "`{}` in `{}` resolves to `{}`, which this output directory treats as the same file \
+         as {occupant}. {consequence}",
+        twin.alias.alias,
+        twin.alias.source_path.display(),
+        stub.stub_href
+    ))
+    .add_info(
+        "`website.case-sensitive-paths: true` says the site is served from a host that keeps \
+         the two apart. The redirect is written when the directory being rendered into does \
+         too. Here the existing file already answers for the redirect's URL.",
+    )
+    .add_hint(
+        "Render on a case-sensitive filesystem (for example Linux CI) to produce this redirect?",
+    )
+    .build()
+}
+
 /// Turn every conflict into a diagnostic, sharing one `SourceContext`.
 ///
 /// All of them, not the first: a site with dozens of aliasing files
@@ -885,6 +1014,11 @@ fn alias_conflicts_to_parse_error(
         .collect();
     crate::error::ParseError::new(diagnostics, source_context)
 }
+
+/// The escape hatch both `Q-5-25` shapes point at (GH #944).
+#[cfg(not(target_arch = "wasm32"))]
+const CASE_SENSITIVE_PATHS_HINT: &str = "Serving from a host that keeps both spellings apart \
+     (such as S3)? Set `website: case-sensitive-paths: true` in `_quarto.yml` to allow the pair.";
 
 /// Register the file an alias was written in and return its span,
 /// re-keyed so several documents can share one `SourceContext`.
@@ -1077,6 +1211,7 @@ fn alias_conflict_diagnostic(
             };
             builder
                 .add_hint("Rename one so the two differ by more than capitalization?")
+                .add_hint(CASE_SENSITIVE_PATHS_HINT)
                 .build()
         }
 
@@ -1102,6 +1237,7 @@ fn alias_conflict_diagnostic(
                 page_source.display()
             ))
             .add_hint("Rename the alias so it cannot collide with the page?")
+            .add_hint(CASE_SENSITIVE_PATHS_HINT)
             .build()
         }
 
