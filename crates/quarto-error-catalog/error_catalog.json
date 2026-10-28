@@ -1577,7 +1577,7 @@
   "Q-5-25": {
     "subsystem": "project",
     "title": "Alias Paths Differ Only by Case",
-    "message_template": "Two paths differ only in capitalization, which macOS and Windows treat as the same file. Checked on every platform so a Linux build cannot ship a site that breaks when served elsewhere.",
+    "message_template": "Two paths differ only in capitalization, which macOS and Windows treat as the same file. Checked on every platform so a Linux build cannot ship a site that breaks when served elsewhere, unless `website.case-sensitive-paths: true` declares the host keeps them apart.",
     "docs_url": "https://quarto.org/docs/errors/project/Q-5-25",
     "since_version": "99.9.9"
   },
@@ -1817,6 +1817,13 @@
     "title": "Invalid drafts Pattern",
     "message_template": "A `drafts` entry is not a path, points outside the project, or is not a valid glob. It marks nothing as a draft.",
     "docs_url": "https://quarto.org/docs/errors/project/Q-5-50",
+    "since_version": "99.9.9"
+  },
+  "Q-5-51": {
+    "subsystem": "project",
+    "title": "Alias Redirect Skipped on a Case-Insensitive Output Directory",
+    "message_template": "`website.case-sensitive-paths: true` allowed an alias that differs from an existing file only by case, but the directory being rendered into treats the two as one file. The redirect was not written so the existing file survives; render on a case-sensitive filesystem to produce it.",
+    "docs_url": "https://quarto.org/docs/errors/project/Q-5-51",
     "since_version": "99.9.9"
   },
   "Q-13-8": {

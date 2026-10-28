@@ -115,6 +115,29 @@ redirect is silently missing or silently points at the wrong page — is
 much harder to notice: the build log looks clean and the old links keep
 failing with nothing to explain why.
 
+### Hosts that distinguish case
+
+`Q-5-25` assumes the site may be served from a filesystem where
+`/Deploy/` and `/deploy/` are one file. Some hosts — Amazon S3, most
+Linux web servers — keep them apart, and a site on such a host may
+need both: say a directory was renamed from `R/` to `r/` and the old
+`/R/` links must keep working. Tell Quarto the host is case-sensitive:
+
+```yaml
+# _quarto.yml
+website:
+  case-sensitive-paths: true
+```
+
+Now a pair that differs only by case is two files, and the redirect is
+written. One safeguard remains. If the directory you are rendering
+*into* folds case — a default macOS or Windows volume — writing
+`_site/R/index.html` would overwrite `_site/r/index.html`, so Quarto
+skips that redirect and warns
+[`Q-5-51`](../../errors/project/Q-5-51.qmd) instead of replacing the
+page. Render on a case-sensitive filesystem, such as a Linux CI job,
+to produce both files. Nothing else about the render changes.
+
 ## Differences from Quarto 1
 
 If you are porting a site, three behaviours changed.
@@ -129,7 +152,10 @@ exactly, so `/Deploy/` and `/deploy/` look distinct to it. On macOS and
 Windows they are the same file, and one silently overwrites the other —
 which, when the loser is a real page, replaces that page with a
 redirect pointing at itself. Quarto 2 rejects such a pair even on
-Linux, so a site built in CI cannot break when served elsewhere.
+Linux, so a site built in CI cannot break when served elsewhere. If
+your host really does keep the two apart, set
+`website.case-sensitive-paths: true` (see above); Quarto 1 had no
+such option because it never checked.
 
 **The redirect works without JavaScript.** Quarto 1's redirect runs a
 script and does nothing else; a reader without JavaScript sees a blank

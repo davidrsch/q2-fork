@@ -1,7 +1,7 @@
 # Issue #944 — alias differing from its page only by case (Q-5-25) is a hard error with no escape hatch
 
 - **GitHub**: https://github.com/quarto-dev/q2/issues/944
-- **Reporter**: @cscheid (Carlos Scheidegger), 2026-10-27, relaying @atheriel's Posit Connect docs port
+- **Reporter**: \@cscheid (Carlos Scheidegger), 2026-10-27, relaying \@atheriel's Posit Connect docs port
 - **Triage date**: 2026-10-28
 - **Branch**: `issue-944` in the main checkout (topic branch, no worktree — per user request), based on `main` \@ `49cb226de` (v0.37.0)
 - **Braid strand**: bd-ex8qvuwu
@@ -192,7 +192,7 @@ Filed **bd-ex8qvuwu** with this fix scope:
    earlier stub, probe the output directory. Case-insensitive → skip the stub
    with a warning naming the file and the reason. Case-sensitive → write it.
 3. **Diagnostics.** Both `Q-5-25` messages gain a hint naming the option.
-   Update `error_catalog.json`'s `message_template` so it no longer claims
+   Update the `message_template` of `error_catalog.json` so it no longer claims
    the check is unconditional.
 4. **Docs.** `docs/errors/project/Q-5-25.qmd`: add the option to "How to fix
    it", qualify "Why it is checked everywhere", and expand "Difference from
@@ -217,6 +217,29 @@ Filed **bd-ex8qvuwu** with this fix scope:
 Out of scope, noted for later: q2 has no check for two *pages* whose output
 paths differ only by case (they overwrite each other on macOS/Windows with no
 diagnostic). The option name in Q5 is chosen so it could gate that check too.
+
+## Implementation (same branch, 2026-10-28)
+
+Option name settled by the user: `website.case-sensitive-paths: true`. Landed on
+`issue-944` after this triage commit:
+
+- `AliasPlanOptions` threads the option into `plan_alias_stubs`, which then keys
+  buckets and pages by exact spelling; each stub that would have collided carries a
+  `CaseFoldTwin` (the page or earlier stub it folds onto).
+- `write_alias_redirects` probes the output directory (probe file under a lowercase
+  name, looked up uppercase) only when a twin exists, and skips twinned stubs with the
+  new warning **`Q-5-51`** when the directory folds case. Pages always win; between two
+  stubs the one sorting first wins.
+- Both `Q-5-25` diagnostics gain a hint naming the option; a non-website project with
+  the option set gets a "no effect" warning.
+- Docs: `Q-5-25.qmd`, new `Q-5-51.qmd`, `aliases.qmd`, sidebar, catalog; decision 3 of
+  the 2026-08-12 plan amended.
+- Tests branch on a runtime probe of the temp dir, so one test asserts the write on a
+  case-sensitive directory and the skip on a case-insensitive one. Locally both branches
+  ran: default APFS (skip) and a `Case-sensitive APFS` disk image mounted as `TMPDIR`
+  (write). CI covers Linux and Windows.
+
+`exp-case-sensitive-paths/` is the repro with the option on, for a side-by-side run.
 
 ## Verification commands used
 

@@ -400,6 +400,15 @@ led to each.
    when checked out on a case-insensitive filesystem. Deterministic cross-platform
    behavior is the point; Q1's guard is an exact string compare and catches none of this.
 
+   > **Amended 2026-10-28 (GH #944, bd-ex8qvuwu).** The premise "no realistic scenario
+   > wants a case-only pair" was wrong: Posit Connect's docs are served from S3, where
+   > `R/index.html` and `r/index.html` are distinct keys, and a renamed directory needs
+   > its old-case URL to keep redirecting. The error stays the **default**, and
+   > `website.case-sensitive-paths: true` opts out: the pair plans two stubs, and the
+   > writer probes the output directory, skipping (with `Q-5-51`) any stub that would
+   > clobber its case-twin on a case-insensitive filesystem. See
+   > `claude-notes/issue-reports/944/triage.md`.
+
 4. **Stub template — candidate B.** Written out at
    `aliases-redirect-stubs-investigation/stub-candidate-b-improved.html` (A, the Q1
    byte-parity version, is kept alongside it for comparison). B adds a

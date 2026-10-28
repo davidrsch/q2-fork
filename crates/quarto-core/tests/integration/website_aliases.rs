@@ -23,10 +23,14 @@
 //! - Paths that differ only by case collide **on every platform**, not
 //!   just on case-insensitive filesystems, so a Linux CI build fails
 //!   the same way a macOS build does instead of shipping a site that
-//!   breaks when checked out on macOS or Windows.
+//!   breaks when checked out on macOS or Windows. The author can opt
+//!   out with `website.case-sensitive-paths: true` (GH #944); the
+//!   tests for that branch on what the temp directory actually does,
+//!   so the same test checks the write on Linux CI and the skip on a
+//!   default macOS volume.
 //!
 //! See `claude-notes/plans/2026-08-12-aliases-redirect-stubs.md`
-//! §"Design decisions".
+//! §"Design decisions" and `claude-notes/issue-reports/944/triage.md`.
 //!
 //! The helpers below mirror those in `website_post_render.rs` — this
 //! crate's integration tests keep their fixtures per-file rather than
@@ -166,6 +170,33 @@ fn expect_error_code(result: Result<ProjectRenderSummary, QuartoError>, code: &s
             .collect::<Vec<_>>()
     );
     strip_ansi(&parse.render())
+}
+
+/// Codes of every diagnostic the render produced, project-level and
+/// per-page.
+fn diagnostic_codes(summary: &ProjectRenderSummary) -> Vec<String> {
+    summary
+        .outputs
+        .iter()
+        .flat_map(|o| o.render_output.diagnostics.iter())
+        .chain(summary.project_diagnostics.iter())
+        .filter_map(|d| d.code.clone())
+        .collect()
+}
+
+/// Does `dir` treat `probe` and `PROBE` as one file?
+///
+/// Decided at run time, the same way the product decides it, rather
+/// than by `cfg!(target_os)`: a macOS volume can be formatted either
+/// way, and CI runs on both kinds of filesystem. Each
+/// `case-sensitive-paths` test asserts whichever outcome the
+/// directory it rendered into calls for.
+fn dir_folds_case(dir: &Path) -> bool {
+    let lower = dir.join("case-probe");
+    std::fs::write(&lower, "").unwrap();
+    let folds = dir.join("CASE-PROBE").exists();
+    std::fs::remove_file(&lower).unwrap();
+    folds
 }
 
 /// Every HTML file under the output dir, as output-dir-relative
@@ -605,6 +636,181 @@ fn aliases_case_only_collision_is_error() {
     assert!(
         rendered.contains("Shared.html") && rendered.contains("shared.html"),
         "diagnostic should show both spellings; got:\n{rendered}"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// `website.case-sensitive-paths` (GH #944)
+// ═══════════════════════════════════════════════════════════════════
+
+/// A website config that declares the deployment target case-sensitive.
+const CASE_SENSITIVE_WEBSITE_YML: &str =
+    "project:\n  type: website\n  output-dir: _site\nwebsite:\n  case-sensitive-paths: true\n";
+
+/// The Posit Connect docs shape: `viewer/R/` was renamed `viewer/r/`
+/// and the old URL must keep working on S3, where the two are distinct
+/// keys. With the option set the render succeeds everywhere. Whether
+/// the stub is *written* depends on the directory rendered into: a
+/// case-sensitive one holds both files; a case-insensitive one keeps
+/// the page and warns `Q-5-51` instead of replacing it with a redirect
+/// to itself.
+#[test]
+fn case_sensitive_paths_allows_alias_differing_from_page_only_by_case() {
+    let (dir, summary) = render_project(|dir| {
+        write(&dir.join("_quarto.yml"), CASE_SENSITIVE_WEBSITE_YML);
+        write(&dir.join("index.qmd"), "---\ntitle: Home\n---\n\nH.\n");
+        write(
+            &dir.join("r/index.qmd"),
+            "---\ntitle: R example\naliases:\n  - /R/\n---\n\nThe R page body.\n",
+        );
+    });
+
+    // The page survives on every filesystem.
+    let page = read(&dir.join("_site/r/index.html"));
+    assert!(
+        page.contains("The R page body."),
+        "page was clobbered:\n{page}"
+    );
+    assert!(
+        !page.contains("<title>Redirect</title>"),
+        "page became a redirect stub:\n{page}"
+    );
+
+    let codes = diagnostic_codes(&summary);
+    if dir_folds_case(&dir.join("_site")) {
+        assert!(
+            codes.iter().any(|c| c == "Q-5-51"),
+            "case-insensitive output dir should warn that the stub was skipped; got {codes:?}"
+        );
+        assert_eq!(output_html_files(&dir), ["index.html", "r/index.html"]);
+    } else {
+        assert!(
+            !codes.iter().any(|c| c == "Q-5-51"),
+            "case-sensitive output dir should write the stub silently; got {codes:?}"
+        );
+        assert_eq!(
+            output_html_files(&dir),
+            ["R/index.html", "index.html", "r/index.html"]
+        );
+        let stub = read(&dir.join("_site/R/index.html"));
+        assert!(stub.contains("<title>Redirect</title>"), "{stub}");
+        assert_eq!(redirect_map(&stub), r#"{"":"../r/index.html"}"#);
+    }
+    assert!(
+        !dir.join("_site").read_dir().unwrap().any(|e| {
+            e.unwrap()
+                .file_name()
+                .to_string_lossy()
+                .to_ascii_lowercase()
+                .starts_with(".q2-case-probe")
+        }),
+        "the case-sensitivity probe must not linger in the site"
+    );
+}
+
+/// Two aliases differing only by case, each pointing at a different
+/// page. Case-sensitive directory: both stubs, each to its own page.
+/// Case-insensitive: the one that sorts first is written, the other
+/// is skipped with `Q-5-51` rather than silently redirecting the
+/// first stub's visitors to the wrong page.
+#[test]
+fn case_sensitive_paths_allows_two_aliases_differing_only_by_case() {
+    let (dir, summary) = render_project(|dir| {
+        write(&dir.join("_quarto.yml"), CASE_SENSITIVE_WEBSITE_YML);
+        write(
+            &dir.join("one/index.qmd"),
+            "---\ntitle: One\naliases:\n  - /Shared.html\n---\n\n1.\n",
+        );
+        write(
+            &dir.join("two/index.qmd"),
+            "---\ntitle: Two\naliases:\n  - /shared.html\n---\n\n2.\n",
+        );
+    });
+
+    // `Shared.html` sorts before `shared.html`, so it is written first
+    // and wins on a case-insensitive directory.
+    let first = read(&dir.join("_site/Shared.html"));
+    assert_eq!(redirect_map(&first), r#"{"":"one/index.html"}"#);
+
+    let codes = diagnostic_codes(&summary);
+    if dir_folds_case(&dir.join("_site")) {
+        assert!(codes.iter().any(|c| c == "Q-5-51"), "{codes:?}");
+        assert_eq!(
+            output_html_files(&dir),
+            ["Shared.html", "one/index.html", "two/index.html"]
+        );
+    } else {
+        assert!(!codes.iter().any(|c| c == "Q-5-51"), "{codes:?}");
+        assert_eq!(
+            output_html_files(&dir),
+            [
+                "Shared.html",
+                "one/index.html",
+                "shared.html",
+                "two/index.html"
+            ]
+        );
+        let second = read(&dir.join("_site/shared.html"));
+        assert_eq!(redirect_map(&second), r#"{"":"two/index.html"}"#);
+    }
+}
+
+/// The option relaxes only the case-only rule. An alias landing
+/// exactly on a page is still `Q-5-23`, and the diagnostic for the
+/// pair it *does* relax now names the option.
+#[test]
+fn case_sensitive_paths_keeps_exact_collisions_fatal() {
+    let (_dir, result) = try_render_project(|dir| {
+        write(&dir.join("_quarto.yml"), CASE_SENSITIVE_WEBSITE_YML);
+        write(&dir.join("index.qmd"), "---\ntitle: Home\n---\n\nH.\n");
+        write(
+            &dir.join("page/index.qmd"),
+            "---\ntitle: Page\naliases:\n  - /index.html\n---\n\nP.\n",
+        );
+    });
+    expect_error_code(result, "Q-5-23");
+}
+
+/// Without the option the pair is still an error — and the error now
+/// tells the author about the option.
+#[test]
+fn case_only_collision_error_names_the_escape_hatch() {
+    let (_dir, result) = try_render_project(|dir| {
+        write(&dir.join("_quarto.yml"), WEBSITE_YML);
+        write(&dir.join("index.qmd"), "---\ntitle: Home\n---\n\nH.\n");
+        write(
+            &dir.join("r/index.qmd"),
+            "---\ntitle: R\naliases:\n  - /R/\n---\n\nR.\n",
+        );
+    });
+    let rendered = expect_error_code(result, "Q-5-25");
+    assert!(
+        rendered.contains("case-sensitive-paths"),
+        "Q-5-25 should name the escape hatch; got:\n{rendered}"
+    );
+}
+
+/// The option is inert outside website projects, and says so.
+#[test]
+fn case_sensitive_paths_in_default_project_warns() {
+    let (_dir, summary) = render_project(|dir| {
+        write(
+            &dir.join("_quarto.yml"),
+            "project:\n  type: default\n  output-dir: _out\nwebsite:\n  case-sensitive-paths: true\n",
+        );
+        write(&dir.join("index.qmd"), "---\ntitle: Home\n---\n\nH.\n");
+    });
+    assert!(
+        summary
+            .project_diagnostics
+            .iter()
+            .any(|d| d.title.contains("case-sensitive-paths")),
+        "expected a warning naming the option; got: {:?}",
+        summary
+            .project_diagnostics
+            .iter()
+            .map(|d| d.title.clone())
+            .collect::<Vec<_>>()
     );
 }
 

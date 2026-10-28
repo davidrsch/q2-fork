@@ -46,14 +46,48 @@ filesystem — or let a contributor check it out on a Mac — and one
 redirect silently disappears. Catching it at build time on every
 platform is what makes the output portable.
 
+The default assumes the stricter host. If yours is not — see below
+— you can say so.
+
 ## How to fix it
 
 Rename one of the two so they differ by more than capitalization.
 If both spellings need to work, pick one as the real alias; a
 case-insensitive host will serve it for either spelling anyway.
 
+### When the two really are different URLs
+
+Some hosts keep paths that differ only by case apart: Amazon S3,
+most Linux web servers, and anything else that treats a URL path as
+an opaque string. A site served from one of these may have *renamed*
+a directory from `R/` to `r/` and need the old `/R/` URLs to keep
+redirecting — which is exactly the pair this error rejects.
+
+Declare the host case-sensitive in `_quarto.yml`:
+
+```yaml
+website:
+  case-sensitive-paths: true
+```
+
+With this set, a pair that differs only by case is two files, not a
+collision, and the redirect is written. The check does not go away
+entirely: when the directory being rendered into is itself
+case-insensitive (a default macOS or Windows volume), writing the
+redirect would replace the page it points at, so Quarto skips it
+and warns [`Q-5-51`](Q-5-51.qmd) instead. Render on a case-sensitive
+filesystem — typically the CI job that publishes the site — to get
+both files.
+
 ## Difference from Quarto 1
 
-Quarto 1 compares paths as exact strings, so it never notices.
-On a case-insensitive filesystem the redirects overwrite each
-other silently.
+Quarto 1 compares paths as exact strings, so it never notices, and
+what it produces depends on where it runs. On Linux it writes both
+files, which is why sites deployed from Linux CI to a
+case-sensitive host have worked. On macOS or Windows the redirect
+lands on the page and replaces it with a redirect to itself.
+
+Quarto 2 makes the outcome independent of the build machine: by
+default the pair is rejected everywhere, and with
+`website.case-sensitive-paths: true` the redirect is written where
+the filesystem allows and reported where it does not.

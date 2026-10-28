@@ -442,6 +442,24 @@ pub trait ProjectType {
                 .build(),
             );
         }
+        // And for `website.case-sensitive-paths` (GH #944): it only
+        // changes how alias stubs are planned, which only website
+        // projects do.
+        if let Some(meta) = project.config.metadata.as_ref()
+            && super::website_config::website_case_sensitive_paths(meta)
+        {
+            diagnostics.push(
+                quarto_error_reporting::DiagnosticMessageBuilder::warning(
+                    "`website.case-sensitive-paths: true` has no effect in this project type",
+                )
+                .problem(
+                    "The option only governs `aliases:` redirect stubs, which are written only \
+                     for `website` projects.",
+                )
+                .add_hint("Set `project: type: website` in `_quarto.yml`?")
+                .build(),
+            );
+        }
         Ok(())
     }
 
@@ -558,7 +576,7 @@ impl ProjectType for WebsiteProjectType {
             // collision is an error, not a warning, because the
             // alternative is a redirect silently pointing at the
             // wrong page. See the `Q-5-23`..`Q-5-26` docs pages.
-            write_alias_redirects(project, index, runtime)?;
+            write_alias_redirects(project, index, runtime, diagnostics)?;
             // L7 (`bd-qf7r`): replace listing description / image
             // placeholder envelopes with engine-rendered preview
             // content read from sibling outputs. Bracketed feature
