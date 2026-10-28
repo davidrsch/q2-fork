@@ -87,6 +87,71 @@ pub struct PathCtx<'a> {
     pub document_dir: &'a Path,
 }
 
+impl<'a> PathCtx<'a> {
+    /// The context for resolving paths read from a document's merged
+    /// metadata: the document's own directory (its project's directory
+    /// when the input has no parent) is the fallback and marked-value
+    /// base. The usual way to build one inside a stage or transform:
+    ///
+    /// ```ignore
+    /// let path_ctx = PathCtx::for_document(Some(&doc.source_context), &ctx.project.dir, &ctx.document.input);
+    /// ```
+    pub fn for_document(
+        source_context: Option<&'a SourceContext>,
+        project_dir: &'a Path,
+        input: &'a Path,
+    ) -> Self {
+        PathCtx {
+            source_context,
+            project_dir,
+            document_dir: input.parent().unwrap_or(project_dir),
+        }
+    }
+}
+
+/// A config-authored path kept in its *unresolved* form so a parsed
+/// type can carry it past the parse without choosing a base directory
+/// (the `href_source` pattern of bd-qor9a, generalized): resolve it
+/// where the `PathCtx` is known, with [`ConfigPath::resolve`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConfigPath {
+    /// A `Path`-kind value: already rebased by the merge (step 1).
+    Marked(String),
+    /// A plain string with the span it was read from (steps 2–5).
+    Raw { raw: String, source: SourceInfo },
+}
+
+impl ConfigPath {
+    /// Capture a value's path string and provenance; `None` for a
+    /// non-string value.
+    pub fn from_value(value: &ConfigValue) -> Option<Self> {
+        if let ConfigValueKind::Path(marked) = &value.value {
+            return Some(ConfigPath::Marked(marked.clone()));
+        }
+        Some(ConfigPath::Raw {
+            raw: value.as_plain_text()?,
+            source: value.source_info.clone(),
+        })
+    }
+
+    /// The string as the author wrote it (for diagnostics and keys).
+    pub fn as_written(&self) -> &str {
+        match self {
+            ConfigPath::Marked(s) => s,
+            ConfigPath::Raw { raw, .. } => raw,
+        }
+    }
+
+    /// Resolve exactly as [`resolve_config_path`] would have resolved
+    /// the value this was captured from.
+    pub fn resolve(&self, ctx: &PathCtx<'_>) -> ResolvedConfigPath {
+        match self {
+            ConfigPath::Marked(marked) => resolve_marked(marked, ctx),
+            ConfigPath::Raw { raw, source } => resolve_config_path_str(raw, source, ctx),
+        }
+    }
+}
+
 /// The two terminal forms of a config-authored path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedConfigPath {
@@ -704,6 +769,44 @@ mod tests {
         assert_eq!(
             resolve("./a/../b/./x.lua", span(f.quarto_yml), &c),
             ResolvedConfigPath::File(p("/project/b/x.lua"))
+        );
+    }
+
+    #[test]
+    fn for_document_falls_back_to_the_project_dir_without_a_parent() {
+        let f = fixture();
+        let project = p("/project");
+        let c = PathCtx::for_document(Some(&f.sc), &project, Path::new("page.qmd"));
+        assert_eq!(c.document_dir, Path::new(""));
+        let c = PathCtx::for_document(Some(&f.sc), &project, Path::new("/project/docs/page.qmd"));
+        assert_eq!(c.document_dir, Path::new("/project/docs"));
+    }
+
+    #[test]
+    fn config_path_round_trips_both_forms() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        let raw = ConfigPath::from_value(&scalar("x.lua", span(f.quarto_yml))).unwrap();
+        assert_eq!(raw.as_written(), "x.lua");
+        assert_eq!(
+            raw.resolve(&c),
+            ResolvedConfigPath::File(p("/project/x.lua"))
+        );
+        let marked = ConfigPath::from_value(&ConfigValue {
+            value: ConfigValueKind::Path("../x.lua".into()),
+            source_info: span(f.quarto_yml),
+            merge_op: Default::default(),
+        })
+        .unwrap();
+        assert_eq!(marked, ConfigPath::Marked("../x.lua".into()));
+        assert_eq!(
+            marked.resolve(&c),
+            ResolvedConfigPath::File(p("/project/x.lua"))
+        );
+        assert_eq!(
+            ConfigPath::from_value(&ConfigValue::new_map(vec![], SourceInfo::for_test())),
+            None
         );
     }
 

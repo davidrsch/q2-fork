@@ -1189,8 +1189,13 @@ fn enrich_or_create(existing: &SourceInfo, name: &str, token_arc: &Arc<SourceInf
 /// Extract shortcode paths from merged metadata.
 ///
 /// After metadata merge, `meta["shortcodes"]` contains an array of paths
-/// (either `ConfigValueKind::Path` from extensions or `Scalar` from user frontmatter).
-pub fn extract_shortcode_paths(meta: &ConfigValue, document_dir: &std::path::Path) -> Vec<PathBuf> {
+/// (either `ConfigValueKind::Path` from extensions or plain strings from
+/// `_quarto.yml`, a `_metadata.yml` or front matter). Each resolves
+/// against the file that declared it (`crate::config_paths`, bd-lwvumpfk).
+pub fn extract_shortcode_paths(
+    meta: &ConfigValue,
+    ctx: &crate::config_paths::PathCtx<'_>,
+) -> Vec<PathBuf> {
     let Some(sc_val) = meta.get("shortcodes") else {
         return vec![];
     };
@@ -1199,7 +1204,8 @@ pub fn extract_shortcode_paths(meta: &ConfigValue, document_dir: &std::path::Pat
     };
     items
         .iter()
-        .filter_map(|item| item.as_plain_text().map(|s| document_dir.join(s)))
+        .filter_map(|item| crate::config_paths::resolve_config_path(item, ctx))
+        .filter_map(|r| r.file())
         .collect()
 }
 

@@ -110,6 +110,7 @@ impl PipelineStage for LanguageResolveStage {
                     if let Some(path_str) = value.as_plain_text()
                         && let Some(layer) = load_language_file(
                             ctx,
+                            &doc.source_context,
                             &doc.path,
                             &path_str,
                             &value.source_info,
@@ -187,36 +188,38 @@ fn project_root_layer(
 }
 
 /// Loads a user-specified `language: <file>.yml`, resolving the path against
-/// the document directory first, then the project root. A missing or
-/// malformed file is an **error** diagnostic (the config asked for a file
-/// that cannot be honored); resolution continues with the shipped terms.
+/// the file that declared it (`crate::config_paths`; the document directory
+/// when the value has no usable span). A missing or malformed file is an
+/// **error** diagnostic (the config asked for a file that cannot be
+/// honored); resolution continues with the shipped terms.
 fn load_language_file(
     ctx: &StageContext,
+    source_context: &quarto_source_map::SourceContext,
     doc_path: &std::path::Path,
     path_str: &str,
     declared_at: &SourceInfo,
     collector: &mut DiagnosticCollector,
 ) -> Option<StructuredTermLayer> {
-    let doc_dir = doc_path
-        .parent()
-        .map_or_else(|| ctx.project.dir.clone(), |p| p.to_path_buf());
-    let candidates = [doc_dir.join(path_str), ctx.project.dir.join(path_str)];
-    let Some(path) = candidates
-        .iter()
-        .find(|p| ctx.runtime.is_file(p).unwrap_or(false))
-    else {
+    let path_ctx = crate::config_paths::PathCtx::for_document(
+        Some(source_context),
+        &ctx.project.dir,
+        doc_path,
+    );
+    let path =
+        crate::config_paths::resolve_config_path_str(path_str, declared_at, &path_ctx).file();
+    let Some(path) = path.filter(|p| ctx.runtime.is_file(p).unwrap_or(false)) else {
         collector.add(
             DiagnosticMessageBuilder::error(format!(
                 "specified `language` file does not exist: {path_str}"
             ))
-            .add_hint("Is the path relative to the document (or the project root)?")
+            .add_hint("The path is relative to the file that declares it; a leading `/` means the project root.")
             .with_location(declared_at.clone())
             .build(),
         );
         return None;
     };
     let filename = path.to_string_lossy().to_string();
-    let content = match ctx.runtime.file_read_string(path) {
+    let content = match ctx.runtime.file_read_string(&path) {
         Ok(content) => content,
         Err(e) => {
             collector.add(

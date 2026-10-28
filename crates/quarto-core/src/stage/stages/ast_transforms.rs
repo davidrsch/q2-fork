@@ -162,13 +162,13 @@ impl PipelineStage for AstTransformsStage {
             p
         } else {
             // Build pipeline JIT using StageContext data needed by shortcode transform
-            let document_dir = ctx
-                .document
-                .input
-                .parent()
-                .unwrap_or(std::path::Path::new("."));
+            let path_ctx = crate::config_paths::PathCtx::for_document(
+                Some(&doc.source_context),
+                &ctx.project.dir,
+                &ctx.document.input,
+            );
             let shortcode_paths =
-                crate::transforms::extract_shortcode_paths(&doc.ast.meta, document_dir);
+                crate::transforms::extract_shortcode_paths(&doc.ast.meta, &path_ctx);
             let pipeline_profile =
                 crate::format::PipelineProfile::from_format(&ctx.format.target_format);
             jit_pipeline = match &pipeline_profile {
