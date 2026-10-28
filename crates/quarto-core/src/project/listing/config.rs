@@ -65,7 +65,10 @@ pub struct Listing {
     pub sort_ui: Option<bool>,
     pub image_placeholder: Option<String>,
     pub sort: Option<Vec<ListingSort>>,
-    pub template: Option<PathBuf>,
+    /// Author-supplied `template:`, unresolved: it resolves against the
+    /// file that declared it where the render context is known
+    /// (`crate::config_paths::ConfigPath`).
+    pub template: Option<crate::config_paths::ConfigPath>,
     pub template_params: BTreeMap<String, ConfigValue>,
     pub grid_columns: Option<u32>,
     pub grid_item_border: Option<bool>,
@@ -601,7 +604,7 @@ fn parse_one_listing(
                             &entry.value,
                         );
                     }
-                    l.template = Some(PathBuf::from(path));
+                    l.template = crate::config_paths::ConfigPath::from_value(&entry.value);
                 }
             }
             "template-params" => {

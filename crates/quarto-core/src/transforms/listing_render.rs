@@ -117,10 +117,14 @@ impl AstTransform for ListingRenderTransform {
             })
             .unwrap_or_default();
 
-        // Absolute host-page path. Used by `load_custom_template`
-        // to resolve `template:` paths relative to the host page's
-        // directory (Q1-parity).
+        // `load_custom_template` resolves `template:` against the file
+        // that declared it (`crate::config_paths`).
         let host_input: PathBuf = ctx.document.input.clone();
+        let path_ctx = crate::config_paths::PathCtx::for_document(
+            ctx.source_context,
+            &ctx.project.dir,
+            &host_input,
+        );
 
         // The List.js bootstrap is for rendered HTML pages (`q2 render`,
         // `q2 preview --static`). The hub-client preview renders the AST
@@ -140,7 +144,7 @@ impl AstTransform for ListingRenderTransform {
             if r.listing.kind == ListingType::Metadata {
                 continue;
             }
-            render_one(ast, r, &host_dir, &host_input, emit_listjs, &mut diags);
+            render_one(ast, r, &host_dir, &path_ctx, emit_listjs, &mut diags);
             rendered_any = true;
         }
 
@@ -199,7 +203,7 @@ fn render_one(
     ast: &mut Pandoc,
     r: &ResolvedListing,
     host_dir: &str,
-    host_input: &Path,
+    path_ctx: &crate::config_paths::PathCtx<'_>,
     emit_listjs: bool,
     diags: &mut Vec<DiagnosticMessage>,
 ) {
@@ -216,7 +220,7 @@ fn render_one(
     // resolver — no filesystem lookup is attempted, so partial-name
     // collisions with files in the user's CWD are impossible.
     let markdown = match r.listing.kind {
-        ListingType::Custom => match load_custom_template(r, host_input, diags) {
+        ListingType::Custom => match load_custom_template(r, path_ctx, diags) {
             Some(custom) => compile_template(
                 &r.listing.id,
                 &custom.source,
@@ -503,16 +507,15 @@ struct LoadedCustomTemplate {
 ///   failure modes share one diagnostic; users see "missing or
 ///   unreadable" framing in the rendered output.
 ///
-/// Path resolution (Q1-parity): `template:` is resolved relative to
-/// the host page's directory. Absolute paths are accepted as-is.
-/// Project-root and `_extensions/` lookups are not in v1; see the L8
-/// sub-plan for the deferred-followup linkage.
+/// Path resolution: `template:` resolves against the file that declared
+/// it, and a leading `/` means the project root
+/// (`crate::config_paths`; bd-o1meelim, bd-lwvumpfk).
 fn load_custom_template(
     r: &ResolvedListing,
-    host_input: &Path,
+    path_ctx: &crate::config_paths::PathCtx<'_>,
     diags: &mut Vec<DiagnosticMessage>,
 ) -> Option<LoadedCustomTemplate> {
-    let Some(template_rel) = r.listing.template.as_deref() else {
+    let Some(template) = r.listing.template.as_ref() else {
         push_diag(
             diags,
             "Q-12-14",
@@ -525,12 +528,23 @@ fn load_custom_template(
         return None;
     };
 
-    let template_abs = if template_rel.is_absolute() {
-        template_rel.to_path_buf()
-    } else {
-        host_input
-            .parent()
-            .map_or_else(|| template_rel.to_path_buf(), |p| p.join(template_rel))
+    // `std::fs` because transforms have no runtime handle; the probe
+    // only decides between the rule-2 and the legacy OS-absolute reading.
+    let Some(template_abs) = template
+        .resolve_file_with(path_ctx, |p| p.is_file())
+        .map(|c| c.path)
+    else {
+        push_diag(
+            diags,
+            "Q-12-8",
+            format!(
+                "Listing `{}`: `template: {}` is a URL, not a file. \
+                 Falling back to the `default` built-in.",
+                r.listing.id,
+                template.as_written()
+            ),
+        );
+        return None;
     };
 
     match std::fs::read_to_string(&template_abs) {
@@ -758,6 +772,14 @@ mod tests {
             ),
             origin: ItemOrigin::Document,
             extra: BTreeMap::new(),
+        }
+    }
+
+    /// A `template:` value as the author wrote it, with no provenance.
+    fn template_path(raw: &str) -> crate::config_paths::ConfigPath {
+        crate::config_paths::ConfigPath::Raw {
+            raw: raw.to_string(),
+            source: SourceInfo::for_test(),
         }
     }
 
@@ -1115,7 +1137,7 @@ mod tests {
     #[tokio::test]
     async fn custom_listing_with_missing_template_file_emits_q_12_8_and_falls_back() {
         let mut listing = make_listing(ListingType::Custom);
-        listing.template = Some(PathBuf::from("nonexistent-listing-template.template"));
+        listing.template = Some(template_path("nonexistent-listing-template.template"));
         let items = vec![make_item("a", Some("2026-01-01"))];
         let resolved = vec![ResolvedListing { listing, items }];
         let (ast, diags) = run_transform(empty_pandoc(), resolved).await;
@@ -1165,7 +1187,7 @@ mod tests {
         let mut l = Listing {
             id: "main-listing".to_string(),
             kind: ListingType::Custom,
-            template: Some(PathBuf::from(template_name)),
+            template: Some(template_path(template_name)),
             ..Listing::default()
         };
         apply_type_defaults(&mut l);
@@ -1444,7 +1466,7 @@ mod tests {
         let host_input = posts_dir.join("index.qmd");
         std::fs::write(&host_input, "").expect("touch host");
         let mut listing = make_custom_listing("absolute-layout.template");
-        listing.template = Some(abs_template.clone());
+        listing.template = Some(template_path(&abs_template.to_string_lossy()));
         let items = vec![make_item("a", Some("2026-01-01"))];
         let resolved = vec![ResolvedListing { listing, items }];
         let (ast, diags) =
@@ -1744,7 +1766,7 @@ mod tests {
         );
         // Case B: type:custom with a (missing) template file.
         let mut listing = make_listing(ListingType::Custom);
-        listing.template = Some(PathBuf::from("nonexistent.template"));
+        listing.template = Some(template_path("nonexistent.template"));
         let items = vec![make_item("a", Some("2026-01-01"))];
         let resolved = vec![ResolvedListing { listing, items }];
         let (_ast, diags_b) = run_transform(empty_pandoc(), resolved).await;

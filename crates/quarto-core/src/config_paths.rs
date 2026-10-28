@@ -240,36 +240,57 @@ pub fn resolve_config_file(
     ctx: &PathCtx<'_>,
     runtime: &dyn quarto_system_runtime::SystemRuntime,
 ) -> Option<FileCandidate> {
-    let is_file = |p: &Path| runtime.is_file(p).unwrap_or(false);
-    let candidate = resolve_config_path(value, ctx)?.file()?;
-    if is_file(&candidate) {
-        return Some(FileCandidate {
-            path: candidate,
-            exists: true,
-        });
-    }
-    // Legacy reading of an authored leading `/`: OS-absolute. Only for
-    // plain strings (a marked value is already OS-absolute when rooted).
-    if !matches!(value.value, ConfigValueKind::Path(_))
-        && let Some(raw) = value.as_plain_text()
-        && raw.starts_with('/')
-    {
-        let os_absolute = quarto_util::normalize_lexically(Path::new(&raw));
-        if is_file(&os_absolute) {
-            tracing::trace!(
-                raw,
-                "leading-`/` config path does not exist under the project root; using the OS-absolute reading"
-            );
+    resolve_config_file_with(value, ctx, |p| runtime.is_file(p).unwrap_or(false))
+}
+
+/// [`resolve_config_file`] with an explicit existence probe, for callers
+/// without a `SystemRuntime` in reach (transforms) and for tests.
+pub fn resolve_config_file_with(
+    value: &ConfigValue,
+    ctx: &PathCtx<'_>,
+    is_file: impl Fn(&Path) -> bool,
+) -> Option<FileCandidate> {
+    let config_path = ConfigPath::from_value(value)?;
+    config_path.resolve_file_with(ctx, is_file)
+}
+
+impl ConfigPath {
+    /// [`resolve_config_file_with`] for a captured path.
+    pub fn resolve_file_with(
+        &self,
+        ctx: &PathCtx<'_>,
+        is_file: impl Fn(&Path) -> bool,
+    ) -> Option<FileCandidate> {
+        let candidate = self.resolve(ctx).file()?;
+        if is_file(&candidate) {
             return Some(FileCandidate {
-                path: os_absolute,
+                path: candidate,
                 exists: true,
             });
         }
+        // Legacy reading of an authored leading `/`: OS-absolute. Only
+        // for plain strings (a marked value is already OS-absolute when
+        // rooted).
+        if let ConfigPath::Raw { raw, .. } = self
+            && raw.starts_with('/')
+        {
+            let os_absolute = quarto_util::normalize_lexically(Path::new(raw));
+            if is_file(&os_absolute) {
+                tracing::trace!(
+                    raw,
+                    "leading-`/` config path does not exist under the project root; using the OS-absolute reading"
+                );
+                return Some(FileCandidate {
+                    path: os_absolute,
+                    exists: true,
+                });
+            }
+        }
+        Some(FileCandidate {
+            path: candidate,
+            exists: false,
+        })
     }
-    Some(FileCandidate {
-        path: candidate,
-        exists: false,
-    })
 }
 
 fn file(path: PathBuf) -> ResolvedConfigPath {
