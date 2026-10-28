@@ -151,9 +151,16 @@ Three provenance-correct mechanisms coexist today. New code should prefer
    leading `/` when *that* exists (Quarto 1's escape hatch for a filter
    outside the project; the same effective behaviour mechanism 3 has for
    its existence-driven keys), else the rule-2 candidate for the
-   diagnostic. First consumer: `filter_resolve.rs`. Every remaining
-   violator below migrates to it (plan Phase 1); mechanism 3's stored
-   form switches to the project-root pivot afterwards (Phase 1b).
+   diagnostic. First consumer: `filter_resolve.rs` (bd-nqq41zgx); the
+   filesystem-space violators migrated in bd-lwvumpfk (Phase 1), which
+   also routed the mechanism-3 consumers inside quarto-core through it.
+   Parsed types carry a `ConfigPath` (unresolved string + span, or the
+   marked form) and resolve where a `PathCtx` is known. Mechanism 3's
+   stored form switches to the project-root pivot next (Phase 1b,
+   bd-okqrjh8v); `quarto-sass`\'s `ThemeContext::resolve_path` and
+   pampa's citeproc base dir are the two below-quarto-core consumers
+   still joining a marked value onto the document dir, which 1b must
+   change at the hand-over.
 
 **Convergence target** (assessment §6.2, tracked under bd-oejuizi9 +
 bd-hjv5o): generalize mechanism 3 into a single path-shaped-key registry
@@ -184,25 +191,27 @@ Update this table when adding keys or migrating sites.
 | `transforms/repo_actions_render.rs` + `quarto-navigation::repo_actions` | `repo-url`, `repo-branch`, `repo-subdir`, `issue-url` | absolute external URLs built from the pivot form (`page_relative_source`); **neither rule-2 exit** — no `page_url_for`, no filesystem read. `repo-subdir` is a *repository*-namespace path, outside this contract entirely. |
 | `include_expansion.rs:772` (`resolve_include_target`) | `{{< include >}}` (markdown space) | project-root leading-`/` + includer-dir |
 | `filter_resolve.rs` (`resolve_filters`, both call sites `user_filters.rs`, `pandoc_write.rs`) | `filters` (string and `{path:}` forms) | (5) `resolve_config_path`; existence probe at the declaration-resolved path, then extension-name lookup (fixed 2026-10-28, bd-nqq41zgx / GH #945; tests `tests/integration/filter_paths.rs`) |
+| `stage/stages/apply_template.rs` | `template` (missing-file case), `template-partials` (HTML) | (5), via `PathCtx::for_document` (bd-lwvumpfk, 2026-10-28; tests `tests/integration/config_path_consumers.rs`) |
+| `stage/stages/pandoc_write.rs` (`typst_template_files`, `resolve_user_template_path`, `epub_extra_args`, `meta_path_files`, forwarded args) | Typst `template` / `template-partials`, `epub-*`, Typst `bibliography` / `csl`, `reference-doc`, `highlight-style` | (5), one `PathCtx` per `PandocWriteStage` run (bd-lwvumpfk) |
+| `pandoc_filters/format_defaults.rs`, `pandoc_filters/typst_highlight.rs` | `reference-doc`, `template`, `highlight-style` / `syntax-highlighting` theme files | (5) (bd-lwvumpfk) |
+| `transforms/shortcode_resolve.rs` (`extract_shortcode_paths`) | `shortcodes` | (5) (bd-lwvumpfk) |
+| `stage/stages/language_resolve.rs` (`load_language_file`) | `language: <file>.yml` | (5): one candidate at the declaring file, no doc-then-project guess (bd-lwvumpfk) |
+| `stage/stages/typst_compile.rs` (`resolve_font_paths`), `pandoc_write.rs` (`resolve_typst_available_fonts`) | `font-paths` | (5) (bd-lwvumpfk); the per-site leading-`/` rule is gone |
+| `transforms/title_banner.rs` (`classify_banner`) | `title-block-banner` image probe + copy source | (5) with the existence policy (`resolve_config_file_with`) (bd-lwvumpfk) |
+| `transforms/listing_render.rs` (`load_custom_template`) + `project/listing/config.rs` (`Listing.template: ConfigPath`) | `listing.template` | (5) with the existence policy; leading `/` = project root (bd-o1meelim, bd-lwvumpfk). Still reads via `std::fs` (transforms carry no runtime handle) |
+| `quarto-sass` `resolve_brand` / `resolve_brand_variants` / `ThemeConfig::resolve_variants` + `config_paths::brand_path_resolver` at every quarto-core call site | `brand:` (path form) from merged metadata | (5): quarto-core hands quarto-sass a `BrandPathResolver` closure built on the `brand:` value's span; `brand_base_dir` is the no-provenance form (project-level read in `project/mod.rs`) (bd-lwvumpfk) |
+| `project/book/render_item.rs` (`find_inputs`) | `book.chapters` / `appendices` / `references` | (5) with `project_dir` as both bases (`_quarto.yml`-only keys); leading `/` = project root; stored project-relative (bd-lwvumpfk) |
+| `stage/stages/include_resolve.rs` (`read_include_file`) | `include-*` | (3) marking + (5) at the read (bd-lwvumpfk; was a bare `doc_dir.join` on the marked value) |
+| `transforms/format_css.rs`, `transforms/components_resolve.rs` + `components/config.rs` (`ComponentSource::File(ConfigPath)`) | `css`, `components[].src` | (3) marking + (5) at the consumer (bd-lwvumpfk) |
 
 ### VIOLATIONS (each tracked by a strand — do not fix one without checking its siblings)
 
 | Site | Keys | Defect | Strand |
 |---|---|---|---|
-| `stage/stages/apply_template.rs:185-207,415-423` | `template` (missing-file case only; an existing file is marked by `FORMAT_PATH_KEYS`), `template-partials` | consuming-doc-dir join; leading `/` OS-absolute | bd-rdcvjy2s; Phase 1 of bd-nqq41zgx |
-| `stage/stages/pandoc_write.rs:578-591` | `template-partials` (Typst leg) | same | Phase 1 of bd-nqq41zgx |
 | ~~`filter_resolve.rs:255-273`~~ | `filters` | ~~same~~ **FIXED 2026-10-28** (bd-nqq41zgx): mechanism 5 | ~~bd-rdcvjy2s~~ (filters half) |
-| `transforms/title_banner.rs:116-207` | `title-block-banner` image probe | doc-dir probe, raw string emitted | bd-hjv5o scope; Phase 1 of bd-nqq41zgx |
 | `project_resources.rs:705-722,827-836` | engine/filter-declared resources | doc-dir join — runtime output, not YAML; out of this class unless a key is added | bd-hjv5o scope |
-| `transforms/shortcode_resolve.rs:1193-1203` | `shortcodes` | doc-dir join | Phase 1 of bd-nqq41zgx |
-| `pandoc_filters/format_defaults.rs:259-272`, `pandoc_filters/typst_highlight.rs:126-152` | `highlight-style` / `syntax-highlighting` theme files | doc-dir join | Phase 1 of bd-nqq41zgx |
-| `stage/stages/language_resolve.rs:193-205` | `language: <file>.yml` | doc dir, then project root (a consumer guessing its base) | Phase 1 of bd-nqq41zgx |
-| `stage/stages/typst_compile.rs:230-233,413-424`, `pandoc_write.rs:387-421` | `font-paths` | doc input dir; per-site leading-`/` rule (author rule 3) | Phase 1 of bd-nqq41zgx |
-| `transforms/listing_render.rs:510-536` | `listing.template` | host page dir; leading `/` OS-absolute; reads via `std::fs` not the runtime | bd-o1meelim; Phase 1 of bd-nqq41zgx |
-| `revealjs/footer_logo.rs:168-176` | revealjs `logo` | raw string emitted, no `page_url_for`, no copy | Phase 1 of bd-nqq41zgx |
-| `quarto-sass/src/config.rs:699-711` via `compile_theme_css.rs:613`, `pandoc_write.rs:282`, `typst_compile.rs:215`, `transforms/hephaestus.rs:348` | `brand:` (path form) read from **merged** metadata | project dir regardless of declarer (front matter / `_metadata.yml` wrong) | Phase 1 of bd-nqq41zgx |
-| `project/book/render_item.rs:285-300,360`, `project/book/static_analyzer.rs:103` | `book.chapters` / `appendices` | project dir (right); leading `/` → OS root | Phase 1 of bd-nqq41zgx |
-| `project/listing/item.rs:285-291,431-465`, `project/listing/helpers.rs:70-73,96-102`, `transforms/listing_generate.rs:503-507` | front-matter `image`, `listing-item.image` | hand-written external-prefix list; `/` treated as external | bd-epk8cmdl; Phase 1 of bd-nqq41zgx |
+| `revealjs/footer_logo.rs:168-176` | revealjs `logo` | raw string emitted, no `page_url_for`, no copy (URL space) | bd-7328beha |
+| `project/listing/item.rs:285-291,431-465`, `project/listing/helpers.rs:70-73,96-102`, `transforms/listing_generate.rs:503-507` | front-matter `image`, `listing-item.image` | hand-written external-prefix list; `/` treated as external (URL space) | bd-epk8cmdl |
 | `project/mod.rs:290-294` (`adjust_paths_recursive`, mechanism 2 itself) | every explicit `!path` | `http://`/`https://` prefix list instead of `is_external_url`; `!path /x` never anchored at the project root (the resolver's step 1 now compensates at consumption) | Phase 1b of bd-nqq41zgx |
 | ~~`pampa/src/citeproc_filter.rs:133,151`~~ | `csl`, `bibliography` | ~~**process-CWD** read (no base at all)~~ **FIXED 2026-09-24** (book-projects P2): declaration-site base dir threaded into `apply_citeproc_filter` from both call paths (`UserFiltersStage` = document dir; book single-file merge = first file-chapter's dir); both keys added to `FORMAT_PATH_KEYS` (`ExistenceSilent` — URLs stay scalar) | ~~bd-oqoozmtr~~ (closed) |
 

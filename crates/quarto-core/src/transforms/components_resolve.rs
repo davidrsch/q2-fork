@@ -131,19 +131,21 @@ impl AstTransform for ComponentsResolveTransform {
             .resource_resolver
             .as_ref()
             .is_some_and(|r| !r.is_vfs_root_mode());
-        let document_dir = ctx
-            .document
-            .input
-            .parent()
-            .map_or_else(|| ctx.project.dir.clone(), Path::to_path_buf);
+        let path_ctx = crate::config_paths::PathCtx::for_document(
+            ctx.source_context,
+            &ctx.project.dir,
+            &ctx.document.input,
+        );
 
         let mut entries = Vec::new();
         let mut copies = Vec::new();
         let mut shipped: BTreeSet<PathBuf> = BTreeSet::new();
         bound.sort_by_key(|i| *i);
         for decl in bound.iter().map(|&i| &decls[i]) {
-            let ComponentSource::File(doc_relative) = &decl.src;
-            let source = lexically_normalize(&document_dir.join(doc_relative));
+            let ComponentSource::File(config_path) = &decl.src;
+            let Some(source) = config_path.resolve(&path_ctx).file() else {
+                continue;
+            };
             let Some(project_relative) = project_relative_path(&source, &ctx.project.dir) else {
                 diags.push(outside_project_diagnostic(decl, &source));
                 continue;
@@ -388,7 +390,10 @@ fn bind_elements(
                     let i = decls.len();
                     decls.push(ComponentDecl {
                         name: value.clone(),
-                        src: ComponentSource::File(value.clone()),
+                        src: ComponentSource::File(crate::config_paths::ConfigPath::Raw {
+                            raw: value.clone(),
+                            source: quarto_source_map::SourceInfo::for_test(),
+                        }),
                         export: None,
                         bind: crate::components::Binding::Id(value.clone()),
                         content: Default::default(),

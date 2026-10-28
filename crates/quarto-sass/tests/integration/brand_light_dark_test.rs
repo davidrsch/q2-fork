@@ -60,7 +60,7 @@ fn write_brand(dir: &Path, name: &str, contents: &str) {
 fn resolve(config: &ConfigValue, dir: &Path) -> quarto_sass::ResolvedVariants {
     ThemeConfig::from_config_value(config)
         .expect("config parses")
-        .resolve_variants(&NativeRuntime::new(), dir)
+        .resolve_variants(&NativeRuntime::new(), &quarto_sass::brand_base_dir(dir))
         .expect("resolve_variants")
 }
 

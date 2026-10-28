@@ -165,7 +165,7 @@ fn resolve_no_brand_produces_resolved_with_brand_none() {
     let resolved = theme_config
         .resolve_variants(
             &quarto_system_runtime::NativeRuntime::new(),
-            std::path::Path::new("/tmp"),
+            &quarto_sass::brand_base_dir(std::path::Path::new("/tmp")),
         )
         .expect("resolve");
     assert!(resolved.light_brand.is_none());
@@ -191,7 +191,7 @@ fn resolve_inline_brand_parses_typed_brand() {
     let resolved = theme_config
         .resolve_variants(
             &quarto_system_runtime::NativeRuntime::new(),
-            std::path::Path::new("/tmp"),
+            &quarto_sass::brand_base_dir(std::path::Path::new("/tmp")),
         )
         .expect("resolve");
     let brand = resolved.light_brand.expect("resolved brand").brand;
@@ -209,7 +209,10 @@ fn resolve_path_brand_reads_from_runtime() {
     let config = flattened_config(vec![("brand", scalar_string("_brand.yml"))]);
     let theme_config = ThemeConfig::from_config_value(&config).unwrap();
     let resolved = theme_config
-        .resolve_variants(&quarto_system_runtime::NativeRuntime::new(), dir.path())
+        .resolve_variants(
+            &quarto_system_runtime::NativeRuntime::new(),
+            &quarto_sass::brand_base_dir(dir.path()),
+        )
         .expect("resolve");
     let brand = resolved.light_brand.expect("brand").brand;
     let color = brand.color.expect("color");
@@ -239,7 +242,10 @@ fn brand_file_invalid_weight_fails_resolution_with_span_into_brand_file() {
     let config = flattened_config(vec![("brand", scalar_string("_brand.yml"))]);
     let theme_config = ThemeConfig::from_config_value(&config).expect("shape is fine");
     let err = theme_config
-        .resolve_variants(&quarto_system_runtime::NativeRuntime::new(), &dir)
+        .resolve_variants(
+            &quarto_system_runtime::NativeRuntime::new(),
+            &quarto_sass::brand_base_dir(&dir),
+        )
         .expect_err("reversed range must fail resolution");
 
     let quarto_sass::SassError::InvalidBrandFontWeight {
@@ -344,7 +350,10 @@ fn brand_file_valid_range_resolves() {
     let config = flattened_config(vec![("brand", scalar_string("_brand.yml"))]);
     let theme_config = ThemeConfig::from_config_value(&config).unwrap();
     let resolved = theme_config
-        .resolve_variants(&quarto_system_runtime::NativeRuntime::new(), &dir)
+        .resolve_variants(
+            &quarto_system_runtime::NativeRuntime::new(),
+            &quarto_sass::brand_base_dir(&dir),
+        )
         .expect("valid range resolves");
     let brand = &resolved.light_brand.expect("brand").brand;
     match &brand.fonts()[0] {

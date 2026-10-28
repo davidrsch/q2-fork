@@ -104,21 +104,25 @@ impl AstTransform for FormatCssTransform {
         if resolver.is_vfs_root_mode() {
             return Ok(());
         }
-        let document_dir = ctx
-            .document
-            .input
-            .parent()
-            .map_or_else(|| ctx.project.dir.clone(), Path::to_path_buf);
+        let path_ctx = crate::config_paths::PathCtx::for_document(
+            ctx.source_context,
+            &ctx.project.dir,
+            &ctx.document.input,
+        );
 
         let mut copies: Vec<ResourceCopyIntent> = Vec::new();
         let Some(css) = ast.meta.get_mut("css") else {
             return Ok(());
         };
         let mut resolve = |entry: &mut ConfigValue| {
-            let ConfigValueKind::Path(doc_relative) = &entry.value else {
+            if !matches!(entry.value, ConfigValueKind::Path(_)) {
+                return;
+            }
+            let Some(source) =
+                crate::config_paths::resolve_config_path(entry, &path_ctx).and_then(|r| r.file())
+            else {
                 return;
             };
-            let source = lexically_normalize(&document_dir.join(doc_relative));
             let Some(project_relative) = pathdiff::diff_paths(&source, &ctx.project.dir) else {
                 return;
             };

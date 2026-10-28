@@ -345,7 +345,13 @@ fn brand_palette(
     runtime: &dyn SystemRuntime,
     ctx: &mut RenderContext,
 ) -> BrandPalette {
-    let Ok(Some(brand)) = quarto_sass::resolve_brand(meta, runtime, &ctx.project.dir) else {
+    let path_ctx = crate::config_paths::PathCtx::for_document(
+        ctx.source_context,
+        &ctx.project.dir,
+        &ctx.document.input,
+    );
+    let resolve_brand_path = crate::config_paths::brand_path_resolver(meta, path_ctx);
+    let Ok(Some(brand)) = quarto_sass::resolve_brand(meta, runtime, &resolve_brand_path) else {
         return BrandPalette::default();
     };
     let Some(color) = brand.brand.color.as_ref() else {

@@ -64,8 +64,6 @@
 //! comes from). That late drain also covers shortcode resolution and
 //! user-filter contributions made via `quarto.doc.include_text()`.
 
-use std::path::{Path, PathBuf};
-
 use async_trait::async_trait;
 use quarto_error_reporting::{DiagnosticMessage, DiagnosticMessageBuilder};
 use quarto_pandoc_types::ConfigValue;
@@ -134,10 +132,11 @@ impl PipelineStage for IncludeResolveStage {
             ));
         };
 
-        let doc_dir = doc
-            .path
-            .parent()
-            .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+        let path_ctx = crate::config_paths::PathCtx::for_document(
+            Some(&doc.source_context),
+            &ctx.project.dir,
+            &doc.path,
+        );
 
         // Engine PandocIncludes haven't been produced yet at this
         // point in the pipeline (engine runs after the profile
@@ -149,7 +148,7 @@ impl PipelineStage for IncludeResolveStage {
         let recorded = resolve_includes(
             &mut doc.ast.meta,
             ctx.runtime.as_ref(),
-            &doc_dir,
+            &path_ctx,
             &no_engine_includes,
             &mut ctx.diagnostics,
         );
@@ -196,7 +195,7 @@ impl PipelineStage for IncludeResolveStage {
 pub fn resolve_includes(
     meta: &mut ConfigValue,
     runtime: &dyn SystemRuntime,
-    doc_dir: &Path,
+    path_ctx: &crate::config_paths::PathCtx<'_>,
     pandoc_includes: &PandocIncludes,
     diagnostics: &mut Vec<DiagnosticMessage>,
 ) -> Vec<IncludeEntry> {
@@ -212,7 +211,7 @@ pub fn resolve_includes(
         meta,
         KEY_INCLUDE_IN_HEADER,
         runtime,
-        doc_dir,
+        path_ctx,
         diagnostics,
     );
 
@@ -226,7 +225,7 @@ pub fn resolve_includes(
         meta,
         KEY_INCLUDE_BEFORE_BODY,
         runtime,
-        doc_dir,
+        path_ctx,
         diagnostics,
     );
 
@@ -239,7 +238,7 @@ pub fn resolve_includes(
         meta,
         KEY_INCLUDE_AFTER_BODY,
         runtime,
-        doc_dir,
+        path_ctx,
         diagnostics,
     );
     after_body.extend(pandoc_includes.include_after.iter().cloned());
@@ -484,13 +483,13 @@ fn extend_from_file_slot_key(
     meta: &ConfigValue,
     key: &str,
     runtime: &dyn SystemRuntime,
-    doc_dir: &Path,
+    path_ctx: &crate::config_paths::PathCtx<'_>,
     diagnostics: &mut Vec<DiagnosticMessage>,
 ) {
     let Some(value) = meta.get(key) else {
         return;
     };
-    extend_with_smart_include_value(out, recorded, value, key, runtime, doc_dir, diagnostics);
+    extend_with_smart_include_value(out, recorded, value, key, runtime, path_ctx, diagnostics);
 }
 
 fn extend_with_smart_include_value(
@@ -499,7 +498,7 @@ fn extend_with_smart_include_value(
     value: &ConfigValue,
     key: &str,
     runtime: &dyn SystemRuntime,
-    doc_dir: &Path,
+    path_ctx: &crate::config_paths::PathCtx<'_>,
     diagnostics: &mut Vec<DiagnosticMessage>,
 ) {
     match &value.value {
@@ -511,7 +510,7 @@ fn extend_with_smart_include_value(
                     item,
                     key,
                     runtime,
-                    doc_dir,
+                    path_ctx,
                     diagnostics,
                 );
             }
@@ -531,24 +530,25 @@ fn extend_with_smart_include_value(
                 } else {
                     push_invalid_form_warning(diagnostics, key, value);
                 }
-            } else if let Some(file) = value.get("file").and_then(|v| v.as_plain_text()) {
+            } else if let Some(file_value) = value.get("file")
+                && file_value.as_plain_text().is_some()
+            {
                 read_include_file(
                     out,
                     recorded,
-                    &file,
+                    file_value,
                     key,
                     runtime,
-                    doc_dir,
+                    path_ctx,
                     diagnostics,
-                    value,
                 );
             } else {
                 push_invalid_form_warning(diagnostics, key, value);
             }
         }
         _ => {
-            if let Some(s) = value.as_plain_text() {
-                read_include_file(out, recorded, &s, key, runtime, doc_dir, diagnostics, value);
+            if value.as_plain_text().is_some() {
+                read_include_file(out, recorded, value, key, runtime, path_ctx, diagnostics);
             } else {
                 push_invalid_form_warning(diagnostics, key, value);
             }
@@ -556,17 +556,26 @@ fn extend_with_smart_include_value(
     }
 }
 
+/// Read one include file. `location` is the value naming the file (the
+/// scalar entry, or a smart-include map's `file:` value); it resolves
+/// against the file that declared it (`crate::config_paths`: an entry
+/// marked by `FORMAT_PATH_KEYS` arrives document-relative, an unmarked
+/// one keeps its span).
 fn read_include_file(
     out: &mut Vec<String>,
     recorded: &mut Vec<IncludeEntry>,
-    rel_path: &str,
+    location: &ConfigValue,
     key: &str,
     runtime: &dyn SystemRuntime,
-    doc_dir: &Path,
+    path_ctx: &crate::config_paths::PathCtx<'_>,
     diagnostics: &mut Vec<DiagnosticMessage>,
-    location: &ConfigValue,
 ) {
-    let resolved = doc_dir.join(rel_path);
+    let Some(resolved) =
+        crate::config_paths::resolve_config_path(location, path_ctx).and_then(|r| r.file())
+    else {
+        push_invalid_form_warning(diagnostics, key, location);
+        return;
+    };
     let bytes = match runtime.file_read(&resolved) {
         Ok(b) => b,
         Err(e) => {
@@ -664,6 +673,17 @@ mod tests {
     //! Step 1 is complete.
 
     use super::*;
+    use std::path::Path;
+
+    /// No provenance: every include resolves against `dir`.
+    fn pctx(dir: &'static str) -> crate::config_paths::PathCtx<'static> {
+        crate::config_paths::PathCtx {
+            source_context: None,
+            project_dir: Path::new(dir),
+            document_dir: Path::new(dir),
+        }
+    }
+
     use async_trait::async_trait;
     use quarto_pandoc_types::attr::AttrSourceInfo;
     use quarto_pandoc_types::block::{Block, Div, Paragraph, RawBlock};
@@ -897,7 +917,7 @@ mod tests {
         let recorded = resolve_includes(
             &mut meta,
             runtime.as_ref(),
-            Path::new("/proj"),
+            &pctx("/proj"),
             &empty_pandoc_includes(),
             &mut diags,
         );
@@ -924,7 +944,7 @@ mod tests {
         let recorded = resolve_includes(
             &mut meta,
             runtime.as_ref(),
-            Path::new("/proj"),
+            &pctx("/proj"),
             &empty_pandoc_includes(),
             &mut diags,
         );
@@ -951,7 +971,7 @@ mod tests {
         let recorded = resolve_includes(
             &mut meta,
             runtime.as_ref(),
-            Path::new("/proj"),
+            &pctx("/proj"),
             &empty_pandoc_includes(),
             &mut diags,
         );
@@ -1005,7 +1025,7 @@ mod tests {
         resolve_includes(
             &mut meta,
             runtime.as_ref(),
-            Path::new("/proj"),
+            &pctx("/proj"),
             &empty_pandoc_includes(),
             &mut diags,
         );
@@ -1059,7 +1079,7 @@ mod tests {
         resolve_includes(
             &mut meta,
             runtime.as_ref(),
-            Path::new("/proj"),
+            &pctx("/proj"),
             &empty_pandoc_includes(),
             &mut diags,
         );
@@ -1085,7 +1105,7 @@ mod tests {
         let recorded = resolve_includes(
             &mut meta,
             runtime.as_ref(),
-            Path::new("/proj"),
+            &pctx("/proj"),
             &empty_pandoc_includes(),
             &mut diags,
         );
@@ -1113,7 +1133,7 @@ mod tests {
         let _ = resolve_includes(
             &mut meta,
             runtime.as_ref(),
-            Path::new("/proj"),
+            &pctx("/proj"),
             &empty_pandoc_includes(),
             &mut diags,
         );
@@ -1149,7 +1169,7 @@ mod tests {
         let _ = resolve_includes(
             &mut meta,
             runtime.as_ref(),
-            Path::new("/proj"),
+            &pctx("/proj"),
             &empty_pandoc_includes(),
             &mut diags,
         );
@@ -1181,7 +1201,7 @@ mod tests {
         let _ = resolve_includes(
             &mut meta,
             runtime.as_ref(),
-            Path::new("/proj"),
+            &pctx("/proj"),
             &pandoc,
             &mut diags,
         );
@@ -1220,7 +1240,7 @@ mod tests {
         let _ = resolve_includes(
             &mut meta,
             runtime.as_ref(),
-            Path::new("/proj"),
+            &pctx("/proj"),
             &pandoc,
             &mut diags,
         );
@@ -1302,7 +1322,7 @@ mod tests {
         let _ = resolve_includes(
             &mut meta,
             runtime.as_ref(),
-            Path::new("/proj"),
+            &pctx("/proj"),
             &empty_pandoc_includes(),
             &mut diags,
         );

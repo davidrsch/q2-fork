@@ -124,6 +124,17 @@ pub fn resolve_and_gate_pandoc(
     Ok(pandoc_path.unwrap_or_else(|| std::path::PathBuf::from("pandoc")))
 }
 
+/// The string-bearing leaves of a scalar-or-array metadata value, as
+/// values (so each keeps its provenance for `resolve_config_path`).
+fn entry_values(
+    value: &quarto_pandoc_types::ConfigValue,
+) -> Vec<&quarto_pandoc_types::ConfigValue> {
+    match value.as_array() {
+        Some(items) => items.iter().collect(),
+        None => vec![value],
+    }
+}
+
 /// Format-specific extra pandoc CLI args, appended before `-o <output>`.
 ///
 /// Epub only, for now (Q1's `createEbookFormat`,
@@ -139,18 +150,6 @@ pub fn resolve_and_gate_pandoc(
 /// one file (Q1's `merge-includes: false`) — passing two separate
 /// `--include-in-header` flags already keeps them from colliding, with no
 /// merge step to disable.
-
-/// The string-bearing leaves of a scalar-or-array metadata value, as
-/// values (so each keeps its provenance for `resolve_config_path`).
-fn entry_values(
-    value: &quarto_pandoc_types::ConfigValue,
-) -> Vec<&quarto_pandoc_types::ConfigValue> {
-    match value.as_array() {
-        Some(items) => items.iter().collect(),
-        None => vec![value],
-    }
-}
-
 fn epub_extra_args(
     temp_root: &Path,
     path_ctx: &crate::config_paths::PathCtx<'_>,
@@ -274,6 +273,7 @@ fn epub_extra_args(
 #[allow(clippy::type_complexity)]
 fn resolve_typst_brand(
     meta: &quarto_pandoc_types::ConfigValue,
+    source_context: &quarto_source_map::SourceContext,
     ctx: &StageContext,
 ) -> Result<
     (
@@ -282,20 +282,28 @@ fn resolve_typst_brand(
     ),
     PipelineError,
 > {
-    quarto_sass::resolve_brand_variants(meta, ctx.runtime.as_ref(), &ctx.project.dir).map_err(|e| {
-        let mut candidates: Vec<(quarto_source_map::FileId, std::path::PathBuf)> = Vec::new();
-        if let Some(p) = ctx.project.config.config_path.as_deref() {
-            candidates.push((
-                quarto_yaml::file_id_for_filename(&p.to_string_lossy()),
-                p.to_path_buf(),
-            ));
-        }
-        candidates.push((quarto_source_map::FileId(0), ctx.document.input.clone()));
-        PipelineError::Structured(crate::theme_diagnostic::sass_error_to_parse_error(
-            &e,
-            &candidates,
-        ))
-    })
+    let path_ctx = crate::config_paths::PathCtx::for_document(
+        Some(source_context),
+        &ctx.project.dir,
+        &ctx.document.input,
+    );
+    let resolve_brand_path = crate::config_paths::brand_path_resolver(meta, path_ctx);
+    quarto_sass::resolve_brand_variants(meta, ctx.runtime.as_ref(), &resolve_brand_path).map_err(
+        |e| {
+            let mut candidates: Vec<(quarto_source_map::FileId, std::path::PathBuf)> = Vec::new();
+            if let Some(p) = ctx.project.config.config_path.as_deref() {
+                candidates.push((
+                    quarto_yaml::file_id_for_filename(&p.to_string_lossy()),
+                    p.to_path_buf(),
+                ));
+            }
+            candidates.push((quarto_source_map::FileId(0), ctx.document.input.clone()));
+            PipelineError::Structured(crate::theme_diagnostic::sass_error_to_parse_error(
+                &e,
+                &candidates,
+            ))
+        },
+    )
 }
 
 /// Builds the `brand`, `logo` and `brand-mode` filter params from
@@ -631,7 +639,7 @@ impl PandocWriteStage {
         if ctx.format.identifier != FormatIdentifier::Typst {
             return Ok(TypstPrepInputs::default());
         }
-        let (light, dark) = resolve_typst_brand(&doc.ast.meta, ctx)?;
+        let (light, dark) = resolve_typst_brand(&doc.ast.meta, &doc.source_context, ctx)?;
         let brand_mode_text = doc
             .ast
             .meta

@@ -206,19 +206,28 @@ impl PipelineStage for TypstCompileStage {
             ]);
         }
 
-        let path_ctx = crate::config_paths::PathCtx::for_document(
-            Some(&rendered.source_context),
-            &ctx.project.dir,
-            &rendered.input_path,
-        );
-        // Best-effort: an invalid brand is reported by `PandocWriteStage`
-        // (which resolves it with full diagnostics) before this stage runs.
-        let (light, dark) = quarto_sass::resolve_brand_variants(
-            &rendered.metadata,
-            ctx.runtime.as_ref(),
-            &ctx.project.dir,
-        )
-        .unwrap_or((None, None));
+        // The path context and the brand resolver borrow `ctx` and
+        // `rendered`; scoped so both stay usable below.
+        let (light, dark, declared_font_paths) = {
+            let path_ctx = crate::config_paths::PathCtx::for_document(
+                Some(&rendered.source_context),
+                &ctx.project.dir,
+                &rendered.input_path,
+            );
+            // Best-effort: an invalid brand is reported by `PandocWriteStage`
+            // (which resolves it with full diagnostics) before this stage runs.
+            let resolve_brand_path =
+                crate::config_paths::brand_path_resolver(&rendered.metadata, path_ctx);
+            let (light, dark) = quarto_sass::resolve_brand_variants(
+                &rendered.metadata,
+                ctx.runtime.as_ref(),
+                &resolve_brand_path,
+            )
+            .unwrap_or((None, None));
+            let declared_font_paths =
+                resolve_font_paths(rendered.metadata.get("font-paths"), &path_ctx);
+            (light, dark, declared_font_paths)
+        };
         let brand = brand_for_mode(
             light.as_ref(),
             dark.as_ref(),
@@ -229,11 +238,7 @@ impl PipelineStage for TypstCompileStage {
                 .as_deref(),
         );
         let extra_font_paths = with_google_font_cache(
-            with_brand_file_fonts(
-                resolve_font_paths(rendered.metadata.get("font-paths"), &path_ctx),
-                brand,
-                &ctx.project.dir,
-            ),
+            with_brand_file_fonts(declared_font_paths, brand, &ctx.project.dir),
             &ctx.project.dir,
         );
 

@@ -2435,9 +2435,13 @@ impl ProjectContext {
         // docs on `ProjectConfig`. `CompileThemeCssStage` re-resolves
         // from merged metadata and owns the user-facing diagnostic.
         let project_dir = path.parent().unwrap_or(Path::new("."));
-        let brand = quarto_sass::resolve_brand(&metadata, runtime, project_dir)
-            .ok()
-            .flatten();
+        let brand = quarto_sass::resolve_brand(
+            &metadata,
+            runtime,
+            &quarto_sass::brand_base_dir(project_dir),
+        )
+        .ok()
+        .flatten();
 
         // See the field docs: candidate source files for
         // config-anchored diagnostics (bd-m6wmztln).

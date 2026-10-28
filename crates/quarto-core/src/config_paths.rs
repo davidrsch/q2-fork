@@ -152,6 +152,26 @@ impl ConfigPath {
     }
 }
 
+/// A `quarto_sass::BrandPathResolver` for the `brand:` key of `meta`:
+/// quarto-sass hands back the path string it parsed out of the value,
+/// and this resolves it against the file that declared the `brand:`
+/// key (for a `{light:, dark:}` pair, the pair's own span: both halves
+/// are written in the same file).
+pub fn brand_path_resolver<'a>(
+    meta: &'a ConfigValue,
+    ctx: PathCtx<'a>,
+) -> impl Fn(&Path) -> PathBuf + 'a {
+    let source = meta.get("brand").map(|v| v.source_info.clone());
+    move |path: &Path| {
+        let raw = path.to_string_lossy();
+        let resolved = match &source {
+            Some(source) => resolve_config_path_str(&raw, source, &ctx),
+            None => resolve_config_path_str(&raw, &SourceInfo::for_test(), &ctx),
+        };
+        resolved.file().unwrap_or_else(|| path.to_path_buf())
+    }
+}
+
 /// The two terminal forms of a config-authored path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedConfigPath {

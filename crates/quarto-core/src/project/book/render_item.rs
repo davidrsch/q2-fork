@@ -295,8 +295,28 @@ fn find_inputs(
             continue;
         }
 
+        // `book.chapters` entries are written in `_quarto.yml`, so they
+        // are project-root-relative, and a leading `/` is the project
+        // root too (contract rule 2; `crate::config_paths`).
+        let path_ctx = crate::config_paths::PathCtx {
+            source_context: None,
+            project_dir,
+            document_dir: project_dir,
+        };
+        let full_path = crate::config_paths::resolve_config_path_str(
+            &href,
+            &quarto_source_map::SourceInfo::for_test(),
+            &path_ctx,
+        )
+        .file()
+        .unwrap_or_else(|| project_dir.join(&href));
+        // Store the project-relative spelling so every consumer's
+        // `project_dir.join(file)` names the same file.
+        let href = full_path
+            .strip_prefix(project_dir)
+            .map(quarto_util::to_forward_slashes)
+            .unwrap_or(href);
         // Existence check (Q1's `throwInputNotFound`).
-        let full_path = project_dir.join(&href);
         let exists = runtime.is_file(&full_path).unwrap_or(false);
         if !exists {
             return Err(book_diagnostic(

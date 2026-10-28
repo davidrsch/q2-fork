@@ -90,11 +90,13 @@ fn silent_when_format_html_declares_brand() {
 
 #[test]
 fn silent_when_metadata_yml_declares_brand() {
-    // The case a project-config-only check would get wrong.
+    // The case a project-config-only check would get wrong. The path is
+    // written relative to `docs/_metadata.yml`, the file that declares
+    // it (contract rule 1; bd-lwvumpfk).
     let dir = project(PROJECT, Some("_brand.yml"));
     write(
         &dir.path().join("docs/_metadata.yml"),
-        "brand: _brand.yml\n",
+        "brand: ../_brand.yml\n",
     );
     write(
         &dir.path().join("docs/page.qmd"),

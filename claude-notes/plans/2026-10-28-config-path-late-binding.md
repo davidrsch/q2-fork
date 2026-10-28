@@ -438,11 +438,54 @@ change, the fourth fix of its kind. Not recommended as the only change, for
 
 ### Phase 1: migrate the remaining violators — strand bd-lwvumpfk
 
-`apply_template.rs` (`template`, `template-partials`; closes the rest of
-bd-rdcvjy2s), `title_banner.rs`, `project_resources.rs` engine resources,
-`listing_render.rs` custom template (bd-o1meelim), plus whatever §2.4 adds.
-Navigation surfaces: `resolve_metadata_path` → wrapper. Each migration: a
-failing-first test in the declaring-dir shape, the swap, the contract row.
+Branch `braid/bd-lwvumpfk-config-paths-phase-1`, stacked on `issue-945`
+(PR #954). Failing-first tests in
+`tests/integration/config_path_consumers.rs` (nine, one per consumer in
+the "declared in a parent dir, consumed in a subdir" or leading-`/`
+shape; all failed at the branch base for the predicted reason).
+
+- [x] 1.1 `PathCtx::for_document` and `ConfigPath` (carrier for parsed
+      types: `Listing.template`, `ComponentSource::File`).
+- [x] 1.2 `template-partials` (HTML and Typst legs), missing `template`,
+      `shortcodes`, `language: <file>`.
+- [x] 1.3 `title-block-banner` image probe/copy; `listing.template`
+      (bd-o1meelim; `std::fs` read stays, transforms carry no runtime).
+- [x] 1.4 pandoc legs: `epub-*`, Typst `template`/`bibliography`/`csl`,
+      `reference-doc`, `highlight-style` / `syntax-highlighting` theme
+      files, `font-paths` (per-site leading-`/` rule removed).
+- [x] 1.5 `brand:` from merged metadata: quarto-sass takes a
+      `BrandPathResolver` closure (`brand_base_dir` for callers with no
+      provenance); `config_paths::brand_path_resolver` at every
+      quarto-core call site.
+- [x] 1.6 `book.chapters` leading `/`; stored project-relative.
+- [x] 1.7 Mechanism-3 consumers inside quarto-core routed through the
+      resolver, stored form unchanged: `include-*`, `css`, `components`,
+      `reference-doc`/`template`, `epub-*`, Typst template/partials.
+      Not routed (below quarto-core, Phase 1b changes the hand-over):
+      quarto-sass `ThemeContext::resolve_path` (`theme`), pampa citeproc
+      base dir (`bibliography`/`csl` on the HTML leg).
+- [x] 1.8 Scope-outs filed: revealjs `logo` (bd-7328beha), listing
+      `image` prefix list (bd-epk8cmdl) — URL-space emitters.
+- [x] 1.9 Contract inventory updated.
+
+**Behaviour changes** (all in the "declared in a parent/other file" case;
+front-matter declarations are unchanged):
+- `brand:` in a `_metadata.yml` or front matter resolves against that
+  file, not the project root. One fixture (`unreferenced_brand.rs`) wrote
+  `brand: _brand.yml` in `docs/_metadata.yml` for a root file and now
+  spells it `../_brand.yml`. **Open question for review:** Quarto 1's
+  effective rule for most keys is "declaring dir if the file exists there,
+  else the project root"; the resolver's existence policy only falls back
+  for a leading `/`. A project-root fallback for existence-driven keys
+  would be Q1-friendlier and less strict; not added here.
+- `language: <file>` no longer tries document dir then project root; one
+  candidate at the declaring file (the project root for `_quarto.yml`,
+  which is what the old fallback was really serving).
+- An unmarked (missing) Typst `template:` is reported at its
+  declaration-resolved path instead of silently using the vendored one.
+- `font-paths`, `shortcodes`, `template-partials`, highlight theme files,
+  a banner image, a listing template: a project-/directory-level
+  declaration reaches subdirectory pages; leading `/` = project root.
 
 ### Phase 2: enforcement (bd-40luf359)
 
