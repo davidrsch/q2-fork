@@ -387,7 +387,9 @@ if quarto.project.profile:includes("drafts") then ... end
 ```
 
 The environment is read once, before any filter runs, and every filter and
-shortcode in the render sees the same values.
+shortcode in the render sees the same values. The `{{< env NAME >}}`
+shortcode reads the same snapshot, so it and a filter's `os.getenv` can
+never disagree.
 
 ## Checking versions
 

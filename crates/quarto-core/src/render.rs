@@ -243,13 +243,6 @@ pub struct RenderContext<'a> {
     /// Bridged to/from `StageContext` by `AstTransformsStage`.
     pub includes: PandocIncludes,
 
-    /// The environment Lua shortcode handlers see through `os.getenv`
-    /// (GH #939): [`crate::stage::StageContext::env_snapshot`], bridged
-    /// one-way by `AstTransformsStage`. `None` when a `RenderContext` is
-    /// built directly (unit tests, out-of-band drivers); the Lua `os`
-    /// table is then left as the stdlib / runtime provides it.
-    pub env_snapshot: Option<Arc<crate::project::environment::EnvSnapshot>>,
-
     /// Diagnostics (warnings, errors, info) collected during transforms
     pub diagnostics: Vec<DiagnosticMessage>,
 
@@ -613,7 +606,6 @@ impl<'a> RenderContext<'a> {
             binaries,
             options: RenderOptions::default(),
             includes: PandocIncludes::default(),
-            env_snapshot: None,
             diagnostics: Vec::new(),
             ref_type_registry: None,
             crossref_index: None,
