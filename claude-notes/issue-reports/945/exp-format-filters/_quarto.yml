@@ -1,0 +1,6 @@
+project:
+  type: website
+format:
+  html:
+    filters:
+      - ./hello.lua

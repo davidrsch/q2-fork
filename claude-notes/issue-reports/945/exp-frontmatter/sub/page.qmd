@@ -1,0 +1,7 @@
+---
+title: Sub
+filters:
+  - ../hello.lua
+---
+
+Subdirectory page; filter declared in front matter, relative to this file.

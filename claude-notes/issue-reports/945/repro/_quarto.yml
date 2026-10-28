@@ -1,0 +1,4 @@
+project:
+  type: website
+filters:
+  - hello.lua
