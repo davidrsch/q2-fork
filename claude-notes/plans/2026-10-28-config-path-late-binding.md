@@ -504,9 +504,13 @@ still applies to the *unmarked* extension-rebased website strings
 (bd-0x1znhgb, Phase 3), where the string has to be self-describing.
 
 - [x] 1b.1 `mark_entry` and `adjust_paths_to_project_root` (renamed
-      from `adjust_paths_to_document_dir`) write the pivot; `..` is kept
-      inside the project off Windows (symlink safety) and collapsed on
-      Windows (`MAX_PATH`), as before; `.` components are dropped.
+      from `adjust_paths_to_document_dir`) write the pivot, normalized
+      lexically on every platform (review 2026-10-28: the inherited
+      "keep `..` off Windows for symlinks, collapse on Windows for
+      `MAX_PATH`" fork was vestigial — the resolver normalizes at use
+      anyway, and pivot form has no long chains — and gave the pivot a
+      per-OS spelling; dropped, with the symlink caveat documented on
+      `pivot_form`).
 - [x] 1b.2 `!path /x` anchors at the project root; `adjust_paths_recursive`
       classifies URLs with `is_external_url` (the two mechanism-2 defects
       from the sweep).

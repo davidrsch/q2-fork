@@ -248,43 +248,25 @@ fn resolve_marked(marked: &str, ctx: &PathCtx<'_>) -> ResolvedConfigPath {
     file(ctx.project_dir.join(path))
 }
 
-/// `path` without its `.` components (`..` is kept; see [`pivot_form`]).
-fn without_cur_dir(path: &Path) -> PathBuf {
-    path.components()
-        .filter(|c| !matches!(c, std::path::Component::CurDir))
-        .collect()
-}
-
 /// The stored form of a marked path (`ConfigValueKind::Path`): `joined`
-/// (the declaring directory joined with the authored path, *not*
-/// normalized) expressed relative to `project_dir` with forward slashes
-/// when it lies inside the project, else the absolute path.
+/// (the declaring directory joined with the authored path) normalized
+/// lexically and expressed relative to `project_dir` with forward
+/// slashes when it lies inside the project, else the normalized absolute
+/// path. One spelling on every platform, so cache keys, `get-config`
+/// output and the Lua-visible value do not depend on the OS.
 ///
-/// Off Windows an in-project value keeps its `..` components: when the
-/// component before a `..` is a symlink, only the OS resolves `link/..`
-/// to the file the author named. Windows resolves `..` lexically, so
-/// there the collapsed form names the same file and keeps consumer paths
-/// short of `MAX_PATH` (bd-s0jupmmv). Whether the file is inside the
-/// project is always decided on the normalized path, so a `..` that
-/// escapes the project is seen as outside it (bd-9z2258af).
+/// `..` is collapsed lexically here, as `resolve_config_path` collapses
+/// it again at resolution; a `link/..` whose `link` is a symlink to a
+/// different directory therefore names the lexical parent, not the
+/// symlink target's parent. Whether the file is inside the project is
+/// decided on the normalized path, so a `..` that escapes the project is
+/// seen as outside it (bd-9z2258af).
 pub fn pivot_form(joined: &Path, project_dir: &Path) -> String {
     let project_dir = quarto_util::normalize_lexically(project_dir);
     let normalized = quarto_util::normalize_lexically(joined);
-    if !normalized.starts_with(&project_dir) {
-        let outside = if cfg!(windows) { &normalized } else { joined };
-        return quarto_util::to_forward_slashes(outside);
-    }
-    let relative = if cfg!(windows) {
-        normalized.strip_prefix(&project_dir).map(Path::to_path_buf)
-    } else {
-        joined
-            .strip_prefix(&project_dir)
-            .map(without_cur_dir)
-            .or_else(|_| normalized.strip_prefix(&project_dir).map(Path::to_path_buf))
-    };
-    match relative {
+    match normalized.strip_prefix(&project_dir) {
         Ok(rel) if rel.as_os_str().is_empty() => ".".to_string(),
-        Ok(rel) => quarto_util::to_forward_slashes(&rel),
+        Ok(rel) => quarto_util::to_forward_slashes(rel),
         Err(_) => quarto_util::to_forward_slashes(&normalized),
     }
 }
@@ -612,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    fn pivot_form_is_project_relative_inside_and_absolute_outside() {
+    fn pivot_form_is_normalized_project_relative_inside_and_absolute_outside() {
         let project = p("/project");
         assert_eq!(
             pivot_form(&p("/project/styles.css"), &project),
@@ -620,19 +602,11 @@ mod tests {
         );
         assert_eq!(
             pivot_form(&p("/project/docs/../shared/a.css"), &project),
-            if cfg!(windows) {
-                "shared/a.css"
-            } else {
-                "docs/../shared/a.css"
-            }
+            "shared/a.css"
         );
         assert_eq!(
             pivot_form(&p("/project/docs/../../escaped.css"), &project),
-            if cfg!(windows) {
-                "/escaped.css"
-            } else {
-                "/project/docs/../../escaped.css"
-            }
+            "/escaped.css"
         );
         assert_eq!(pivot_form(&p("/tmp/ext/f.lua"), &project), "/tmp/ext/f.lua");
         assert_eq!(

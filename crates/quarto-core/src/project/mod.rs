@@ -2767,13 +2767,10 @@ mod tests {
         );
     }
 
-    /// Off Windows an in-project value keeps its `..` components: when the
-    /// component before a `..` is a symlink, only the OS resolves
-    /// `link/..` to the file the author named. Windows resolves `..`
-    /// lexically, so there the collapsed form names the same file and
-    /// keeps the consumer path short of MAX_PATH.
+    /// `..` is collapsed lexically on every platform: the pivot form is one
+    /// spelling everywhere (the resolver normalizes again at use).
     #[test]
-    fn adjust_paths_inside_project_keeps_dotdot_where_the_os_resolves_it() {
+    fn adjust_paths_inside_project_collapses_dotdot_lexically() {
         use quarto_pandoc_types::ConfigValue;
         use quarto_source_map::SourceInfo;
 
@@ -2784,12 +2781,7 @@ mod tests {
         let ConfigValueKind::Path(rebased) = &metadata.value else {
             panic!("expected a Path value");
         };
-        let expected = if cfg!(windows) {
-            "header.html"
-        } else {
-            "link/../header.html"
-        };
-        assert_eq!(rebased, expected);
+        assert_eq!(rebased, "header.html");
     }
 
     /// The outside-project absolute form follows the same rule: off
@@ -2797,7 +2789,7 @@ mod tests {
     /// collapsing it lexically names a different file when `link` is a
     /// symlink.
     #[test]
-    fn adjust_paths_outside_project_keeps_dotdot_where_the_os_resolves_it() {
+    fn adjust_paths_outside_project_collapses_dotdot_lexically() {
         use quarto_pandoc_types::ConfigValue;
         use quarto_source_map::SourceInfo;
 
@@ -2812,12 +2804,7 @@ mod tests {
         let ConfigValueKind::Path(rebased) = &metadata.value else {
             panic!("expected a Path value");
         };
-        let expected = if cfg!(windows) {
-            "/work/header.html"
-        } else {
-            "/work/project/link/../../header.html"
-        };
-        assert_eq!(rebased, expected);
+        assert_eq!(rebased, "/work/header.html");
     }
 
     /// Every `Path` leaf from a declaring dir outside the project keeps
@@ -2916,12 +2903,7 @@ mod tests {
         let ConfigValueKind::Path(rebased) = &metadata.value else {
             panic!("expected a Path value");
         };
-        let expected = if cfg!(windows) {
-            "/tmp/x.lua"
-        } else {
-            "/project/sub/../../tmp/x.lua"
-        };
-        assert_eq!(rebased, expected);
+        assert_eq!(rebased, "/tmp/x.lua");
     }
 
     /// A theme file in a real temp dir, consumed from a deep document
@@ -3877,12 +3859,8 @@ mod tests {
             // because we went one directory deeper (chapters/intro instead of chapters/)
             assert_eq!(
                 css_value.as_str(),
-                Some(if cfg!(windows) {
-                    "shared/styles.css"
-                } else {
-                    "chapters/../shared/styles.css"
-                }),
-                "Path is stored in pivot (project-root-relative) form"
+                Some("shared/styles.css"),
+                "Path is stored in pivot (normalized, project-root-relative) form"
             );
         }
 
@@ -4026,20 +4004,12 @@ mod tests {
             assert_eq!(css_array.len(), 2);
             assert_eq!(
                 css_array[0].as_str(),
-                Some(if cfg!(windows) {
-                    "shared/a.css"
-                } else {
-                    "chapters/../shared/a.css"
-                }),
+                Some("shared/a.css"),
                 "First path should be adjusted"
             );
             assert_eq!(
                 css_array[1].as_str(),
-                Some(if cfg!(windows) {
-                    "shared/b.css"
-                } else {
-                    "chapters/../shared/b.css"
-                }),
+                Some("shared/b.css"),
                 "Second path should be adjusted"
             );
         }
@@ -4118,11 +4088,7 @@ mod tests {
 
             assert_eq!(
                 css_value.as_str(),
-                Some(if cfg!(windows) {
-                    "shared/styles.css"
-                } else {
-                    "chapters/../shared/styles.css"
-                }),
+                Some("shared/styles.css"),
                 "Nested path should be adjusted"
             );
         }

@@ -776,14 +776,7 @@ mod tests {
         assert!(diags.is_empty());
         assert_eq!(
             meta.get("reference-doc").unwrap().value,
-            ConfigValueKind::Path(
-                if cfg!(windows) {
-                    "shared/ref.docx"
-                } else {
-                    "posts/2026/../../shared/ref.docx"
-                }
-                .to_string()
-            ),
+            ConfigValueKind::Path("shared/ref.docx".to_string()),
             "expected resolution against the declaring directory, not the project root \
              (which would instead resolve to a nonexistent path and stay Scalar)"
         );
@@ -854,14 +847,7 @@ mod tests {
         assert!(diags.is_empty());
         assert_eq!(
             meta.get("template").unwrap().value,
-            ConfigValueKind::Path(
-                if cfg!(windows) {
-                    "shared/custom.docx"
-                } else {
-                    "posts/2026/../../shared/custom.docx"
-                }
-                .to_string()
-            )
+            ConfigValueKind::Path("shared/custom.docx".to_string())
         );
     }
 
