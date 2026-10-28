@@ -10,7 +10,7 @@
 //! This stage wraps the rendered HTML body with a complete HTML document
 //! using the template engine.
 
-use std::path::Path;
+use std::path::PathBuf;
 
 use async_trait::async_trait;
 use quarto_doctemplate::{ChainedResolver, MemoryResolver, Template};
@@ -182,18 +182,29 @@ impl PipelineStage for ApplyTemplateStage {
         // silently miss the inlines case — that's why `template:` from a
         // qmd front-matter never reached the renderer before this fix.
         // Use `as_plain_text()`, which also extracts text from inlines.
-        let custom_template_path = metadata.get("template").and_then(|v| v.as_plain_text());
-        let partial_paths: Vec<String> = metadata
+        // Both keys resolve against the file that declared them
+        // (`crate::config_paths`, bd-lwvumpfk): an existing `template:`
+        // arrives already marked by `FORMAT_PATH_KEYS`, a missing one or
+        // a `template-partials` entry is a plain string with its span.
+        let path_ctx = crate::config_paths::PathCtx::for_document(
+            Some(&rendered.source_context),
+            &ctx.project.dir,
+            &rendered.input_path,
+        );
+        let custom_template_path = metadata
+            .get("template")
+            .and_then(|v| crate::config_paths::resolve_config_path(v, &path_ctx))
+            .and_then(|r| r.file());
+        let partial_paths: Vec<PathBuf> = metadata
             .get("template-partials")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_plain_text()).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| crate::config_paths::resolve_config_path(v, &path_ctx))
+                    .filter_map(|r| r.file())
+                    .collect()
+            })
             .unwrap_or_default();
-
-        // Apply template: metadata-driven selection
-        let document_dir = rendered
-            .input_path
-            .parent()
-            .unwrap_or_else(|| Path::new("."));
 
         // bd-xdnk: thread the document's `SourceContext` through template
         // compilation so doctemplate diagnostics (Q-10-2 Undefined variable
@@ -201,9 +212,8 @@ impl PipelineStage for ApplyTemplateStage {
         // ariadne carets. The context is owned by `rendered.source_context`
         // (forwarded here by `RenderHtmlStage`).
         let (html, template_diags) = match custom_template_path {
-            Some(template_path) => {
+            Some(abs_path) => {
                 // Custom template from extension or document metadata
-                let abs_path = document_dir.join(template_path);
                 let template_content = ctx.runtime.file_read_string(&abs_path).map_err(|e| {
                     PipelineError::stage_error(
                         self.name(),
@@ -234,12 +244,8 @@ impl PipelineStage for ApplyTemplateStage {
                 } else {
                     // Custom template + explicit partials: chain
                     // MemoryResolver → RuntimeResolver → built-in partials.
-                    let memory = build_partial_resolver(
-                        &partial_paths,
-                        document_dir,
-                        ctx.runtime.as_ref(),
-                        self.name(),
-                    )?;
+                    let memory =
+                        build_partial_resolver(&partial_paths, ctx.runtime.as_ref(), self.name())?;
                     let runtime = RuntimeResolver::new(ctx.runtime.as_ref());
                     let chained = ChainedResolver::new(
                         memory,
@@ -275,12 +281,8 @@ impl PipelineStage for ApplyTemplateStage {
                 // (verified pre-flight, bd-xdnk plan §Phase 0); we still
                 // thread the SourceContext so any future tweak that does
                 // emit diagnostics attributes correctly.
-                let memory = build_partial_resolver(
-                    &partial_paths,
-                    document_dir,
-                    ctx.runtime.as_ref(),
-                    self.name(),
-                )?;
+                let memory =
+                    build_partial_resolver(&partial_paths, ctx.runtime.as_ref(), self.name())?;
                 let compiled = template::compile_builtin_template_with_partials(
                     &metadata,
                     &memory,
@@ -407,20 +409,18 @@ fn collect_artifact_urls(
     urls
 }
 
-/// Build a `MemoryResolver` from explicit partial paths, reading content via runtime.
+/// Build a `MemoryResolver` from already-resolved partial paths, reading
+/// content via runtime.
 ///
 /// Partials are keyed by file stem (e.g., `title-block.html` → `"title-block"`).
 fn build_partial_resolver(
-    partial_paths: &[String],
-    document_dir: &Path,
+    partial_paths: &[PathBuf],
     runtime: &dyn quarto_system_runtime::SystemRuntime,
     stage_name: &str,
 ) -> Result<MemoryResolver, PipelineError> {
     let mut resolver = MemoryResolver::new();
-    for path_str in partial_paths {
-        let path = Path::new(path_str);
-        let abs_path = document_dir.join(path);
-        let content = runtime.file_read_string(&abs_path).map_err(|e| {
+    for abs_path in partial_paths {
+        let content = runtime.file_read_string(abs_path).map_err(|e| {
             PipelineError::stage_error(
                 stage_name,
                 format!(
@@ -430,10 +430,10 @@ fn build_partial_resolver(
                 ),
             )
         })?;
-        let name = path
+        let name = abs_path
             .file_stem()
             .and_then(|s| s.to_str())
-            .unwrap_or(path_str);
+            .unwrap_or_default();
         resolver.add(name, content);
     }
     Ok(resolver)

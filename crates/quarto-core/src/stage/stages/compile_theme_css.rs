@@ -607,15 +607,23 @@ impl PipelineStage for CompileThemeCssStage {
             // `_brand.yml` integration: resolve the brand into SCSS layers and
             // append them LAST (highest priority) so brand colors/typography
             // override the built-in theme. Relative `brand:` paths resolve
-            // against the project dir, mirroring the HTML path. Reveal resolves
+            // against the file that declared them (`crate::config_paths`),
+            // mirroring the HTML path. Reveal resolves
             // brand on its own because the Bootstrap `ThemeConfig` theme path
             // rejects reveal theme names.
-            let brand_layers = match quarto_sass::resolve_brand(
-                &doc.ast.meta,
-                ctx.runtime.as_ref(),
-                &ctx.project.dir,
-            )
-            .map_err(|e| {
+            // The resolver closure borrows `ctx` and `doc`; keep it in
+            // its own scope so the match arms below can use `ctx`.
+            let reveal_brand = {
+                let brand_path_ctx = crate::config_paths::PathCtx::for_document(
+                    Some(&doc.source_context),
+                    &ctx.project.dir,
+                    &ctx.document.input,
+                );
+                let resolve_brand_path =
+                    crate::config_paths::brand_path_resolver(&doc.ast.meta, brand_path_ctx);
+                quarto_sass::resolve_brand(&doc.ast.meta, ctx.runtime.as_ref(), &resolve_brand_path)
+            };
+            let brand_layers = match reveal_brand.map_err(|e| {
                 PipelineError::Structured(crate::theme_diagnostic::sass_error_to_parse_error(
                     &e,
                     &theme_error_candidates(ctx),
@@ -799,14 +807,24 @@ impl PipelineStage for CompileThemeCssStage {
         // errors (span-less: `_brand.yml` values carry no source
         // info), `Q-14-8` for an invalid weight (with a span into
         // `_brand.yml`, bd-5fseopxy).
-        let resolved = theme_config
-            .resolve_variants(ctx.runtime.as_ref(), &ctx.project.dir)
-            .map_err(|e| {
-                PipelineError::Structured(crate::theme_diagnostic::sass_error_to_parse_error(
-                    &e,
-                    &theme_error_candidates(ctx),
-                ))
-            })?;
+        let resolved = {
+            // The resolver closure borrows `ctx` and `doc`; keep it in
+            // its own scope so the code below can use `ctx` mutably.
+            let brand_path_ctx = crate::config_paths::PathCtx::for_document(
+                Some(&doc.source_context),
+                &ctx.project.dir,
+                &ctx.document.input,
+            );
+            let resolve_brand_path =
+                crate::config_paths::brand_path_resolver(&doc.ast.meta, brand_path_ctx);
+            theme_config.resolve_variants(ctx.runtime.as_ref(), &resolve_brand_path)
+        }
+        .map_err(|e| {
+            PipelineError::Structured(crate::theme_diagnostic::sass_error_to_parse_error(
+                &e,
+                &theme_error_candidates(ctx),
+            ))
+        })?;
         let theme_config = &resolved.config;
 
         // The ThemeContexts borrow a local Arc clone of the runtime

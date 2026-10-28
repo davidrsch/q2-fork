@@ -113,13 +113,13 @@ impl AstTransform for TitleBannerTransform {
             return Ok(());
         }
 
-        let input_dir = ctx
-            .document
-            .input
-            .parent()
-            .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+        let path_ctx = crate::config_paths::PathCtx::for_document(
+            ctx.source_context,
+            &ctx.project.dir,
+            &ctx.document.input,
+        );
         let is_file = |path: &Path| self.runtime.is_file(path).unwrap_or(false);
-        let Some(banner) = classify_banner(&ast.meta, &input_dir, &is_file) else {
+        let Some(banner) = classify_banner(&ast.meta, &path_ctx, &is_file) else {
             return Ok(());
         };
 
@@ -138,8 +138,8 @@ impl AstTransform for TitleBannerTransform {
             super::website_favicon::append_to_rendered_header(&mut ast.meta, style);
         }
 
-        if let Banner::Image(url) = &banner {
-            let src = input_dir.join(url);
+        if let Banner::Image { url, source } = &banner {
+            let src = source.clone();
             let dest = ctx
                 .resource_resolver
                 .as_ref()
@@ -168,8 +168,10 @@ enum Banner {
     ThemeDefault,
     /// A CSS background color/gradient string.
     Color(String),
-    /// A document-relative (or absolute) image URL that exists on disk.
-    Image(String),
+    /// An image URL as written (emitted into the page's style, copied
+    /// beside the page) that names an existing file at `source`,
+    /// resolved against the file that declared it (`crate::config_paths`).
+    Image { url: String, source: PathBuf },
 }
 
 /// Classify `title-block-banner`. `None` means "no banner"
@@ -177,7 +179,7 @@ enum Banner {
 /// probe (injected so this stays a pure function under test).
 fn classify_banner(
     meta: &ConfigValue,
-    input_dir: &Path,
+    path_ctx: &crate::config_paths::PathCtx<'_>,
     is_file: &dyn Fn(&Path) -> bool,
 ) -> Option<Banner> {
     let value = meta.get("title-block-banner")?;
@@ -188,23 +190,18 @@ fn classify_banner(
     if s.is_empty() {
         return None;
     }
-    Some(if is_banner_image(&s, input_dir, is_file) {
-        Banner::Image(s)
-    } else {
-        Banner::Color(s)
+    // Q1's `isBannerImage`: a string banner is an image when it names an
+    // existing file. The candidate resolves against the file that
+    // declared the banner (project root for `_quarto.yml`), so a
+    // project-wide banner is an image for subdirectory pages too
+    // (bd-lwvumpfk); anything else is a CSS color.
+    let source = crate::config_paths::resolve_config_file_with(value, path_ctx, is_file)
+        .filter(|c| c.exists)
+        .map(|c| c.path);
+    Some(match source {
+        Some(source) => Banner::Image { url: s, source },
+        None => Banner::Color(s),
     })
-}
-
-/// Q1's `isBannerImage`: a string banner is an image when it names an
-/// existing file — absolute, or relative to the document's directory.
-fn is_banner_image(banner: &str, input_dir: &Path, is_file: &dyn Fn(&Path) -> bool) -> bool {
-    let path = Path::new(banner);
-    let resolved = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        input_dir.join(path)
-    };
-    is_file(&resolved)
 }
 
 /// The explicit banner text color, if any. The `body` / `body-bg`
@@ -237,7 +234,7 @@ fn banner_style_block(banner: &Banner, banner_color: Option<&str>) -> Option<Str
 
     match banner {
         Banner::ThemeDefault => {}
-        Banner::Image(url) => {
+        Banner::Image { url, .. } => {
             container_vars.push(format!("background-image: url({url});"));
             container_vars.push("background-size: cover;".to_string());
         }
@@ -323,14 +320,23 @@ mod tests {
         path.is_file()
     }
 
+    /// A context with no provenance: every value resolves against `dir`.
+    fn pctx(dir: &Path) -> crate::config_paths::PathCtx<'_> {
+        crate::config_paths::PathCtx {
+            source_context: None,
+            project_dir: dir,
+            document_dir: dir,
+        }
+    }
+
     #[test]
     fn absent_and_false_are_no_banner() {
         let dir = Path::new(".");
-        assert_eq!(classify_banner(&map(vec![]), dir, &fs_is_file), None);
+        assert_eq!(classify_banner(&map(vec![]), &pctx(dir), &fs_is_file), None);
         assert_eq!(
             classify_banner(
                 &map(vec![("title-block-banner", b(false))]),
-                dir,
+                &pctx(dir),
                 &fs_is_file
             ),
             None
@@ -342,7 +348,7 @@ mod tests {
         assert_eq!(
             classify_banner(
                 &map(vec![("title-block-banner", b(true))]),
-                Path::new("."),
+                &pctx(Path::new(".")),
                 &fs_is_file
             ),
             Some(Banner::ThemeDefault)
@@ -355,7 +361,7 @@ mod tests {
         assert_eq!(
             classify_banner(
                 &map(vec![("title-block-banner", s("#FFDDFF"))]),
-                Path::new("/nonexistent"),
+                &pctx(Path::new("/nonexistent")),
                 &fs_is_file
             ),
             Some(Banner::Color("#FFDDFF".to_string()))
@@ -369,10 +375,13 @@ mod tests {
         assert_eq!(
             classify_banner(
                 &map(vec![("title-block-banner", s("banner.png"))]),
-                temp.path(),
+                &pctx(temp.path()),
                 &fs_is_file
             ),
-            Some(Banner::Image("banner.png".to_string()))
+            Some(Banner::Image {
+                url: "banner.png".to_string(),
+                source: temp.path().join("banner.png"),
+            })
         );
     }
 
@@ -409,7 +418,14 @@ mod tests {
 
     #[test]
     fn image_banner_generates_background_image_cover() {
-        let style = banner_style_block(&Banner::Image("banner.png".to_string()), None).unwrap();
+        let style = banner_style_block(
+            &Banner::Image {
+                url: "banner.png".to_string(),
+                source: PathBuf::from("/p/banner.png"),
+            },
+            None,
+        )
+        .unwrap();
         assert!(style.contains("background-image: url(banner.png);"));
         assert!(style.contains("background-size: cover;"));
     }

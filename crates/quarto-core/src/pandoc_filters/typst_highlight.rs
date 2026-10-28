@@ -87,7 +87,7 @@ impl std::fmt::Display for HighlightError {
 /// own code-block background. A `.theme` file is read through `runtime`
 /// (the VFS in the browser) and ends up as argv text, so it is not mounted.
 pub fn typst_highlight_args(
-    doc_dir: &Path,
+    path_ctx: &crate::config_paths::PathCtx<'_>,
     meta: &ConfigValue,
     brand_mode: Option<&str>,
     block_background: Option<&str>,
@@ -95,12 +95,13 @@ pub fn typst_highlight_args(
 ) -> Result<Vec<OsString>, HighlightError> {
     let dark = brand_mode == Some("dark");
     let declared = declared_style(meta, dark);
-    let style = declared.as_deref().unwrap_or("default");
+    let declared_text = declared.and_then(|v| v.as_plain_text());
+    let style = declared_text.as_deref().unwrap_or("default");
 
     match style {
         "none" | "idiomatic" => Ok(vec![flag(style)]),
         _ => {
-            let theme_json = load_theme_json(doc_dir, style, dark, runtime)?;
+            let theme_json = load_theme_json(path_ctx, declared, style, dark, runtime)?;
             let theme: DotTheme = serde_json::from_str(&theme_json)
                 .map_err(|e| HighlightError(format!("invalid highlight theme `{style}`: {e}")))?;
             let definitions = highlighting_definitions(&theme, block_background);
@@ -123,33 +124,37 @@ fn flag(value: &str) -> OsString {
 
 /// `syntax-highlighting:` wins over the deprecated `highlight-style:`;
 /// either may be a scalar or a `{light:, dark:}` pair.
-fn declared_style(meta: &ConfigValue, dark: bool) -> Option<String> {
+fn declared_style(meta: &ConfigValue, dark: bool) -> Option<&ConfigValue> {
     let value = meta
         .get("syntax-highlighting")
         .or_else(|| meta.get("highlight-style"))?;
-    let scalar = if value.get("light").is_some() || value.get("dark").is_some() {
+    if value.get("light").is_some() || value.get("dark").is_some() {
         let (first, second) = if dark {
             ("dark", "light")
         } else {
             ("light", "dark")
         };
-        value.get(first).or_else(|| value.get(second))?
+        value.get(first).or_else(|| value.get(second))
     } else {
-        value
-    };
-    scalar.as_plain_text()
+        Some(value)
+    }
 }
 
-/// Read the palette JSON: a `.theme` path relative to the document, or a
-/// vendored palette name (with adaptive names resolved for `dark`).
+/// Read the palette JSON: a `.theme` path resolved against the file that
+/// declared it (`crate::config_paths`), or a vendored palette name (with
+/// adaptive names resolved for `dark`).
 fn load_theme_json(
-    doc_dir: &Path,
+    path_ctx: &crate::config_paths::PathCtx<'_>,
+    declared: Option<&ConfigValue>,
     style: &str,
     dark: bool,
     runtime: &dyn SystemRuntime,
 ) -> Result<String, HighlightError> {
     if style.ends_with(".theme") {
-        let path = doc_dir.join(style);
+        let path = declared
+            .and_then(|v| crate::config_paths::resolve_config_path(v, path_ctx))
+            .and_then(|r| r.file())
+            .unwrap_or_else(|| path_ctx.document_dir.join(style));
         return runtime.file_read_string(&path).map_err(|e| {
             HighlightError(format!(
                 "cannot read highlight theme `{}`: {e}",
@@ -275,8 +280,13 @@ mod tests {
         brand_mode: Option<&str>,
         block_background: Option<&str>,
     ) -> Result<Vec<OsString>, HighlightError> {
+        let path_ctx = crate::config_paths::PathCtx {
+            source_context: None,
+            project_dir: doc_dir,
+            document_dir: doc_dir,
+        };
         typst_highlight_args(
-            doc_dir,
+            &path_ctx,
             meta,
             brand_mode,
             block_background,

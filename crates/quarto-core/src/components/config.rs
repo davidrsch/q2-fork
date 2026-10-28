@@ -35,12 +35,22 @@ pub const COMPONENTS_KEY: &str = "components";
 const NPM_PREFIX: &str = "npm:";
 
 /// Where a component's ES module comes from.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ComponentSource {
-    /// A project file, document-relative with forward slashes (the
-    /// merge-time marked form). The transform copies it under the
-    /// project lib dir.
-    File(String),
+    /// A project file, kept unresolved (the merge-time marked form, or
+    /// the authored string with its span) until the transform resolves
+    /// it against the file that declared it (`crate::config_paths`) and
+    /// copies it under the project lib dir.
+    File(crate::config_paths::ConfigPath),
+}
+
+impl ComponentSource {
+    /// The path as the author wrote it (or as the merge marked it).
+    pub fn as_written(&self) -> &str {
+        match self {
+            ComponentSource::File(path) => path.as_written(),
+        }
+    }
 }
 
 /// Which element(s) a component binds to.
@@ -219,7 +229,9 @@ fn parse_entry(
         return None;
     };
     let src = match &src_value.value {
-        ConfigValueKind::Path(p) => ComponentSource::File(p.clone()),
+        ConfigValueKind::Path(p) => {
+            ComponentSource::File(crate::config_paths::ConfigPath::Marked(p.clone()))
+        }
         _ => {
             let Some(text) = src_value.as_plain_text() else {
                 push_diag(
@@ -253,9 +265,12 @@ fn parse_entry(
                 return None;
             }
             // Not marked at merge time (an entry a filter added, or a
-            // layer the marking did not see): read it as the marking
-            // would, document-relative.
-            ComponentSource::File(quarto_util::to_forward_slashes(std::path::Path::new(&text)))
+            // layer the marking did not see): keep the string and its
+            // span; the resolver reads it against the declaring file.
+            ComponentSource::File(crate::config_paths::ConfigPath::Raw {
+                raw: quarto_util::to_forward_slashes(std::path::Path::new(&text)),
+                source: src_value.source_info.clone(),
+            })
         }
     };
 
@@ -390,7 +405,7 @@ mod tests {
         assert_eq!(decls.len(), 1);
         let d = &decls[0];
         assert_eq!(d.name, "counter");
-        assert_eq!(d.src, ComponentSource::File("counter.js".into()));
+        assert_eq!(d.src.as_written(), "counter.js");
         assert_eq!(d.export, None);
         assert_eq!(d.bind, Binding::Id("counter".into()));
         assert_eq!(d.content, ContentMode::Dom);
@@ -408,7 +423,7 @@ mod tests {
         assert_eq!(d.content, ContentMode::Ast);
         // Unmarked (no merge-time marking in this harness): kept as
         // written, forward slashes.
-        assert_eq!(d.src, ComponentSource::File("/lib/cards.js".into()));
+        assert_eq!(d.src.as_written(), "/lib/cards.js");
     }
 
     #[test]
@@ -444,7 +459,7 @@ mod tests {
         items[0].get_mut("src").unwrap().value = ConfigValueKind::Path("../lib/a.js".into());
         let mut diags = Vec::new();
         let decls = parse_components(&value, &mut diags);
-        assert_eq!(decls[0].src, ComponentSource::File("../lib/a.js".into()));
+        assert_eq!(decls[0].src.as_written(), "../lib/a.js");
     }
 
     #[test]
@@ -480,7 +495,7 @@ mod tests {
         let (decls, diags) =
             parse("components:\n  - name: a\n    src: a.js\n  - name: a\n    src: b.js\n");
         assert_eq!(decls.len(), 1);
-        assert_eq!(decls[0].src, ComponentSource::File("a.js".into()));
+        assert_eq!(decls[0].src.as_written(), "a.js");
         assert_eq!(codes(&diags), vec!["Q-25-1"]);
         assert!(diags[0].title.contains("more than once"));
     }

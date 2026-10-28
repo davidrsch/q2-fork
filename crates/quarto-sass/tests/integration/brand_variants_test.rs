@@ -12,7 +12,7 @@
 use std::path::Path;
 
 use quarto_pandoc_types::{ConfigMapEntry, ConfigValue, ConfigValueKind, MergeOp};
-use quarto_sass::resolve_brand_variants;
+use quarto_sass::{brand_base_dir, resolve_brand_variants};
 use quarto_source_map::SourceInfo;
 use quarto_system_runtime::NativeRuntime;
 use yaml_rust2::Yaml;
@@ -57,8 +57,12 @@ fn background_of(rb: &Option<quarto_brand::ResolvedBrand>) -> Option<String> {
 #[test]
 fn no_brand_yields_neither_half() {
     let config = flattened_config(vec![]);
-    let (light, dark) =
-        resolve_brand_variants(&config, &NativeRuntime::new(), Path::new(".")).unwrap();
+    let (light, dark) = resolve_brand_variants(
+        &config,
+        &NativeRuntime::new(),
+        &brand_base_dir(Path::new(".")),
+    )
+    .unwrap();
     assert!(light.is_none());
     assert!(dark.is_none());
 }
@@ -74,7 +78,9 @@ fn unified_brand_pair_resolves_both_halves() {
         "color:\n  background:\n    light: \"#b22221\"\n    dark: \"#22b221\"\n",
     );
     let config = flattened_config(vec![("brand", scalar_string("_brand.yml"))]);
-    let (light, dark) = resolve_brand_variants(&config, &NativeRuntime::new(), dir.path()).unwrap();
+    let (light, dark) =
+        resolve_brand_variants(&config, &NativeRuntime::new(), &brand_base_dir(dir.path()))
+            .unwrap();
     assert_eq!(background_of(&light).as_deref(), Some("#b22221"));
     assert_eq!(background_of(&dark).as_deref(), Some("#22b221"));
 }
@@ -94,7 +100,9 @@ fn all_plain_brand_dark_half_equals_light_half() {
         "color:\n  background: \"#b22221\"\n",
     );
     let config = flattened_config(vec![("brand", scalar_string("_brand.yml"))]);
-    let (light, dark) = resolve_brand_variants(&config, &NativeRuntime::new(), dir.path()).unwrap();
+    let (light, dark) =
+        resolve_brand_variants(&config, &NativeRuntime::new(), &brand_base_dir(dir.path()))
+            .unwrap();
     assert_eq!(background_of(&light).as_deref(), Some("#b22221"));
     assert_eq!(background_of(&dark).as_deref(), Some("#b22221"));
 }
@@ -119,7 +127,9 @@ fn two_file_brand_resolves_each_variants_file() {
         ("dark", scalar_string("dark-brand.yml")),
     ]);
     let config = flattened_config(vec![("brand", brand)]);
-    let (light, dark) = resolve_brand_variants(&config, &NativeRuntime::new(), dir.path()).unwrap();
+    let (light, dark) =
+        resolve_brand_variants(&config, &NativeRuntime::new(), &brand_base_dir(dir.path()))
+            .unwrap();
     assert_eq!(background_of(&light).as_deref(), Some("#b22221"));
     assert_eq!(background_of(&dark).as_deref(), Some("#22b221"));
 }
@@ -145,7 +155,9 @@ fn two_file_brand_with_pairs_takes_matching_half() {
         ("dark", scalar_string("dark-brand.yml")),
     ]);
     let config = flattened_config(vec![("brand", brand)]);
-    let (_, dark) = resolve_brand_variants(&config, &NativeRuntime::new(), dir.path()).unwrap();
+    let (_, dark) =
+        resolve_brand_variants(&config, &NativeRuntime::new(), &brand_base_dir(dir.path()))
+            .unwrap();
     assert_eq!(background_of(&dark).as_deref(), Some("#22b221"));
 }
 
@@ -161,7 +173,9 @@ fn single_file_brand_falls_back_to_same_file_for_dark() {
         "color:\n  background:\n    light: \"#b22221\"\n  foreground: \"#333332\"\n",
     );
     let config = flattened_config(vec![("brand", scalar_string("_brand.yml"))]);
-    let (_, dark) = resolve_brand_variants(&config, &NativeRuntime::new(), dir.path()).unwrap();
+    let (_, dark) =
+        resolve_brand_variants(&config, &NativeRuntime::new(), &brand_base_dir(dir.path()))
+            .unwrap();
     // background is light-only → omitted from the dark half...
     assert_eq!(background_of(&dark), None);
     // ...while the plain foreground reaches both halves.

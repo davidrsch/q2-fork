@@ -87,6 +87,91 @@ pub struct PathCtx<'a> {
     pub document_dir: &'a Path,
 }
 
+impl<'a> PathCtx<'a> {
+    /// The context for resolving paths read from a document's merged
+    /// metadata: the document's own directory (its project's directory
+    /// when the input has no parent) is the fallback and marked-value
+    /// base. The usual way to build one inside a stage or transform:
+    ///
+    /// ```ignore
+    /// let path_ctx = PathCtx::for_document(Some(&doc.source_context), &ctx.project.dir, &ctx.document.input);
+    /// ```
+    pub fn for_document(
+        source_context: Option<&'a SourceContext>,
+        project_dir: &'a Path,
+        input: &'a Path,
+    ) -> Self {
+        PathCtx {
+            source_context,
+            project_dir,
+            document_dir: input.parent().unwrap_or(project_dir),
+        }
+    }
+}
+
+/// A config-authored path kept in its *unresolved* form so a parsed
+/// type can carry it past the parse without choosing a base directory
+/// (the `href_source` pattern of bd-qor9a, generalized): resolve it
+/// where the `PathCtx` is known, with [`ConfigPath::resolve`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConfigPath {
+    /// A `Path`-kind value: already rebased by the merge (step 1).
+    Marked(String),
+    /// A plain string with the span it was read from (steps 2–5).
+    Raw { raw: String, source: SourceInfo },
+}
+
+impl ConfigPath {
+    /// Capture a value's path string and provenance; `None` for a
+    /// non-string value.
+    pub fn from_value(value: &ConfigValue) -> Option<Self> {
+        if let ConfigValueKind::Path(marked) = &value.value {
+            return Some(ConfigPath::Marked(marked.clone()));
+        }
+        Some(ConfigPath::Raw {
+            raw: value.as_plain_text()?,
+            source: value.source_info.clone(),
+        })
+    }
+
+    /// The string as the author wrote it (for diagnostics and keys).
+    pub fn as_written(&self) -> &str {
+        match self {
+            ConfigPath::Marked(s) => s,
+            ConfigPath::Raw { raw, .. } => raw,
+        }
+    }
+
+    /// Resolve exactly as [`resolve_config_path`] would have resolved
+    /// the value this was captured from.
+    pub fn resolve(&self, ctx: &PathCtx<'_>) -> ResolvedConfigPath {
+        match self {
+            ConfigPath::Marked(marked) => resolve_marked(marked, ctx),
+            ConfigPath::Raw { raw, source } => resolve_config_path_str(raw, source, ctx),
+        }
+    }
+}
+
+/// A `quarto_sass::BrandPathResolver` for the `brand:` key of `meta`:
+/// quarto-sass hands back the path string it parsed out of the value,
+/// and this resolves it against the file that declared the `brand:`
+/// key (for a `{light:, dark:}` pair, the pair's own span: both halves
+/// are written in the same file).
+pub fn brand_path_resolver<'a>(
+    meta: &'a ConfigValue,
+    ctx: PathCtx<'a>,
+) -> impl Fn(&Path) -> PathBuf + 'a {
+    let source = meta.get("brand").map(|v| v.source_info.clone());
+    move |path: &Path| {
+        let raw = path.to_string_lossy();
+        let resolved = match &source {
+            Some(source) => resolve_config_path_str(&raw, source, &ctx),
+            None => resolve_config_path_str(&raw, &SourceInfo::for_test(), &ctx),
+        };
+        resolved.file().unwrap_or_else(|| path.to_path_buf())
+    }
+}
+
 /// The two terminal forms of a config-authored path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedConfigPath {
@@ -175,36 +260,57 @@ pub fn resolve_config_file(
     ctx: &PathCtx<'_>,
     runtime: &dyn quarto_system_runtime::SystemRuntime,
 ) -> Option<FileCandidate> {
-    let is_file = |p: &Path| runtime.is_file(p).unwrap_or(false);
-    let candidate = resolve_config_path(value, ctx)?.file()?;
-    if is_file(&candidate) {
-        return Some(FileCandidate {
-            path: candidate,
-            exists: true,
-        });
-    }
-    // Legacy reading of an authored leading `/`: OS-absolute. Only for
-    // plain strings (a marked value is already OS-absolute when rooted).
-    if !matches!(value.value, ConfigValueKind::Path(_))
-        && let Some(raw) = value.as_plain_text()
-        && raw.starts_with('/')
-    {
-        let os_absolute = quarto_util::normalize_lexically(Path::new(&raw));
-        if is_file(&os_absolute) {
-            tracing::trace!(
-                raw,
-                "leading-`/` config path does not exist under the project root; using the OS-absolute reading"
-            );
+    resolve_config_file_with(value, ctx, |p| runtime.is_file(p).unwrap_or(false))
+}
+
+/// [`resolve_config_file`] with an explicit existence probe, for callers
+/// without a `SystemRuntime` in reach (transforms) and for tests.
+pub fn resolve_config_file_with(
+    value: &ConfigValue,
+    ctx: &PathCtx<'_>,
+    is_file: impl Fn(&Path) -> bool,
+) -> Option<FileCandidate> {
+    let config_path = ConfigPath::from_value(value)?;
+    config_path.resolve_file_with(ctx, is_file)
+}
+
+impl ConfigPath {
+    /// [`resolve_config_file_with`] for a captured path.
+    pub fn resolve_file_with(
+        &self,
+        ctx: &PathCtx<'_>,
+        is_file: impl Fn(&Path) -> bool,
+    ) -> Option<FileCandidate> {
+        let candidate = self.resolve(ctx).file()?;
+        if is_file(&candidate) {
             return Some(FileCandidate {
-                path: os_absolute,
+                path: candidate,
                 exists: true,
             });
         }
+        // Legacy reading of an authored leading `/`: OS-absolute. Only
+        // for plain strings (a marked value is already OS-absolute when
+        // rooted).
+        if let ConfigPath::Raw { raw, .. } = self
+            && raw.starts_with('/')
+        {
+            let os_absolute = quarto_util::normalize_lexically(Path::new(raw));
+            if is_file(&os_absolute) {
+                tracing::trace!(
+                    raw,
+                    "leading-`/` config path does not exist under the project root; using the OS-absolute reading"
+                );
+                return Some(FileCandidate {
+                    path: os_absolute,
+                    exists: true,
+                });
+            }
+        }
+        Some(FileCandidate {
+            path: candidate,
+            exists: false,
+        })
     }
-    Some(FileCandidate {
-        path: candidate,
-        exists: false,
-    })
 }
 
 fn file(path: PathBuf) -> ResolvedConfigPath {
@@ -704,6 +810,44 @@ mod tests {
         assert_eq!(
             resolve("./a/../b/./x.lua", span(f.quarto_yml), &c),
             ResolvedConfigPath::File(p("/project/b/x.lua"))
+        );
+    }
+
+    #[test]
+    fn for_document_falls_back_to_the_project_dir_without_a_parent() {
+        let f = fixture();
+        let project = p("/project");
+        let c = PathCtx::for_document(Some(&f.sc), &project, Path::new("page.qmd"));
+        assert_eq!(c.document_dir, Path::new(""));
+        let c = PathCtx::for_document(Some(&f.sc), &project, Path::new("/project/docs/page.qmd"));
+        assert_eq!(c.document_dir, Path::new("/project/docs"));
+    }
+
+    #[test]
+    fn config_path_round_trips_both_forms() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        let raw = ConfigPath::from_value(&scalar("x.lua", span(f.quarto_yml))).unwrap();
+        assert_eq!(raw.as_written(), "x.lua");
+        assert_eq!(
+            raw.resolve(&c),
+            ResolvedConfigPath::File(p("/project/x.lua"))
+        );
+        let marked = ConfigPath::from_value(&ConfigValue {
+            value: ConfigValueKind::Path("../x.lua".into()),
+            source_info: span(f.quarto_yml),
+            merge_op: Default::default(),
+        })
+        .unwrap();
+        assert_eq!(marked, ConfigPath::Marked("../x.lua".into()));
+        assert_eq!(
+            marked.resolve(&c),
+            ResolvedConfigPath::File(p("/project/x.lua"))
+        );
+        assert_eq!(
+            ConfigPath::from_value(&ConfigValue::new_map(vec![], SourceInfo::for_test())),
+            None
         );
     }
 

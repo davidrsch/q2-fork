@@ -491,18 +491,19 @@ impl ThemeConfig {
     /// link emission, and the toggle exactly like a `theme:`-declared
     /// pair (bd-unified-brand-split-ep49amad, GH #580).
     ///
-    /// `base_dir` is the directory relative paths in [`BrandRef::Path`]
+    /// `resolve_path` turns a [`BrandRef::Path`] into the file to read
+    /// ([`BrandPathResolver`]); historically a base directory relative paths in [`BrandRef::Path`]
     /// are resolved against (typically the project root). The
     /// `runtime` provides cross-platform file access — native
     /// `std::fs` on the CLI, the VFS on WASM.
     pub fn resolve_variants(
         mut self,
         runtime: &dyn SystemRuntime,
-        base_dir: &Path,
+        resolve_path: &BrandPathResolver<'_>,
     ) -> Result<ResolvedVariants, SassError> {
         let light_split = match &self.brand_ref {
             None => None,
-            Some(brand_ref) => Some(load_split_brand(brand_ref, runtime, base_dir)?),
+            Some(brand_ref) => Some(load_split_brand(brand_ref, runtime, resolve_path)?),
         };
 
         // Content-driven dark-mode enablement: synthesize the dark
@@ -547,7 +548,7 @@ impl ThemeConfig {
                 // Two-file form: the dark variant's own file
                 // contributes its dark half (for a plain single-mode
                 // file the halves are identical).
-                let (split, file) = load_split_brand(dark_ref, runtime, base_dir)?;
+                let (split, file) = load_split_brand(dark_ref, runtime, resolve_path)?;
                 Some(resolved_brand(split.dark, file))
             }
         };
@@ -612,7 +613,7 @@ impl ThemeConfig {
 /// rules (path form, inline block, light/dark pair) are stated once.
 /// Returns `Ok(None)` when no brand is configured.
 ///
-/// `base_dir` resolves a relative `brand:` path — typically the project
+/// `resolve_path` resolves a relative `brand:` path ([`BrandPathResolver`]) — historically the project
 /// root.
 ///
 /// Consumers differ in *which* config they ask about, and the difference
@@ -622,7 +623,7 @@ impl ThemeConfig {
 pub fn resolve_brand(
     config: &ConfigValue,
     runtime: &dyn SystemRuntime,
-    base_dir: &Path,
+    resolve_path: &BrandPathResolver<'_>,
 ) -> Result<Option<ResolvedBrand>, SassError> {
     // Single-variant consumers (reveal, favicon fallback) use the
     // LIGHT half; per-variant selection is the HTML dual-compile
@@ -631,7 +632,7 @@ pub fn resolve_brand(
     let Some(brand_ref) = extract_brand_refs(config.get("brand"))?.light else {
         return Ok(None);
     };
-    let (split, file) = load_split_brand(&brand_ref, runtime, base_dir)?;
+    let (split, file) = load_split_brand(&brand_ref, runtime, resolve_path)?;
     Ok(Some(resolved_brand(split.light, file)))
 }
 
@@ -653,17 +654,17 @@ pub fn resolve_brand(
 /// (an all-plain brand's halves are simply equal), so the dark half is
 /// returned whenever the light half is.
 ///
-/// `base_dir` resolves a relative `brand:` path, as in [`resolve_brand`].
+/// `resolve_path` resolves a relative `brand:` path, as in [`resolve_brand`].
 pub fn resolve_brand_variants(
     config: &ConfigValue,
     runtime: &dyn SystemRuntime,
-    base_dir: &Path,
+    resolve_path: &BrandPathResolver<'_>,
 ) -> Result<(Option<ResolvedBrand>, Option<ResolvedBrand>), SassError> {
     let brand_refs = extract_brand_refs(config.get("brand"))?;
     let Some(light_ref) = brand_refs.light else {
         return Ok((None, None));
     };
-    let (light_split, light_file) = load_split_brand(&light_ref, runtime, base_dir)?;
+    let (light_split, light_file) = load_split_brand(&light_ref, runtime, resolve_path)?;
     let light = resolved_brand(light_split.light.clone(), light_file.clone());
 
     // Two-file form (`brand: {light:, dark:}`) names its own dark
@@ -673,7 +674,7 @@ pub fn resolve_brand_variants(
     let dark = if dark_ref == light_ref {
         resolved_brand(light_split.dark, light_file)
     } else {
-        let (dark_split, dark_file) = load_split_brand(&dark_ref, runtime, base_dir)?;
+        let (dark_split, dark_file) = load_split_brand(&dark_ref, runtime, resolve_path)?;
         resolved_brand(dark_split.dark, dark_file)
     };
 
@@ -696,18 +697,36 @@ fn resolved_brand(brand: quarto_brand::Brand, file: Option<PathBuf>) -> Resolved
 /// be plain strings or `{light:, dark:}` pairs — which is immediately
 /// split into single-mode halves. This is the only place a brand is
 /// deserialized; every consumer works with a half of the split.
+/// How a `brand:` path string becomes the file to read.
+///
+/// `quarto-sass` sees the `brand:` value after the metadata merge and
+/// does not know which file declared it, so the caller supplies the
+/// resolution: `quarto-core` resolves against the declaring file through
+/// its config-path resolver (`quarto_core::config_paths`), and
+/// [`brand_base_dir`] is the plain "join onto one directory" form for
+/// callers that have no provenance (tests, project-level reads).
+pub type BrandPathResolver<'a> = dyn Fn(&Path) -> PathBuf + 'a;
+
+/// A [`BrandPathResolver`] that joins relative paths onto `dir` and keeps
+/// absolute paths as written.
+pub fn brand_base_dir(dir: &Path) -> impl Fn(&Path) -> PathBuf + '_ {
+    move |path: &Path| {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            dir.join(path)
+        }
+    }
+}
+
 fn load_split_brand(
     brand_ref: &BrandRef,
     runtime: &dyn SystemRuntime,
-    base_dir: &Path,
+    resolve_path: &BrandPathResolver<'_>,
 ) -> Result<(quarto_brand::SplitBrand, Option<PathBuf>), SassError> {
     match brand_ref {
         BrandRef::Path(rel_path) => {
-            let full_path = if rel_path.is_absolute() {
-                rel_path.clone()
-            } else {
-                base_dir.join(rel_path)
-            };
+            let full_path = resolve_path(rel_path);
             let bytes = runtime.file_read(&full_path).map_err(|e| {
                 SassError::Io(std::io::Error::other(format!(
                     "reading brand file {}: {e}",
@@ -2597,7 +2616,7 @@ mod tests {
             ThemeConfig::from_config_value(&config_with_theme_value(theme_value)).unwrap();
         let runtime = quarto_system_runtime::NativeRuntime::new();
         let resolved = theme_config
-            .resolve_variants(&runtime, Path::new("."))
+            .resolve_variants(&runtime, &brand_base_dir(Path::new(".")))
             .expect("resolve without brand does no I/O");
         let dark = resolved
             .config
