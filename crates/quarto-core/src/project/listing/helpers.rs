@@ -65,20 +65,24 @@ pub fn image_html(item: &ListingItem, listing: &Listing, host_dir: &str) -> Stri
 /// Convert a project-relative URL to a host-page-relative one.
 /// `host_dir` is the host page's project-relative directory
 /// (empty at the project root). Walks up out of the host dir with
-/// `..` segments when the target is not beneath it. Remote URLs,
-/// `data:` URIs, and root-absolute paths pass through unchanged.
+/// `..` segments when the target is not beneath it. Remote URLs and
+/// `data:` URIs pass through unchanged. A leading `/` is
+/// site-root-relative — the same project-relative path (decision 4
+/// of bd-root-relative-paths-design-fc5pvkcv; bd-epk8cmdl) — so it
+/// relativizes like the bare form.
 pub(crate) fn host_relative_url(project_relative: &str, host_dir: &str) -> String {
-    if is_external_src(project_relative) {
+    if quarto_util::is_external_url(project_relative) {
         return project_relative.to_string();
     }
-    if host_dir.is_empty() {
-        return project_relative.to_string();
-    }
-    let host_segs: Vec<&str> = host_dir.split('/').filter(|s| !s.is_empty()).collect();
+    // Dropping empty segments also strips the site-root `/`.
     let target_segs: Vec<&str> = project_relative
         .split('/')
         .filter(|s| !s.is_empty())
         .collect();
+    if host_dir.is_empty() {
+        return target_segs.join("/");
+    }
+    let host_segs: Vec<&str> = host_dir.split('/').filter(|s| !s.is_empty()).collect();
     let common = host_segs
         .iter()
         .zip(target_segs.iter())
@@ -89,31 +93,19 @@ pub(crate) fn host_relative_url(project_relative: &str, host_dir: &str) -> Strin
     out.join("/")
 }
 
-/// True for src values that name no file in the project tree:
-/// remote URLs, `data:` URIs, and root-absolute paths. Shared by
-/// the hydration rebase, host-relativization, and the copy-intent
-/// registration so they agree on what "local" means (bd-qv2lsab0).
-pub(crate) fn is_external_src(src: &str) -> bool {
-    let lower = src.to_ascii_lowercase();
-    lower.starts_with("http://")
-        || lower.starts_with("https://")
-        || lower.starts_with("data:")
-        || src.starts_with('/')
-}
-
-/// True for src values that name somewhere outside this machine:
-/// remote URLs, protocol-relative URLs, and `data:` URIs.
+/// True for src values that name somewhere outside the project tree:
+/// remote URLs, protocol-relative URLs, and `data:` URIs — the
+/// workspace's one classifier, [`quarto_util::is_external_url`].
 ///
-/// Narrower than [`is_external_src`] on purpose: a leading `/` is
-/// *external* for an image `src` but *project-root-relative* for a
-/// config-authored path like a listing record's `path:`
-/// (`claude-notes/designs/path-resolution-model.md`).
+/// A leading `/` is **not** external: in URL space it means the site
+/// root, i.e. the same project-relative path as the bare form, for an
+/// image `src` exactly as for a record's `path:` (decision 4 of
+/// bd-root-relative-paths-design-fc5pvkcv; bd-epk8cmdl). The hydration
+/// rebase, host-relativization, and the copy-intent registration all
+/// share this predicate so they agree on what "local" means
+/// (bd-qv2lsab0).
 pub(crate) fn is_remote_src(src: &str) -> bool {
-    let lower = src.to_ascii_lowercase();
-    lower.starts_with("http://")
-        || lower.starts_with("https://")
-        || lower.starts_with("data:")
-        || src.starts_with("//")
+    quarto_util::is_external_url(src)
 }
 
 /// Build the per-item `data-*` attributes the client-side list reads
@@ -641,7 +633,13 @@ mod tests {
             host_relative_url("https://example.com/x.png", "posts"),
             "https://example.com/x.png"
         );
-        assert_eq!(host_relative_url("/abs.png", "posts"), "/abs.png");
+        // A leading `/` is the site root: relativized like the bare form.
+        assert_eq!(host_relative_url("/abs.png", "posts"), "../abs.png");
+        assert_eq!(host_relative_url("/abs.png", ""), "abs.png");
+        assert_eq!(
+            host_relative_url("data:image/png;base64,AAAA", "posts"),
+            "data:image/png;base64,AAAA"
+        );
     }
 
     /// A listing with the type defaults applied — the field types

@@ -264,6 +264,82 @@ fn project_title_banner_image_reaches_subdir_pages() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// revealjs logo (bd-7328beha: URL-space emitter)
+// ═══════════════════════════════════════════════════════════════════
+
+/// A website with a reveal deck in a subdirectory; `deck_front_matter`
+/// goes into the deck's YAML and `config_tail` into `_quarto.yml`.
+fn site_with_deck<'a>(config_tail: &'a str, deck_front_matter: &'a str) -> impl FnOnce(&Path) + 'a {
+    move |project_dir: &Path| {
+        write(
+            &project_dir.join("_quarto.yml"),
+            &format!(
+                "project:\n  type: website\n  output-dir: _site\n  render:\n    - index.qmd\n    - talks/deck.qmd\n{config_tail}"
+            ),
+        );
+        write(
+            &project_dir.join("index.qmd"),
+            "---\ntitle: Root\n---\n\nHello root.\n",
+        );
+        write(
+            &project_dir.join("talks/deck.qmd"),
+            &format!(
+                "---\ntitle: Deck\nformat: revealjs\n{deck_front_matter}---\n\n## A slide\n\n- one\n"
+            ),
+        );
+    }
+}
+
+#[test]
+fn project_reveal_logo_reaches_subdir_decks() {
+    let (project_dir, _) = render_project(|p| {
+        site_with_deck("logo: brand/logo.png\n", "")(p);
+        write_bytes(&p.join("brand/logo.png"), TEST_PNG);
+    });
+    let html = read(&project_dir.join("_site/talks/deck.html"));
+    assert!(
+        html.contains(r#"<img class="slide-logo" src="../brand/logo.png">"#),
+        "a project-level logo is resolved against _quarto.yml and relativized to the deck \
+         (today it is emitted verbatim); got:\n{html}"
+    );
+    assert!(
+        project_dir.join("_site/brand/logo.png").is_file(),
+        "the logo is copied into the output tree"
+    );
+}
+
+#[test]
+fn rooted_reveal_logo_anchors_at_project_root() {
+    let (project_dir, _) = render_project(|p| {
+        site_with_deck("", "logo: /brand/logo.png\n")(p);
+        write_bytes(&p.join("brand/logo.png"), TEST_PNG);
+    });
+    let html = read(&project_dir.join("_site/talks/deck.html"));
+    assert!(
+        html.contains(r#"<img class="slide-logo" src="../brand/logo.png">"#),
+        "a leading `/` is the project root, relativized per page; got:\n{html}"
+    );
+    assert!(project_dir.join("_site/brand/logo.png").is_file());
+}
+
+#[test]
+fn deck_relative_reveal_logo_resolves_against_the_deck() {
+    let (project_dir, _) = render_project(|p| {
+        site_with_deck("", "logo: img/logo.png\n")(p);
+        write_bytes(&p.join("talks/img/logo.png"), TEST_PNG);
+    });
+    let html = read(&project_dir.join("_site/talks/deck.html"));
+    assert!(
+        html.contains(r#"<img class="slide-logo" src="img/logo.png">"#),
+        "a front-matter logo is relative to the deck; got:\n{html}"
+    );
+    assert!(
+        project_dir.join("_site/talks/img/logo.png").is_file(),
+        "the logo is copied beside the deck"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // listing.template (bd-o1meelim: leading `/`)
 // ═══════════════════════════════════════════════════════════════════
 

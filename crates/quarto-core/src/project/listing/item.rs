@@ -426,8 +426,8 @@ fn prose_value<'a>(li: &'a ListingItemInfo, key: &str) -> Option<&'a Inlines> {
 
 /// Rebase a document-relative image path onto the document's
 /// project-relative directory, normalizing `.`/`..` segments.
-/// Absolute URLs, `data:` URIs, and root-absolute paths pass
-/// through unchanged.
+/// Absolute URLs and `data:` URIs pass through unchanged; a leading
+/// `/` anchors at the project root (see [`rebase_image_from_dir`]).
 fn rebase_image(src: &str, source_path: &Path) -> String {
     let dir = source_path
         .parent()
@@ -446,11 +446,21 @@ fn rebase_image(src: &str, source_path: &Path) -> String {
 
 /// Rebase a relative image path onto a project-relative directory
 /// (`""` for the project root), normalizing `.`/`..` segments.
-/// Absolute URLs, `data:` URIs, and root-absolute paths pass through.
+/// Absolute URLs and `data:` URIs pass through. A leading `/` is
+/// site-root-relative (decision 4 of
+/// bd-root-relative-paths-design-fc5pvkcv; bd-epk8cmdl): it ignores
+/// `dir` and yields the bare project-relative path, so every later
+/// consumer (host-relativization, the copy intent, the RSS builder)
+/// sees one spelling. Anchoring at the root also keeps `..` from
+/// climbing above the project.
 pub(crate) fn rebase_image_from_dir(src: &str, dir: &str) -> String {
-    if super::helpers::is_external_src(src) {
+    if super::helpers::is_remote_src(src) {
         return src.to_string();
     }
+    let (dir, src) = match src.strip_prefix('/') {
+        Some(rooted) => ("", rooted),
+        None => (dir, src),
+    };
     let mut segments: Vec<&str> = dir.split('/').filter(|s| !s.is_empty()).collect();
     for seg in src.split('/') {
         match seg {
@@ -600,12 +610,12 @@ mod tests {
     }
 
     #[test]
-    fn hydration_image_passes_through_absolute_forms() {
+    fn hydration_image_passes_through_external_forms() {
         for src in [
             "https://example.com/x.png",
             "http://example.com/x.png",
+            "//cdn.example.com/x.png",
             "data:image/png;base64,AAAA",
-            "/site-absolute.png",
         ] {
             let li = ListingItemInfo {
                 image: Some(src.to_string()),
@@ -614,6 +624,19 @@ mod tests {
             let item = hydrate_item(&profile_with(li));
             assert_eq!(item.image.as_deref(), Some(src));
         }
+    }
+
+    // bd-epk8cmdl: a leading `/` is the site root, not an external
+    // location — the item image becomes the bare project-relative
+    // path, ignoring the document's directory.
+    #[test]
+    fn hydration_image_anchors_leading_slash_at_the_project_root() {
+        let li = ListingItemInfo {
+            image: Some("/site-absolute.png".to_string()),
+            ..ListingItemInfo::default()
+        };
+        let item = hydrate_item(&profile_with(li));
+        assert_eq!(item.image.as_deref(), Some("site-absolute.png"));
     }
 
     // 18. item_extra_present_in_binding (via hydrate_item — the
@@ -729,7 +752,12 @@ mod tests {
             rebase_image_from_dir("../shared/x.png", "a/b"),
             "a/shared/x.png"
         );
-        assert_eq!(rebase_image_from_dir("/site.png", "posts"), "/site.png");
+        assert_eq!(rebase_image_from_dir("/site.png", "posts"), "site.png");
+        assert_eq!(
+            rebase_image_from_dir("/../../etc/x.png", "posts"),
+            "etc/x.png",
+            "root-anchored `..` cannot climb above the project"
+        );
     }
 
     // ─── bd-listing-description-precedence-x4bh6w3m ─────────────────

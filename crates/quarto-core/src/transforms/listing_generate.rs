@@ -501,7 +501,7 @@ pub(crate) fn resolve_listings(
         for item in &items {
             if !inputs.vfs_root_mode
                 && let Some(img) = item.image.as_deref()
-                && !crate::project::listing::helpers::is_external_src(img)
+                && !is_remote_src(img)
             {
                 resource_copies.push(crate::render::ResourceCopyIntent {
                     src: inputs.project_dir.join(img),
