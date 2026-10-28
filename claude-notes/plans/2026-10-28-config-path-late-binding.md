@@ -404,19 +404,19 @@ the same strand sequence without coupling it to the `filters` pilot.
 
 ### Phase 0: #945 pilot (this strand, small)
 
-- [ ] 0.1 Failing-first integration test, `crates/quarto-core/tests/integration/filter_paths.rs`
+- [x] 0.1 Failing-first integration test, `crates/quarto-core/tests/integration/filter_paths.rs`
       (the `render_project` harness from `format_path_keys.rs`): project
       `filters: [hello.lua]` reaches root + subdir pages; `format.html.filters`
       spelling; leading-`/` spelling; front-matter `../hello.lua` regression
       guard; `_metadata.yml`-declared filter resolves against that
       directory; extension-name entry still resolves (name lookup after the
       probe miss); explicit `!path` entry unchanged.
-- [ ] 0.2 `config_paths.rs` with `resolve_config_path` (steps 1–5) and unit
+- [x] 0.2 `config_paths.rs` with `resolve_config_path` (steps 1–5) and unit
       tests per step (Path-kind pass-through; external; leading `/`;
       `_quarto.yml` span; `_metadata.yml` span; document span; programmatic
       sentinel fallback; unregistered FileId fallback; Windows spelling via
       the cross-target clippy check).
-- [ ] 0.3 `resolve_filters` takes a `PathCtx` (both call sites have the
+- [x] 0.3 `resolve_filters` takes a `PathCtx` (both call sites have the
       inputs); both existence probes and `resolve_filter_path` go through
       the resolver. Unit tests in `filter_resolve.rs` updated: the
       `relative_paths_resolved_against_document_dir` test becomes
@@ -424,7 +424,7 @@ the same strand sequence without coupling it to the `filters` pilot.
 - [ ] 0.4 Real-binary E2E on the four fixtures; record output in the triage
       doc. `cargo xtask verify --skip-hub-build`; wasm `cargo check` for
       `wasm-quarto-hub-client` (quarto-core is in its closure).
-- [ ] 0.5 Contract: move the `filters` row from VIOLATIONS to conforming
+- [x] 0.5 Contract: move the `filters` row from VIOLATIONS to conforming
       ("mechanism 6: `resolve_config_path`, late"); fix the stale mechanism-1
       caveat; note the `template` half-staleness. Update bd-rdcvjy2s (filters
       done; template/template-partials remain).
@@ -436,7 +436,7 @@ the same strand sequence without coupling it to the `filters` pilot.
 change, the fourth fix of its kind. Not recommended as the only change, for
 §2.3\'s reasons.
 
-### Phase 1: migrate the remaining violators (one strand each, or one sweep)
+### Phase 1: migrate the remaining violators — strand bd-lwvumpfk
 
 `apply_template.rs` (`template`, `template-partials`; closes the rest of
 bd-rdcvjy2s), `title_banner.rs`, `project_resources.rs` engine resources,
@@ -451,7 +451,7 @@ The `config-path-base` xtask lint with the blessed-module list
 `project/mod.rs` rebase, `glob/provenance.rs`). First cut restricted to
 `stage/` and `transforms/`.
 
-### Phase 1b: switch the stored form of marked values to the project-root pivot (§4.6)
+### Phase 1b: switch the stored form of marked values to the project-root pivot (§4.6) — strand bd-okqrjh8v, blocked by bd-lwvumpfk
 
 After Phase 1, in one commit: `mark_entry` and `adjust_paths_recursive`
 store `/<project-relative>` (absolute only outside the project), the

@@ -1,0 +1,721 @@
+/*
+ * config_paths.rs
+ * Copyright (c) 2026 Posit, PBC
+ *
+ * The one place a config-authored path string is turned into a
+ * filesystem path. bd-nqq41zgx (GH #945). Contract:
+ * claude-notes/designs/path-resolution-model.md.
+ */
+
+//! Late-binding resolution of paths written in YAML.
+//!
+//! A relative path in `_quarto.yml`, a `_metadata.yml`, a document's
+//! front matter or an extension manifest means "relative to the
+//! directory of the file that declared it" (contract rule 1), and a
+//! leading `/` means "relative to the project root" (rule 2). After
+//! the metadata merge the *layer* a value came from is gone, but the
+//! value's own [`SourceInfo`] survives, and the merge stage registers
+//! every YAML layer file in the document's [`SourceContext`]
+//! (`stage/stages/metadata_merge.rs`). So the declaring directory can
+//! be recovered at the point of use, and no consumer needs to pick a
+//! base directory of its own.
+//!
+//! [`resolve_config_path`] is that resolver. Consumers call it with the
+//! `ConfigValue` they read (not the string they extracted from it) and
+//! a [`PathCtx`]; they never `doc_dir.join(..)` a config string
+//! themselves (contract author rule 1; the `config-path-base` lint,
+//! bd-40luf359, will enforce it).
+//!
+//! Resolution order:
+//!
+//! 1. A [`ConfigValueKind::Path`] value was marked by one of the
+//!    merge-time mechanisms (an explicit `!path`, the
+//!    `FORMAT_PATH_KEYS` marking in `project/format_paths.rs`, or an
+//!    extension rebase) and is **already document-relative**, or
+//!    OS-absolute when it names a file outside the project (a built-in
+//!    extension extracted to a temp dir; `adjust_paths_to_document_dir`,
+//!    bd-9z2258af). A relative value is joined onto the document
+//!    directory; a rooted one is used as written. (An explicit
+//!    `!path /x` is therefore still OS-absolute today — anchoring it at
+//!    the project root belongs to the marking site, plan Phase 1b.)
+//! 2. Anything with a URL scheme or a `//host` prefix is external
+//!    ([`quarto_util::is_external_url`], the sole classifier) and is
+//!    returned as [`ResolvedConfigPath::External`].
+//! 3. A leading `/` anchors at the project root.
+//! 4. An OS-absolute path (a Windows drive or UNC prefix; on Unix this
+//!    case is already step 3) is used as written.
+//! 5. Otherwise the base is the declaring file's directory, recovered
+//!    from the value's `SourceInfo` ([`declaring_dir`]). When there is
+//!    no usable span (a programmatic or runtime-layer value, a file not
+//!    registered in the context, no context at all) the base is the
+//!    **document directory**, which is what every consumer assumed
+//!    before this module existed (plan decision 2, 2026-10-28).
+//!
+//! The result is normalized lexically (`.`/`..` collapsed) and never
+//! canonicalized: the file may not exist, and a missing-file diagnostic
+//! should name the path the author's declaration resolves to.
+//!
+//! [`resolve_config_file`] layers one policy on top, for keys whose
+//! namespace mixes file paths with other names and whose consumer
+//! therefore probes for existence anyway (`filters`: extension names;
+//! `theme`: built-in theme names): the rule-2 candidate when it exists,
+//! else — for a leading-`/` string — the legacy OS-absolute reading
+//! when *that* exists, else the rule-2 candidate so a diagnostic names
+//! it. This is the same effective behaviour the merge-time marking has
+//! for its existence-driven keys (an unmarked `/x` falls through to the
+//! consumer as OS-absolute), and it keeps Quarto 1's escape hatch of an
+//! absolute path to a filter outside the project working.
+
+use std::path::{Path, PathBuf};
+
+use quarto_pandoc_types::{ConfigValue, ConfigValueKind};
+use quarto_source_map::{FileId, SourceContext, SourceInfo};
+
+/// What a resolver call needs to know about where it is being called
+/// from. Build one per document; it is cheap to construct.
+#[derive(Clone, Copy)]
+pub struct PathCtx<'a> {
+    /// The document's source context, with the YAML layer files
+    /// registered (`None` degrades every value to the document-dir
+    /// fallback — today's behaviour).
+    pub source_context: Option<&'a SourceContext>,
+    /// The project root (the anchor for a leading `/`). For a
+    /// single-file render, the document's directory.
+    pub project_dir: &'a Path,
+    /// The consuming document's directory: the base for marked
+    /// (`Path`-kind) values and the fallback when provenance is absent.
+    pub document_dir: &'a Path,
+}
+
+/// The two terminal forms of a config-authored path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolvedConfigPath {
+    /// A URL (RFC-3986 scheme or `//host/...`): not a filesystem path.
+    External(String),
+    /// A filesystem path, absolute whenever the inputs were, with
+    /// `.`/`..` collapsed.
+    File(PathBuf),
+}
+
+impl ResolvedConfigPath {
+    /// The filesystem path, or `None` for an external URL.
+    pub fn file(self) -> Option<PathBuf> {
+        match self {
+            ResolvedConfigPath::File(p) => Some(p),
+            ResolvedConfigPath::External(_) => None,
+        }
+    }
+}
+
+/// Resolve a config value that denotes a path. Returns `None` when the
+/// value carries no string (a map, an array, a non-string scalar).
+pub fn resolve_config_path(value: &ConfigValue, ctx: &PathCtx<'_>) -> Option<ResolvedConfigPath> {
+    if let ConfigValueKind::Path(marked) = &value.value {
+        return Some(resolve_marked(marked, ctx));
+    }
+    let raw = value.as_plain_text()?;
+    Some(resolve_config_path_str(&raw, &value.source_info, ctx))
+}
+
+/// Resolve a path string together with the `SourceInfo` of the value it
+/// was read from. Prefer [`resolve_config_path`]; this entry point is for
+/// callers that already split the two apart.
+pub fn resolve_config_path_str(
+    raw: &str,
+    source: &SourceInfo,
+    ctx: &PathCtx<'_>,
+) -> ResolvedConfigPath {
+    if quarto_util::is_external_url(raw) {
+        return ResolvedConfigPath::External(raw.to_string());
+    }
+    if let Some(rest) = raw.strip_prefix('/') {
+        return file(ctx.project_dir.join(rest));
+    }
+    let path = Path::new(raw);
+    if path.is_absolute() {
+        return file(path.to_path_buf());
+    }
+    let base = match declaring_dir(source, ctx) {
+        Some(dir) => dir,
+        None => {
+            tracing::trace!(
+                raw,
+                document_dir = %ctx.document_dir.display(),
+                "config path has no usable provenance; resolving against the document dir"
+            );
+            ctx.document_dir.to_path_buf()
+        }
+    };
+    file(base.join(path))
+}
+
+/// A `Path`-kind value: already rebased to document-relative form by
+/// the merge, or OS-absolute for a file outside the project (step 1 of
+/// the module docs).
+fn resolve_marked(marked: &str, ctx: &PathCtx<'_>) -> ResolvedConfigPath {
+    let path = Path::new(marked);
+    if quarto_util::is_rooted(path) || path.is_absolute() {
+        return file(path.to_path_buf());
+    }
+    file(ctx.document_dir.join(path))
+}
+
+/// A resolved file plus whether it exists, for consumers that probe.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileCandidate {
+    pub path: PathBuf,
+    pub exists: bool,
+}
+
+/// [`resolve_config_path`] with the existence policy described in the
+/// module docs, for keys whose strings are only sometimes paths.
+/// Returns `None` for a URL or a non-string value.
+pub fn resolve_config_file(
+    value: &ConfigValue,
+    ctx: &PathCtx<'_>,
+    runtime: &dyn quarto_system_runtime::SystemRuntime,
+) -> Option<FileCandidate> {
+    let is_file = |p: &Path| runtime.is_file(p).unwrap_or(false);
+    let candidate = resolve_config_path(value, ctx)?.file()?;
+    if is_file(&candidate) {
+        return Some(FileCandidate {
+            path: candidate,
+            exists: true,
+        });
+    }
+    // Legacy reading of an authored leading `/`: OS-absolute. Only for
+    // plain strings (a marked value is already OS-absolute when rooted).
+    if !matches!(value.value, ConfigValueKind::Path(_))
+        && let Some(raw) = value.as_plain_text()
+        && raw.starts_with('/')
+    {
+        let os_absolute = quarto_util::normalize_lexically(Path::new(&raw));
+        if is_file(&os_absolute) {
+            tracing::trace!(
+                raw,
+                "leading-`/` config path does not exist under the project root; using the OS-absolute reading"
+            );
+            return Some(FileCandidate {
+                path: os_absolute,
+                exists: true,
+            });
+        }
+    }
+    Some(FileCandidate {
+        path: candidate,
+        exists: false,
+    })
+}
+
+fn file(path: PathBuf) -> ResolvedConfigPath {
+    ResolvedConfigPath::File(quarto_util::normalize_lexically(&path))
+}
+
+/// The directory of the file a value was written in, when `source`
+/// points at a registered file with a usable (rooted) path.
+///
+/// Returns `None` for programmatic sentinels (`config-default`,
+/// `programmatic-config`, `unknown`), for spans with no single byte
+/// range (`Concat`, anchor-less `Generated`), for a `FileId` the
+/// context does not know, and for a registered path that is not
+/// rooted (an in-memory `<anonymous>` document, a bare file name): in
+/// each case the caller falls back to the document directory.
+pub fn declaring_dir(source: &SourceInfo, ctx: &PathCtx<'_>) -> Option<PathBuf> {
+    if let SourceInfo::Generated(g) = source
+        && g.by.is_programmatic_sentinel()
+    {
+        return None;
+    }
+    let (file_id, _, _) = source.resolve_byte_range()?;
+    let source_file = ctx.source_context?.get_file(FileId(file_id))?;
+    let path = Path::new(&source_file.path);
+    let dir = path.parent()?;
+    if dir.as_os_str().is_empty() || !quarto_util::is_rooted(dir) {
+        return None;
+    }
+    Some(dir.to_path_buf())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quarto_source_map::By;
+    use std::sync::Arc;
+    use yaml_rust2::Yaml;
+
+    fn p(s: &str) -> PathBuf {
+        PathBuf::from(s)
+    }
+
+    /// A context whose document is `/project/docs/page.qmd` and whose
+    /// `_quarto.yml` and `docs/_metadata.yml` are registered.
+    struct Fixture {
+        sc: SourceContext,
+        quarto_yml: FileId,
+        metadata_yml: FileId,
+        document: FileId,
+        anonymous: FileId,
+    }
+
+    fn fixture() -> Fixture {
+        let mut sc = SourceContext::new();
+        let document = sc.add_file("/project/docs/page.qmd".into(), Some(String::new()));
+        let quarto_yml = sc.add_file("/project/_quarto.yml".into(), Some(String::new()));
+        let metadata_yml = sc.add_file("/project/docs/_metadata.yml".into(), Some(String::new()));
+        let anonymous = sc.add_file("<anonymous>".into(), Some(String::new()));
+        Fixture {
+            sc,
+            quarto_yml,
+            metadata_yml,
+            document,
+            anonymous,
+        }
+    }
+
+    /// Owned base dirs so a `PathCtx` can borrow them for a whole test.
+    struct Dirs {
+        project: PathBuf,
+        document: PathBuf,
+    }
+
+    fn dirs(project: &str, document: &str) -> Dirs {
+        Dirs {
+            project: p(project),
+            document: p(document),
+        }
+    }
+
+    fn ctx<'a>(f: &'a Fixture, d: &'a Dirs) -> PathCtx<'a> {
+        PathCtx {
+            source_context: Some(&f.sc),
+            project_dir: &d.project,
+            document_dir: &d.document,
+        }
+    }
+
+    fn span(file_id: FileId) -> SourceInfo {
+        SourceInfo::Original {
+            file_id,
+            start_offset: 0,
+            end_offset: 1,
+        }
+    }
+
+    fn scalar(s: &str, source: SourceInfo) -> ConfigValue {
+        ConfigValue::new_scalar(Yaml::String(s.into()), source)
+    }
+
+    fn resolve(raw: &str, source: SourceInfo, ctx: &PathCtx<'_>) -> ResolvedConfigPath {
+        resolve_config_path(&scalar(raw, source), ctx).expect("string value")
+    }
+
+    #[test]
+    fn quarto_yml_value_resolves_against_the_project_root() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        assert_eq!(
+            resolve("hello.lua", span(f.quarto_yml), &c),
+            ResolvedConfigPath::File(p("/project/hello.lua"))
+        );
+    }
+
+    #[test]
+    fn metadata_yml_value_resolves_against_its_own_dir() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs/deep");
+        let c = ctx(&f, &d);
+        assert_eq!(
+            resolve("../shared.lua", span(f.metadata_yml), &c),
+            ResolvedConfigPath::File(p("/project/shared.lua"))
+        );
+    }
+
+    #[test]
+    fn document_value_resolves_against_the_document_dir() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        assert_eq!(
+            resolve("./local.lua", span(f.document), &c),
+            ResolvedConfigPath::File(p("/project/docs/local.lua"))
+        );
+    }
+
+    #[test]
+    fn substring_span_resolves_through_its_parent() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        let nested = SourceInfo::Substring {
+            parent: Arc::new(span(f.quarto_yml)),
+            start_offset: 0,
+            end_offset: 1,
+        };
+        assert_eq!(
+            resolve("hello.lua", nested, &c),
+            ResolvedConfigPath::File(p("/project/hello.lua"))
+        );
+    }
+
+    #[test]
+    fn leading_slash_anchors_at_the_project_root_for_every_declarer() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        for source in [span(f.quarto_yml), span(f.document), SourceInfo::for_test()] {
+            assert_eq!(
+                resolve("/hello.lua", source, &c),
+                ResolvedConfigPath::File(p("/project/hello.lua"))
+            );
+        }
+    }
+
+    #[test]
+    fn external_urls_are_classified_not_joined() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        for url in [
+            "https://example.com/x.lua",
+            "//cdn/x.lua",
+            "data:text/plain,x",
+        ] {
+            assert_eq!(
+                resolve(url, span(f.quarto_yml), &c),
+                ResolvedConfigPath::External(url.to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn programmatic_sentinel_falls_back_to_the_document_dir() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        for by in [
+            By::config_default(),
+            By::programmatic_config(),
+            By::unknown(),
+        ] {
+            let source = SourceInfo::generated(by);
+            assert_eq!(
+                resolve("x.lua", source, &c),
+                ResolvedConfigPath::File(p("/project/docs/x.lua"))
+            );
+        }
+    }
+
+    #[test]
+    fn unregistered_file_id_falls_back_to_the_document_dir() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        assert_eq!(
+            resolve("x.lua", span(FileId(usize::MAX - 7)), &c),
+            ResolvedConfigPath::File(p("/project/docs/x.lua"))
+        );
+    }
+
+    #[test]
+    fn unrooted_registered_path_falls_back_to_the_document_dir() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        assert_eq!(
+            resolve("x.lua", span(f.anonymous), &c),
+            ResolvedConfigPath::File(p("/project/docs/x.lua"))
+        );
+    }
+
+    #[test]
+    fn no_source_context_falls_back_to_the_document_dir() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = PathCtx {
+            source_context: None,
+            project_dir: &d.project,
+            document_dir: &d.document,
+        };
+        assert_eq!(
+            resolve("x.lua", span(f.quarto_yml), &c),
+            ResolvedConfigPath::File(p("/project/docs/x.lua"))
+        );
+    }
+
+    #[test]
+    fn marked_path_value_is_joined_onto_the_document_dir() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        // Marked by the merge as document-relative; its span still points
+        // at _quarto.yml, which must be ignored.
+        let marked = ConfigValue {
+            value: ConfigValueKind::Path("../hello.lua".into()),
+            source_info: span(f.quarto_yml),
+            merge_op: Default::default(),
+        };
+        assert_eq!(
+            resolve_config_path(&marked, &c),
+            Some(ResolvedConfigPath::File(p("/project/hello.lua")))
+        );
+    }
+
+    #[test]
+    fn marked_rooted_value_is_used_as_written() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        // A built-in extension extracted outside the project is rebased
+        // to an OS-absolute `Path` by `adjust_paths_to_document_dir`.
+        let abs = ConfigValue {
+            value: ConfigValueKind::Path("/tmp/ext/f.lua".into()),
+            source_info: SourceInfo::for_test(),
+            merge_op: Default::default(),
+        };
+        assert_eq!(
+            resolve_config_path(&abs, &c),
+            Some(ResolvedConfigPath::File(p("/tmp/ext/f.lua")))
+        );
+    }
+
+    /// Runtime whose `is_file` answers from a fixed set.
+    struct FileSet(std::collections::HashSet<PathBuf>);
+
+    impl FileSet {
+        fn of(paths: &[&str]) -> Self {
+            Self(paths.iter().map(|s| p(s)).collect())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl quarto_system_runtime::SystemRuntime for FileSet {
+        fn file_read(
+            &self,
+            _path: &std::path::Path,
+        ) -> quarto_system_runtime::RuntimeResult<Vec<u8>> {
+            Ok(vec![])
+        }
+        fn file_write(
+            &self,
+            _path: &std::path::Path,
+            _contents: &[u8],
+        ) -> quarto_system_runtime::RuntimeResult<()> {
+            Ok(())
+        }
+        fn path_exists(
+            &self,
+            path: &std::path::Path,
+            _kind: Option<quarto_system_runtime::PathKind>,
+        ) -> quarto_system_runtime::RuntimeResult<bool> {
+            Ok(self.0.contains(path))
+        }
+        fn canonicalize(
+            &self,
+            path: &std::path::Path,
+        ) -> quarto_system_runtime::RuntimeResult<PathBuf> {
+            Ok(path.to_path_buf())
+        }
+        fn path_metadata(
+            &self,
+            _path: &std::path::Path,
+        ) -> quarto_system_runtime::RuntimeResult<quarto_system_runtime::PathMetadata> {
+            unimplemented!()
+        }
+        fn file_copy(
+            &self,
+            _src: &std::path::Path,
+            _dst: &std::path::Path,
+        ) -> quarto_system_runtime::RuntimeResult<()> {
+            Ok(())
+        }
+        fn path_rename(
+            &self,
+            _old: &std::path::Path,
+            _new: &std::path::Path,
+        ) -> quarto_system_runtime::RuntimeResult<()> {
+            Ok(())
+        }
+        fn file_remove(&self, _path: &std::path::Path) -> quarto_system_runtime::RuntimeResult<()> {
+            Ok(())
+        }
+        fn dir_create(
+            &self,
+            _path: &std::path::Path,
+            _recursive: bool,
+        ) -> quarto_system_runtime::RuntimeResult<()> {
+            Ok(())
+        }
+        fn dir_remove(
+            &self,
+            _path: &std::path::Path,
+            _recursive: bool,
+        ) -> quarto_system_runtime::RuntimeResult<()> {
+            Ok(())
+        }
+        fn dir_list(
+            &self,
+            _path: &std::path::Path,
+        ) -> quarto_system_runtime::RuntimeResult<Vec<PathBuf>> {
+            Ok(vec![])
+        }
+        fn cwd(&self) -> quarto_system_runtime::RuntimeResult<PathBuf> {
+            Ok(PathBuf::from("/"))
+        }
+        fn temp_dir(
+            &self,
+            _template: &str,
+        ) -> quarto_system_runtime::RuntimeResult<quarto_system_runtime::TempDir> {
+            Ok(quarto_system_runtime::TempDir::new(PathBuf::from(
+                "/nonexistent/q2-mock-temp-dir",
+            )))
+        }
+        fn exec_pipe(
+            &self,
+            _command: &str,
+            _args: &[&str],
+            _stdin: &[u8],
+        ) -> quarto_system_runtime::RuntimeResult<Vec<u8>> {
+            Ok(vec![])
+        }
+        fn exec_command(
+            &self,
+            _command: &str,
+            _args: &[&str],
+            _stdin: Option<&[u8]>,
+        ) -> quarto_system_runtime::RuntimeResult<quarto_system_runtime::CommandOutput> {
+            Ok(quarto_system_runtime::CommandOutput {
+                code: 0,
+                stdout: vec![],
+                stderr: vec![],
+            })
+        }
+        fn env_get(&self, _name: &str) -> quarto_system_runtime::RuntimeResult<Option<String>> {
+            Ok(None)
+        }
+        fn env_all(
+            &self,
+        ) -> quarto_system_runtime::RuntimeResult<std::collections::HashMap<String, String>>
+        {
+            Ok(std::collections::HashMap::new())
+        }
+        async fn fetch_url(
+            &self,
+            _url: &str,
+        ) -> quarto_system_runtime::RuntimeResult<(Vec<u8>, String)> {
+            Err(quarto_system_runtime::RuntimeError::NotSupported(
+                "test".to_string(),
+            ))
+        }
+        fn os_name(&self) -> &'static str {
+            "test"
+        }
+        fn arch(&self) -> &'static str {
+            "test"
+        }
+        fn cpu_time(&self) -> quarto_system_runtime::RuntimeResult<u64> {
+            Ok(0)
+        }
+        fn xdg_dir(
+            &self,
+            _kind: quarto_system_runtime::XdgDirKind,
+            _subpath: Option<&std::path::Path>,
+        ) -> quarto_system_runtime::RuntimeResult<PathBuf> {
+            Ok(PathBuf::from("/xdg"))
+        }
+        fn stdout_write(&self, _data: &[u8]) -> quarto_system_runtime::RuntimeResult<()> {
+            Ok(())
+        }
+        fn stderr_write(&self, _data: &[u8]) -> quarto_system_runtime::RuntimeResult<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn resolve_config_file_prefers_the_project_root_reading() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        let rt = FileSet::of(&["/project/hello.lua", "/hello.lua"]);
+        assert_eq!(
+            resolve_config_file(&scalar("/hello.lua", span(f.quarto_yml)), &c, &rt),
+            Some(FileCandidate {
+                path: p("/project/hello.lua"),
+                exists: true
+            })
+        );
+    }
+
+    #[test]
+    fn resolve_config_file_falls_back_to_the_os_absolute_reading() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        let rt = FileSet::of(&["/opt/filters/shared.lua"]);
+        assert_eq!(
+            resolve_config_file(
+                &scalar("/opt/filters/shared.lua", span(f.quarto_yml)),
+                &c,
+                &rt
+            ),
+            Some(FileCandidate {
+                path: p("/opt/filters/shared.lua"),
+                exists: true
+            })
+        );
+    }
+
+    #[test]
+    fn resolve_config_file_reports_the_rule_2_candidate_when_nothing_exists() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        let rt = FileSet::of(&[]);
+        assert_eq!(
+            resolve_config_file(&scalar("/nope.lua", span(f.quarto_yml)), &c, &rt),
+            Some(FileCandidate {
+                path: p("/project/nope.lua"),
+                exists: false
+            })
+        );
+        assert_eq!(
+            resolve_config_file(&scalar("nope.lua", span(f.quarto_yml)), &c, &rt),
+            Some(FileCandidate {
+                path: p("/project/nope.lua"),
+                exists: false
+            })
+        );
+    }
+
+    #[test]
+    fn non_string_values_resolve_to_none() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        let map = ConfigValue::new_map(vec![], SourceInfo::for_test());
+        assert_eq!(resolve_config_path(&map, &c), None);
+    }
+
+    #[test]
+    fn result_is_lexically_normalized() {
+        let f = fixture();
+        let d = dirs("/project", "/project/docs");
+        let c = ctx(&f, &d);
+        assert_eq!(
+            resolve("./a/../b/./x.lua", span(f.quarto_yml), &c),
+            ResolvedConfigPath::File(p("/project/b/x.lua"))
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_drive_paths_are_used_as_written() {
+        let f = fixture();
+        let d = dirs("C:\\project", "C:\\project\\docs");
+        let c = ctx(&f, &d);
+        assert_eq!(
+            resolve("D:\\filters\\x.lua", span(f.quarto_yml), &c),
+            ResolvedConfigPath::File(p("D:\\filters\\x.lua"))
+        );
+    }
+}
