@@ -298,7 +298,6 @@ pub(crate) async fn render_book_core<S, T>(
 
     let mut chapters: Vec<(BookRenderItem, Pandoc)> = Vec::with_capacity(book_items.len());
     let mut book_level: Option<BookLevelState> = None;
-    let mut first_chapter_dir: Option<std::path::PathBuf> = None;
     let mut artifacts = ArtifactStore::default();
     // The book-level diagnostics; each chapter's go in `chapter_diagnostics`
     // with their own `SourceContext`.
@@ -402,16 +401,6 @@ pub(crate) async fn render_book_core<S, T>(
                 &mut state,
                 chapter_pandoc.meta.clone(),
             ));
-            // The merged document's meta is seeded from this chapter's
-            // meta, so its marked `Path` values (`bibliography`, `csl`, …)
-            // are rebased to *this* chapter's directory — that's the base
-            // the deferred citeproc must resolve them against
-            // (bd-oqoozmtr).
-            first_chapter_dir = Some(
-                input_path
-                    .parent()
-                    .map_or_else(|| std::path::PathBuf::from("."), |p| p.to_path_buf()),
-            );
         }
 
         chapters.push((item.clone(), chapter_pandoc));
@@ -474,7 +463,9 @@ pub(crate) async fn render_book_core<S, T>(
     // the directory the merged meta's marked `Path` values were rebased
     // to; `book_level` is seeded from the same chapter, so the Option
     // always has a value) for use down there.
-    let citeproc_base_dir = first_chapter_dir.unwrap_or_else(|| project.dir.clone());
+    // bd-okqrjh8v: marked `bibliography`/`csl` values are in pivot
+    // (project-root-relative) form, so the base is the project root.
+    let citeproc_base_dir = project.dir.clone();
 
     // Derive Q2's `epub-cover-image` key from `book.cover-image` (EPUB
     // output only, and only when the author set no explicit

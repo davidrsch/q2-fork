@@ -31,13 +31,16 @@
 //! 1. A [`ConfigValueKind::Path`] value was marked by one of the
 //!    merge-time mechanisms (an explicit `!path`, the
 //!    `FORMAT_PATH_KEYS` marking in `project/format_paths.rs`, or an
-//!    extension rebase) and is **already document-relative**, or
-//!    OS-absolute when it names a file outside the project (a built-in
-//!    extension extracted to a temp dir; `adjust_paths_to_document_dir`,
-//!    bd-9z2258af). A relative value is joined onto the document
-//!    directory; a rooted one is used as written. (An explicit
-//!    `!path /x` is therefore still OS-absolute today — anchoring it at
-//!    the project root belongs to the marking site, plan Phase 1b.)
+//!    extension rebase) and already holds the **pivot form**
+//!    ([`pivot_form`]): the path relative to the project root with
+//!    forward slashes, or an OS-absolute path when the file lies
+//!    outside the project (a built-in extension extracted to a temp
+//!    dir; `adjust_paths_to_project_root`, bd-9z2258af). A relative
+//!    value is joined onto the project root; a rooted one is used as
+//!    written. The pivot does not vary with the consuming document, so
+//!    a value's spelling is stable for cache keys, `get-config` and Lua
+//!    (bd-okqrjh8v; before Phase 1b the stored form was
+//!    document-relative, bd-79c4do6g).
 //! 2. Anything with a URL scheme or a `//host` prefix is external
 //!    ([`quarto_util::is_external_url`], the sole classifier) and is
 //!    returned as [`ResolvedConfigPath::External`].
@@ -234,15 +237,56 @@ pub fn resolve_config_path_str(
     file(base.join(path))
 }
 
-/// A `Path`-kind value: already rebased to document-relative form by
-/// the merge, or OS-absolute for a file outside the project (step 1 of
-/// the module docs).
+/// A `Path`-kind value: already in pivot form (step 1 of the module
+/// docs): project-root-relative, or OS-absolute for a file outside the
+/// project.
 fn resolve_marked(marked: &str, ctx: &PathCtx<'_>) -> ResolvedConfigPath {
     let path = Path::new(marked);
     if quarto_util::is_rooted(path) || path.is_absolute() {
         return file(path.to_path_buf());
     }
-    file(ctx.document_dir.join(path))
+    file(ctx.project_dir.join(path))
+}
+
+/// `path` without its `.` components (`..` is kept; see [`pivot_form`]).
+fn without_cur_dir(path: &Path) -> PathBuf {
+    path.components()
+        .filter(|c| !matches!(c, std::path::Component::CurDir))
+        .collect()
+}
+
+/// The stored form of a marked path (`ConfigValueKind::Path`): `joined`
+/// (the declaring directory joined with the authored path, *not*
+/// normalized) expressed relative to `project_dir` with forward slashes
+/// when it lies inside the project, else the absolute path.
+///
+/// Off Windows an in-project value keeps its `..` components: when the
+/// component before a `..` is a symlink, only the OS resolves `link/..`
+/// to the file the author named. Windows resolves `..` lexically, so
+/// there the collapsed form names the same file and keeps consumer paths
+/// short of `MAX_PATH` (bd-s0jupmmv). Whether the file is inside the
+/// project is always decided on the normalized path, so a `..` that
+/// escapes the project is seen as outside it (bd-9z2258af).
+pub fn pivot_form(joined: &Path, project_dir: &Path) -> String {
+    let project_dir = quarto_util::normalize_lexically(project_dir);
+    let normalized = quarto_util::normalize_lexically(joined);
+    if !normalized.starts_with(&project_dir) {
+        let outside = if cfg!(windows) { &normalized } else { joined };
+        return quarto_util::to_forward_slashes(outside);
+    }
+    let relative = if cfg!(windows) {
+        normalized.strip_prefix(&project_dir).map(Path::to_path_buf)
+    } else {
+        joined
+            .strip_prefix(&project_dir)
+            .map(without_cur_dir)
+            .or_else(|_| normalized.strip_prefix(&project_dir).map(Path::to_path_buf))
+    };
+    match relative {
+        Ok(rel) if rel.as_os_str().is_empty() => ".".to_string(),
+        Ok(rel) => quarto_util::to_forward_slashes(&rel),
+        Err(_) => quarto_util::to_forward_slashes(&normalized),
+    }
 }
 
 /// A resolved file plus whether it exists, for consumers that probe.
@@ -550,21 +594,52 @@ mod tests {
     }
 
     #[test]
-    fn marked_path_value_is_joined_onto_the_document_dir() {
+    fn marked_path_value_is_joined_onto_the_project_root() {
         let f = fixture();
         let d = dirs("/project", "/project/docs");
         let c = ctx(&f, &d);
-        // Marked by the merge as document-relative; its span still points
-        // at _quarto.yml, which must be ignored.
+        // Marked by the merge in pivot form (project-root-relative); its
+        // span still points at the declaring file, which must be ignored.
         let marked = ConfigValue {
-            value: ConfigValueKind::Path("../hello.lua".into()),
-            source_info: span(f.quarto_yml),
+            value: ConfigValueKind::Path("lib/hello.lua".into()),
+            source_info: span(f.document),
             merge_op: Default::default(),
         };
         assert_eq!(
             resolve_config_path(&marked, &c),
-            Some(ResolvedConfigPath::File(p("/project/hello.lua")))
+            Some(ResolvedConfigPath::File(p("/project/lib/hello.lua")))
         );
+    }
+
+    #[test]
+    fn pivot_form_is_project_relative_inside_and_absolute_outside() {
+        let project = p("/project");
+        assert_eq!(
+            pivot_form(&p("/project/styles.css"), &project),
+            "styles.css"
+        );
+        assert_eq!(
+            pivot_form(&p("/project/docs/../shared/a.css"), &project),
+            if cfg!(windows) {
+                "shared/a.css"
+            } else {
+                "docs/../shared/a.css"
+            }
+        );
+        assert_eq!(
+            pivot_form(&p("/project/docs/../../escaped.css"), &project),
+            if cfg!(windows) {
+                "/escaped.css"
+            } else {
+                "/project/docs/../../escaped.css"
+            }
+        );
+        assert_eq!(pivot_form(&p("/tmp/ext/f.lua"), &project), "/tmp/ext/f.lua");
+        assert_eq!(
+            pivot_form(&p("/project/docs/./local.css"), &project),
+            "docs/local.css"
+        );
+        assert_eq!(pivot_form(&p("/project"), &project), ".");
     }
 
     #[test]
@@ -835,12 +910,12 @@ mod tests {
             ResolvedConfigPath::File(p("/project/x.lua"))
         );
         let marked = ConfigPath::from_value(&ConfigValue {
-            value: ConfigValueKind::Path("../x.lua".into()),
+            value: ConfigValueKind::Path("x.lua".into()),
             source_info: span(f.quarto_yml),
             merge_op: Default::default(),
         })
         .unwrap();
-        assert_eq!(marked, ConfigPath::Marked("../x.lua".into()));
+        assert_eq!(marked, ConfigPath::Marked("x.lua".into()));
         assert_eq!(
             marked.resolve(&c),
             ResolvedConfigPath::File(p("/project/x.lua"))

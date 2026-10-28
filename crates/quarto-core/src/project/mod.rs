@@ -151,9 +151,6 @@ pub fn directory_metadata_for_document(
     let document_path = runtime
         .canonicalize(document_path)
         .unwrap_or_else(|_| document_path.to_path_buf());
-    let document_dir = document_path
-        .parent()
-        .ok_or_else(|| QuartoError::Other("Document has no parent directory".into()))?;
 
     let mut layers = Vec::new();
     for path in directory_metadata_paths_for_document(project, &document_path, runtime) {
@@ -171,9 +168,9 @@ pub fn directory_metadata_for_document(
         let mut metadata =
             yaml_to_config_value(yaml, InterpretationContext::ProjectConfig, &mut diagnostics);
 
-        // Adjust !path values to be relative to document directory
+        // Rewrite !path values into pivot (project-root-relative) form
         let layer_dir = path.parent().expect("metadata file has a directory");
-        adjust_paths_to_document_dir(&mut metadata, layer_dir, document_dir, &project.dir);
+        adjust_paths_to_project_root(&mut metadata, layer_dir, &project.dir);
 
         layers.push((path, metadata));
     }
@@ -246,87 +243,59 @@ fn find_metadata_file(dir: &Path, runtime: &dyn SystemRuntime) -> Option<PathBuf
     None
 }
 
-/// Adjust `!path` values in metadata to be relative to document directory.
+/// Rewrite `!path` values (and every other `ConfigValueKind::Path`
+/// value) declared against `metadata_dir` into the **pivot form**
+/// (`crate::config_paths::pivot_form`): relative to `project_root`
+/// with forward slashes, or absolute for a file outside the project
+/// (a built-in extension extracted to a temp dir, or a declaration
+/// escaping the project with `..`; bd-9z2258af). A leading `/` on the
+/// authored value means the project root (contract rule 2).
 ///
-/// Walks the ConfigValue tree and for each `ConfigValueKind::Path`:
-/// - Computes absolute path relative to metadata_dir
-/// - Recomputes relative path from document_dir
-///
-/// Leaves other values (strings, globs, etc.) unchanged.
-///
-/// When a value resolves **outside** the project tree (a built-in
-/// extension extracted to a temp dir, or a declaration escaping the
-/// project with `..`), it keeps the **absolute** resolved path instead of
-/// a doc-relative `..` chain. `project_root` is the tree boundary the
-/// rebase is allowed to climb within — pass the consuming project's dir.
-///
-/// The stored value is a filesystem path for every key, `css` and `theme`
-/// included: consumers resolve it before use, and the css `<link href>`
-/// is derived from the resolved source by
-/// [`crate::transforms::FormatCssTransform`], never copied from this
-/// string. See `claude-notes/research/2026-09-30-extension-path-rebase-windows-max-path.md`.
-pub(crate) fn adjust_paths_to_document_dir(
+/// Leaves other values (strings, globs, URLs) unchanged. Consumers
+/// turn the stored form into a filesystem path with
+/// `crate::config_paths::resolve_config_path`; the form itself does not
+/// vary with the consuming document (bd-okqrjh8v; before Phase 1b this
+/// rebased to a document-relative form, hence the old name).
+pub(crate) fn adjust_paths_to_project_root(
     metadata: &mut ConfigValue,
     metadata_dir: &Path,
-    document_dir: &Path,
     project_root: &Path,
 ) {
-    let project_root = quarto_util::normalize_lexically(project_root);
-    adjust_paths_recursive(metadata, metadata_dir, document_dir, &project_root);
+    adjust_paths_recursive(metadata, metadata_dir, project_root);
 }
 
 /// Recursively walk ConfigValue, adjusting Path variants.
-fn adjust_paths_recursive(
-    value: &mut ConfigValue,
-    metadata_dir: &Path,
-    document_dir: &Path,
-    project_root: &Path,
-) {
+fn adjust_paths_recursive(value: &mut ConfigValue, metadata_dir: &Path, project_root: &Path) {
     match &mut value.value {
         ConfigValueKind::Path(path_str) => {
-            let path = PathBuf::from(&*path_str);
-            // Only adjust relative paths (not absolute, not URLs). Use
-            // `is_rooted` (has_root), not `Path::is_relative`: on Windows a
-            // POSIX-absolute path like `/usr/share/base.css` is not
-            // `is_absolute` (no drive prefix) and would be wrongly rebased.
-            if !quarto_util::is_rooted(&path)
-                && !path_str.starts_with("http://")
-                && !path_str.starts_with("https://")
-            {
-                let joined = metadata_dir.join(&path);
-                // Normalized so a `..` escaping the project is seen as
-                // outside it by the lexical `starts_with` below.
-                let abs_path = quarto_util::normalize_lexically(&joined);
-                // Off Windows the stored value keeps `..` for the OS to
-                // resolve (it may follow a symlink). Windows resolves `..`
-                // lexically, so the shorter normalized form names the same
-                // file and keeps consumer paths further from MAX_PATH.
-                let rebase_from = if cfg!(windows) { &abs_path } else { &joined };
-                // A value resolving outside the project tree (a temp-extracted
-                // built-in extension) must not be rebased to a `..` chain:
-                // consumers join it onto the document dir without normalizing
-                // (Rust `Path::join` keeps `..`), and on Windows the long chain
-                // exceeds MAX_PATH and fails Lua `io.open`. Keep the absolute
-                // resolved path instead — same refusal as `rebase_candidate`
-                // (bd-9z2258af).
-                if !abs_path.starts_with(project_root) {
-                    *path_str = quarto_util::to_forward_slashes(rebase_from);
-                } else if let Some(adjusted) = pathdiff::diff_paths(rebase_from, document_dir) {
-                    // The adjusted value is used verbatim in HTML hrefs (e.g. a
-                    // `css: !path` <link>), so it must use forward slashes on
-                    // every platform; pathdiff yields native separators.
-                    *path_str = quarto_util::to_forward_slashes(&adjusted);
-                }
+            if quarto_util::is_external_url(path_str) {
+                return;
             }
+            let joined = match path_str.strip_prefix('/') {
+                // Rule 2: a leading `/` is the project root, never the
+                // filesystem root.
+                Some(rest) => project_root.join(rest),
+                None => {
+                    let path = Path::new(path_str.as_str());
+                    if path.is_absolute() || quarto_util::is_rooted(path) {
+                        // OS-absolute (a Windows drive or UNC path, or a
+                        // value already in absolute pivot form).
+                        path.to_path_buf()
+                    } else {
+                        metadata_dir.join(path)
+                    }
+                }
+            };
+            *path_str = crate::config_paths::pivot_form(&joined, project_root);
         }
         ConfigValueKind::Array(items) => {
             for item in items {
-                adjust_paths_recursive(item, metadata_dir, document_dir, project_root);
+                adjust_paths_recursive(item, metadata_dir, project_root);
             }
         }
         ConfigValueKind::Map(entries) => {
             for entry in entries {
-                adjust_paths_recursive(&mut entry.value, metadata_dir, document_dir, project_root);
+                adjust_paths_recursive(&mut entry.value, metadata_dir, project_root);
             }
         }
         // All other kinds (Scalar, PandocInlines, Glob, Expr, etc.) - no adjustment
@@ -2732,7 +2701,7 @@ impl ProjectContext {
 mod tests {
     use super::*;
 
-    // === adjust_paths_to_document_dir tests (bd-s0jupmmv) ===
+    // === adjust_paths_to_project_root tests (bd-s0jupmmv) ===
 
     /// Rebase a `Path` value whose declaring dir lives *outside* the
     /// document dir's tree (e.g. a built-in extension extracted to a temp
@@ -2752,13 +2721,12 @@ mod tests {
 
         // declaring dir outside document_dir's tree: /tmp/ext vs /project/docs
         let metadata_dir = PathBuf::from("/tmp/ext");
-        let document_dir = PathBuf::from("/project/docs");
         let project_root = PathBuf::from("/project");
 
         let mut metadata =
             ConfigValue::new_path("orange-book.lua".to_string(), SourceInfo::for_test());
 
-        adjust_paths_to_document_dir(&mut metadata, &metadata_dir, &document_dir, &project_root);
+        adjust_paths_to_project_root(&mut metadata, &metadata_dir, &project_root);
 
         let ConfigValueKind::Path(rebased) = &metadata.value else {
             panic!("expected a Path value");
@@ -2784,19 +2752,18 @@ mod tests {
         use quarto_source_map::SourceInfo;
 
         let metadata_dir = PathBuf::from("/project/_extensions/acm");
-        let document_dir = PathBuf::from("/project/docs");
         let project_root = PathBuf::from("/project");
 
         let mut metadata = ConfigValue::new_path("filter.lua".to_string(), SourceInfo::for_test());
 
-        adjust_paths_to_document_dir(&mut metadata, &metadata_dir, &document_dir, &project_root);
+        adjust_paths_to_project_root(&mut metadata, &metadata_dir, &project_root);
 
         let ConfigValueKind::Path(rebased) = &metadata.value else {
             panic!("expected a Path value");
         };
         assert_eq!(
-            rebased, "../_extensions/acm/filter.lua",
-            "in-tree rebase should be doc-relative"
+            rebased, "_extensions/acm/filter.lua",
+            "in-tree rebase is project-root-relative (pivot form)"
         );
     }
 
@@ -2812,20 +2779,15 @@ mod tests {
 
         let mut metadata =
             ConfigValue::new_path("link/../header.html".to_string(), SourceInfo::for_test());
-        adjust_paths_to_document_dir(
-            &mut metadata,
-            Path::new("/project"),
-            Path::new("/project/docs"),
-            Path::new("/project"),
-        );
+        adjust_paths_to_project_root(&mut metadata, Path::new("/project"), Path::new("/project"));
 
         let ConfigValueKind::Path(rebased) = &metadata.value else {
             panic!("expected a Path value");
         };
         let expected = if cfg!(windows) {
-            "../header.html"
+            "header.html"
         } else {
-            "../link/../header.html"
+            "link/../header.html"
         };
         assert_eq!(rebased, expected);
     }
@@ -2841,10 +2803,9 @@ mod tests {
 
         let mut metadata =
             ConfigValue::new_path("link/../../header.html".to_string(), SourceInfo::for_test());
-        adjust_paths_to_document_dir(
+        adjust_paths_to_project_root(
             &mut metadata,
             Path::new("/work/project"),
-            Path::new("/work/project/docs"),
             Path::new("/work/project"),
         );
 
@@ -2871,7 +2832,6 @@ mod tests {
         use quarto_source_map::SourceInfo;
 
         let metadata_dir = PathBuf::from("/tmp/ext");
-        let document_dir = PathBuf::from("/project/docs");
         let project_root = PathBuf::from("/project");
 
         let si = SourceInfo::for_test;
@@ -2907,12 +2867,7 @@ mod tests {
 
         for (key, value) in cases {
             let mut metadata = map(vec![(key, value)]);
-            adjust_paths_to_document_dir(
-                &mut metadata,
-                &metadata_dir,
-                &document_dir,
-                &project_root,
-            );
+            adjust_paths_to_project_root(&mut metadata, &metadata_dir, &project_root);
 
             let mut leaves = Vec::new();
             collect_path_leaves(metadata.get(key).unwrap(), &mut leaves);
@@ -2952,10 +2907,9 @@ mod tests {
 
         let mut metadata =
             ConfigValue::new_path("../../tmp/x.lua".to_string(), SourceInfo::for_test());
-        adjust_paths_to_document_dir(
+        adjust_paths_to_project_root(
             &mut metadata,
             Path::new("/project/sub"),
-            Path::new("/project/docs"),
             Path::new("/project"),
         );
 
@@ -3018,8 +2972,8 @@ mod tests {
             )],
             si(),
         );
-        adjust_paths_to_document_dir(&mut top, &ext_dir, &document_dir, &project_root);
-        adjust_paths_to_document_dir(&mut nested, &ext_dir, &document_dir, &project_root);
+        adjust_paths_to_project_root(&mut top, &ext_dir, &project_root);
+        adjust_paths_to_project_root(&mut nested, &ext_dir, &project_root);
 
         let ConfigValueKind::Path(top_value) = &top.get("theme").unwrap().value else {
             panic!("expected a Path value");
@@ -3923,8 +3877,12 @@ mod tests {
             // because we went one directory deeper (chapters/intro instead of chapters/)
             assert_eq!(
                 css_value.as_str(),
-                Some("../../shared/styles.css"),
-                "Path should be adjusted relative to document directory"
+                Some(if cfg!(windows) {
+                    "shared/styles.css"
+                } else {
+                    "chapters/../shared/styles.css"
+                }),
+                "Path is stored in pivot (project-root-relative) form"
             );
         }
 
@@ -3953,11 +3911,10 @@ mod tests {
             let css_value = result[0].1.get("css").expect("should have css key");
 
             // Path should remain equivalent (pathdiff may normalize ./local.css to local.css)
-            let path_str = css_value.as_str().expect("should be a string path");
-            assert!(
-                path_str == "./local.css" || path_str == "local.css",
-                "Path should stay relative to same directory: got '{}'",
-                path_str
+            assert_eq!(
+                css_value.as_str(),
+                Some("chapters/local.css"),
+                "Path is stored in pivot (project-root-relative) form"
             );
         }
 
@@ -3998,7 +3955,7 @@ mod tests {
         }
 
         #[test]
-        fn test_absolute_path_unchanged() {
+        fn test_rooted_path_anchors_at_project_root() {
             // css: !path /usr/share/styles/base.css
             // Should pass through unchanged
             let temp = TempDir::new().unwrap();
@@ -4027,7 +3984,7 @@ mod tests {
             // Absolute path should be unchanged
             assert_eq!(
                 css_value.as_str(),
-                Some("/usr/share/styles/base.css"),
+                Some("usr/share/styles/base.css"),
                 "Absolute paths should not be adjusted"
             );
         }
@@ -4069,12 +4026,20 @@ mod tests {
             assert_eq!(css_array.len(), 2);
             assert_eq!(
                 css_array[0].as_str(),
-                Some("../../shared/a.css"),
+                Some(if cfg!(windows) {
+                    "shared/a.css"
+                } else {
+                    "chapters/../shared/a.css"
+                }),
                 "First path should be adjusted"
             );
             assert_eq!(
                 css_array[1].as_str(),
-                Some("../../shared/b.css"),
+                Some(if cfg!(windows) {
+                    "shared/b.css"
+                } else {
+                    "chapters/../shared/b.css"
+                }),
                 "Second path should be adjusted"
             );
         }
@@ -4153,7 +4118,11 @@ mod tests {
 
             assert_eq!(
                 css_value.as_str(),
-                Some("../../shared/styles.css"),
+                Some(if cfg!(windows) {
+                    "shared/styles.css"
+                } else {
+                    "chapters/../shared/styles.css"
+                }),
                 "Nested path should be adjusted"
             );
         }

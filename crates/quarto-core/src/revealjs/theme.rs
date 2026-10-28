@@ -64,14 +64,16 @@ fn theme_entries(meta: &ConfigValue) -> Vec<String> {
 
 /// Resolve a deck's `theme:` into SCSS theme layers + load paths.
 ///
-/// `document_dir` is the directory of the input `.qmd` (user `.scss` themes
-/// resolve against it); `runtime` provides cross-platform file access.
+/// `base_dir` is the directory relative user `.scss` theme entries resolve
+/// against: the project root, since marked `theme` entries are in pivot
+/// (project-root-relative) form after the metadata merge (bd-okqrjh8v);
+/// `runtime` provides cross-platform file access.
 pub fn resolve_reveal_theme(
     meta: &ConfigValue,
-    document_dir: &Path,
+    base_dir: &Path,
     runtime: &dyn SystemRuntime,
 ) -> Result<RevealThemeResolution, SassError> {
-    let context = ThemeContext::new(document_dir.to_path_buf(), runtime);
+    let context = ThemeContext::new(base_dir.to_path_buf(), runtime);
     let mut resolution = RevealThemeResolution::default();
 
     for entry in theme_entries(meta) {
@@ -82,7 +84,7 @@ pub fn resolve_reveal_theme(
                 .push(quarto_sass::load_reveal_theme_layer(&entry)?);
         } else {
             // Otherwise treat the entry as a path to a user `.scss` theme,
-            // resolved against the document directory.
+            // resolved against `base_dir`.
             let (layer, dir) = quarto_sass::load_custom_theme(Path::new(&entry), &context)?;
             resolution.layers.push(layer);
             resolution.load_paths.push(dir);

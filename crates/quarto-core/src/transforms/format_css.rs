@@ -63,6 +63,18 @@ const EXTENSIONS_PREFIX: &str = "_extensions/";
 /// is its fixed "the project itself is the contributor" slot.
 const CONTRIB_PREFIX: &str = "quarto-contrib/quarto-project/";
 
+/// Apply `f` to each string-bearing entry of a scalar-or-array value.
+fn for_each_entry_mut(value: &mut ConfigValue, mut f: impl FnMut(&mut ConfigValue)) {
+    match &mut value.value {
+        ConfigValueKind::Array(items) => {
+            for item in items {
+                f(item);
+            }
+        }
+        _ => f(value),
+    }
+}
+
 /// AST transform: copy user-declared stylesheets and rewrite their
 /// hrefs per page.
 pub struct FormatCssTransform;
@@ -93,22 +105,45 @@ impl AstTransform for FormatCssTransform {
         if !ctx.format.is_html() {
             return Ok(());
         }
-        let Some(resolver) = ctx.resource_resolver.as_ref() else {
-            return Ok(());
-        };
-        // VFS-root mode (in-browser preview): the page is served from
-        // the VFS source tree, page depth is synthetic, and there is
-        // no on-disk output dir to copy into. Leave entries untouched
-        // — matching `ResourceCollectorTransform`'s posture. Preview
-        // behavior is verified separately (plan Phase 4).
-        if resolver.is_vfs_root_mode() {
-            return Ok(());
-        }
         let path_ctx = crate::config_paths::PathCtx::for_document(
             ctx.source_context,
             &ctx.project.dir,
             &ctx.document.input,
         );
+        // No resolver, or VFS-root mode (in-browser preview: the page
+        // is served from the VFS source tree, page depth is synthetic,
+        // and there is no on-disk output dir to copy into — matching
+        // `ResourceCollectorTransform`'s posture; preview behavior is
+        // verified separately, plan Phase 4): nothing is copied, but
+        // the stored pivot form (project-root-relative, bd-okqrjh8v)
+        // must still become a page-relative href, because the template
+        // emits the entry verbatim as `<link href>`.
+        let serves_from_source = ctx
+            .resource_resolver
+            .as_ref()
+            .is_none_or(|r| r.is_vfs_root_mode());
+        if serves_from_source {
+            let document_dir = path_ctx.document_dir.to_path_buf();
+            if let Some(css) = ast.meta.get_mut("css") {
+                for_each_entry_mut(css, |entry| {
+                    if !matches!(entry.value, ConfigValueKind::Path(_)) {
+                        return;
+                    }
+                    let Some(source) = crate::config_paths::resolve_config_path(entry, &path_ctx)
+                        .and_then(|r| r.file())
+                    else {
+                        return;
+                    };
+                    if let Some(href) = pathdiff::diff_paths(&source, &document_dir) {
+                        entry.value = ConfigValueKind::Path(quarto_util::to_forward_slashes(&href));
+                    }
+                });
+            }
+            return Ok(());
+        }
+        let Some(resolver) = ctx.resource_resolver.as_ref() else {
+            return Ok(());
+        };
 
         let mut copies: Vec<ResourceCopyIntent> = Vec::new();
         let Some(css) = ast.meta.get_mut("css") else {

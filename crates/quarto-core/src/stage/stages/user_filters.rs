@@ -234,13 +234,12 @@ impl PipelineStage for UserFiltersStage {
                 )) as std::sync::Arc<dyn pampa::attribution::AttributionLookup>
             });
 
-        // bd-oqoozmtr: citeproc's relative `bibliography`/`csl` resolve
-        // against the document's own directory — the declaration site for
-        // front-matter values. Captured before `doc.ast` is moved below.
-        let doc_dir = doc
-            .path
-            .parent()
-            .map_or_else(|| std::path::PathBuf::from("."), |p| p.to_path_buf());
+        // The citeproc filter resolves `bibliography`/`csl` against this
+        // base. Marked values are in pivot (project-root-relative) form
+        // after the metadata merge (bd-okqrjh8v), so the base is the
+        // project root; an unmarked (missing-file) value is reported
+        // relative to it too.
+        let citeproc_base_dir = ctx.project.dir.clone();
         // The lmd dialect and the project's module roots, for the filters'
         // `require` (bd-76ogq4ew), plus this document's place in the
         // project for quarto.project / quarto.doc.input_file (GH #939, #940).
@@ -274,7 +273,7 @@ impl PipelineStage for UserFiltersStage {
                     target_format,
                     runtime,
                     attribution,
-                    &doc_dir,
+                    &citeproc_base_dir,
                     &lua_options,
                 ))
                 .map_err(|e| PipelineError::stage_error(self.name(), e.to_string()))
@@ -288,7 +287,7 @@ impl PipelineStage for UserFiltersStage {
             target_format,
             ctx.runtime.clone(),
             attribution,
-            &doc_dir,
+            &citeproc_base_dir,
             &lua_options,
         )
         .await
