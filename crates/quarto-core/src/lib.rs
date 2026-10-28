@@ -47,6 +47,7 @@ pub mod cell_options;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod child_runner;
 pub mod components;
+pub mod config_paths;
 pub mod config_sources;
 pub mod crossref;
 pub mod dates;

@@ -926,9 +926,14 @@ impl PandocWriteStage {
             .input
             .parent()
             .unwrap_or(std::path::Path::new("."));
+        let path_ctx = crate::config_paths::PathCtx {
+            source_context: Some(&doc.source_context),
+            project_dir: &ctx.project.dir,
+            document_dir,
+        };
         let resolved_filters = crate::filter_resolve::resolve_filters(
             &doc.ast.meta,
-            document_dir,
+            &path_ctx,
             &ctx.extensions,
             ctx.runtime.as_ref(),
         );

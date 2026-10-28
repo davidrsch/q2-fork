@@ -130,16 +130,23 @@ impl PipelineStage for UserFiltersStage {
             crate::project::book::set_suppress_bibliography(&mut doc.ast.meta);
         }
 
-        // Resolve filters from merged metadata
+        // Resolve filters from merged metadata. Each entry resolves
+        // against the file that declared it (bd-nqq41zgx / GH #945);
+        // the document dir is only the fallback for span-less values.
         let document_dir = ctx
             .document
             .input
             .parent()
             .unwrap_or(std::path::Path::new("."));
+        let path_ctx = crate::config_paths::PathCtx {
+            source_context: Some(&doc.source_context),
+            project_dir: &ctx.project.dir,
+            document_dir,
+        };
 
         let resolved = resolve_filters(
             &doc.ast.meta,
-            document_dir,
+            &path_ctx,
             &ctx.extensions,
             ctx.runtime.as_ref(),
         );

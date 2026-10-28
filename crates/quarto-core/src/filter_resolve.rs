@@ -6,12 +6,13 @@
  * for the render pipeline.
  */
 
-use std::path::Path;
+use std::path::PathBuf;
 
 use pampa::unified_filter::FilterSpec;
 use quarto_pandoc_types::ConfigValue;
 use quarto_system_runtime::SystemRuntime;
 
+use crate::config_paths::{FileCandidate, PathCtx, resolve_config_file};
 use crate::extension::discover::find_extension;
 use crate::extension::types::{Extension, ExtensionFilter};
 
@@ -117,6 +118,21 @@ struct AnnotatedFilter {
     spec: FilterSpec,
     entry_point_index: usize,
     original_index: usize,
+    /// The declaration-resolved file for a user-declared Lua/JSON
+    /// filter (`None` for `citeproc` and for extension-contributed
+    /// filters, whose paths are already absolute).
+    resolved: Option<PathBuf>,
+}
+
+/// The file a user-declared filter entry denotes, resolved against the
+/// file that declared it (`crate::config_paths`), with whether it
+/// exists. `None` for a URL or a non-string value.
+fn resolve_filter_file(
+    value: &ConfigValue,
+    ctx: &PathCtx<'_>,
+    runtime: &dyn SystemRuntime,
+) -> Option<FileCandidate> {
+    resolve_config_file(value, ctx, runtime)
 }
 
 fn entry_point_index(name: &str) -> Option<usize> {
@@ -133,10 +149,16 @@ fn entry_point_index(name: &str) -> Option<usize> {
 /// name doesn't match an existing file, it's looked up as an extension name.
 /// Extension filters are expanded inline with their contributed filter paths.
 ///
-/// Relative filter paths are resolved against `document_dir`.
+/// Relative filter paths resolve against the file that declared them
+/// (project root for `_quarto.yml`, the `_metadata.yml`'s directory, the
+/// document's directory for front matter), and a leading `/` anchors at
+/// the project root — `crate::config_paths::resolve_config_path`, fed by
+/// `ctx`. GH #945 / bd-nqq41zgx: this used to join every relative entry
+/// onto the consuming document's directory, so a project-level filter
+/// failed for every page in a subdirectory.
 pub fn resolve_filters(
     meta: &ConfigValue,
-    document_dir: &Path,
+    ctx: &PathCtx<'_>,
     extensions: &[Extension],
     runtime: &dyn SystemRuntime,
 ) -> ResolvedFilters {
@@ -173,12 +195,18 @@ pub fn resolve_filters(
             default_before_idx
         };
 
+        // The declaration-resolved file the entry names, if it names
+        // one: a string entry (unless it is a reserved name), or the
+        // `path:` of a map entry. Probed for existence before the name
+        // is tried as an extension — an existing file shadows an
+        // extension of the same name, as in Quarto 1.
+        let mut resolved: Option<PathBuf> = None;
         // Try extension resolution for string-form items
         if let Some(s) = item.as_plain_text() {
             if s != "citeproc" && s != "quarto" {
-                let file_exists = runtime
-                    .path_exists(&document_dir.join(&s), None)
-                    .unwrap_or(false);
+                let candidate = resolve_filter_file(item, ctx, runtime);
+                let file_exists = candidate.as_ref().is_some_and(|c| c.exists);
+                resolved = candidate.map(|c| c.path);
                 if !file_exists
                     && let Some(ext_filters) = try_resolve_extension_filter(&s, extensions)
                 {
@@ -193,6 +221,7 @@ pub fn resolve_filters(
                             spec,
                             entry_point_index: ep_idx,
                             original_index: i,
+                            resolved: None,
                         });
                     }
                     continue;
@@ -203,9 +232,9 @@ pub fn resolve_filters(
         else if let Some(path_val) = item.get("path")
             && let Some(path_str) = path_val.as_plain_text()
         {
-            let file_exists = runtime
-                .path_exists(&document_dir.join(&path_str), None)
-                .unwrap_or(false);
+            let candidate = resolve_filter_file(path_val, ctx, runtime);
+            let file_exists = candidate.as_ref().is_some_and(|c| c.exists);
+            resolved = candidate.map(|c| c.path);
             if !file_exists
                 && let Some(ext_filters) = try_resolve_extension_filter(&path_str, extensions)
             {
@@ -221,6 +250,7 @@ pub fn resolve_filters(
                         spec,
                         entry_point_index: ep_idx,
                         original_index: i,
+                        resolved: None,
                     });
                 }
                 continue;
@@ -234,6 +264,7 @@ pub fn resolve_filters(
             spec,
             entry_point_index: ep_idx,
             original_index: i,
+            resolved,
         });
     }
 
@@ -244,7 +275,7 @@ pub fn resolve_filters(
     let mut result = ResolvedFilters::default();
     for ann in annotated {
         let (entry_point, position) = ENTRY_POINTS[ann.entry_point_index];
-        let spec = resolve_filter_path(ann.spec, document_dir);
+        let spec = resolve_filter_path(ann.spec, ann.resolved);
         match position {
             Position::Pre => result.pre.push(spec),
             Position::Post => {
@@ -318,24 +349,16 @@ fn parse_filter_item(item: &ConfigValue, default_ep_idx: usize) -> (FilterSpec, 
     (FilterSpec::Json("".into()), default_ep_idx)
 }
 
-/// Resolve relative filter paths against the document directory.
-fn resolve_filter_path(spec: FilterSpec, document_dir: &Path) -> FilterSpec {
-    match spec {
-        FilterSpec::Citeproc => FilterSpec::Citeproc,
-        FilterSpec::Lua(path) => {
-            if path.is_absolute() {
-                FilterSpec::Lua(path)
-            } else {
-                FilterSpec::Lua(document_dir.join(path))
-            }
-        }
-        FilterSpec::Json(path) => {
-            if path.is_absolute() {
-                FilterSpec::Json(path)
-            } else {
-                FilterSpec::Json(document_dir.join(path))
-            }
-        }
+/// Replace a user-declared Lua/JSON filter's authored path with its
+/// declaration-resolved file (`resolved`, computed by
+/// [`resolve_filter_file`]). Entries with no resolved file — `citeproc`,
+/// extension-contributed filters (already absolute), URLs — keep their
+/// spec as parsed.
+fn resolve_filter_path(spec: FilterSpec, resolved: Option<PathBuf>) -> FilterSpec {
+    match (spec, resolved) {
+        (FilterSpec::Lua(_), Some(path)) => FilterSpec::Lua(path),
+        (FilterSpec::Json(_), Some(path)) => FilterSpec::Json(path),
+        (spec, _) => spec,
     }
 }
 
@@ -548,7 +571,7 @@ mod tests {
         let mut meta = cv_map(vec![("citeproc", cv_true())]);
         assert!(apply_citeproc_shorthand(&mut meta));
         assert_eq!(filter_names(&meta), vec!["quarto", "citeproc"]);
-        let result = resolve_filters(&meta, Path::new("/doc"), &[], &TestRuntime::new());
+        let result = resolve(&meta, &[], &TestRuntime::new());
         assert!(result.pre.is_empty());
         assert_eq!(result.post, vec![FilterSpec::Citeproc]);
     }
@@ -605,6 +628,19 @@ mod tests {
         PathBuf::from("/project/docs")
     }
 
+    /// Resolve with no source context: every entry falls back to the
+    /// document dir (`/project/docs`); the project root is `/project`.
+    fn resolve(meta: &ConfigValue, extensions: &[Extension], rt: &TestRuntime) -> ResolvedFilters {
+        let project_dir = PathBuf::from("/project");
+        let document_dir = doc_dir();
+        let ctx = PathCtx {
+            source_context: None,
+            project_dir: &project_dir,
+            document_dir: &document_dir,
+        };
+        resolve_filters(meta, &ctx, extensions, rt)
+    }
+
     fn no_extensions() -> Vec<Extension> {
         vec![]
     }
@@ -630,7 +666,7 @@ mod tests {
     fn empty_meta_returns_empty() {
         let meta = cv_map(vec![]);
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert!(result.pre.is_empty());
         assert!(result.post.is_empty());
     }
@@ -639,7 +675,7 @@ mod tests {
     fn missing_filters_key_returns_empty() {
         let meta = cv_map(vec![("title", cv_str("Hello"))]);
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert!(result.pre.is_empty());
         assert!(result.post.is_empty());
     }
@@ -648,7 +684,7 @@ mod tests {
     fn empty_filters_array_returns_empty() {
         let meta = meta_with_filters(cv_array(vec![]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert!(result.pre.is_empty());
         assert!(result.post.is_empty());
     }
@@ -661,7 +697,7 @@ mod tests {
             cv_str("citeproc"),
         ]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert_eq!(result.pre.len(), 3);
         assert_eq!(result.post.len(), 0);
         assert_eq!(result.pre[0], FilterSpec::Lua(doc_dir().join("a.lua")));
@@ -676,7 +712,7 @@ mod tests {
             ("path", cv_str("a.lua")),
         ])]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert_eq!(result.pre.len(), 1);
         assert_eq!(result.pre[0], FilterSpec::Lua(doc_dir().join("a.lua")));
     }
@@ -689,7 +725,7 @@ mod tests {
             cv_str("post.lua"),
         ]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert_eq!(result.pre.len(), 1);
         assert_eq!(result.post.len(), 1);
         assert_eq!(result.pre[0], FilterSpec::Lua(doc_dir().join("pre.lua")));
@@ -714,7 +750,7 @@ mod tests {
 
         let meta = meta_with_filters(cv_array(filters));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
 
         // Pre: pre-ast, post-ast, pre-quarto
         assert_eq!(result.pre.len(), 3);
@@ -755,7 +791,7 @@ mod tests {
             ]),
         ]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert_eq!(result.pre.len(), 1);
         assert_eq!(result.post.len(), 0);
         assert_eq!(result.pre[0], FilterSpec::Lua(doc_dir().join("x.lua")));
@@ -774,7 +810,7 @@ mod tests {
             ]),
         ]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert_eq!(result.pre.len(), 1);
         assert_eq!(result.post.len(), 1);
         assert_eq!(result.pre[0], FilterSpec::Lua(doc_dir().join("a.lua")));
@@ -789,7 +825,7 @@ mod tests {
             cv_str("third.lua"),
         ]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert_eq!(result.pre.len(), 3);
         assert_eq!(result.pre[0], FilterSpec::Lua(doc_dir().join("first.lua")));
         assert_eq!(result.pre[1], FilterSpec::Lua(doc_dir().join("second.lua")));
@@ -800,7 +836,7 @@ mod tests {
     fn relative_paths_resolved_against_document_dir() {
         let meta = meta_with_filters(cv_array(vec![cv_str("my-filter.lua")]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert_eq!(
             result.pre[0],
             FilterSpec::Lua(PathBuf::from("/project/docs/my-filter.lua"))
@@ -808,13 +844,84 @@ mod tests {
     }
 
     #[test]
-    fn absolute_paths_preserved() {
-        let meta = meta_with_filters(cv_array(vec![cv_str("/usr/local/filters/abs.lua")]));
+    fn rooted_paths_anchor_at_the_project_root() {
+        // Contract rule 2: a leading `/` is the project root, never the
+        // filesystem root (bd-rdcvjy2s).
+        let meta = meta_with_filters(cv_array(vec![cv_str("/filters/abs.lua")]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert_eq!(
             result.pre[0],
-            FilterSpec::Lua(PathBuf::from("/usr/local/filters/abs.lua"))
+            FilterSpec::Lua(PathBuf::from("/project/filters/abs.lua"))
+        );
+    }
+
+    #[test]
+    fn relative_paths_resolve_against_the_declaring_file() {
+        // GH #945: an entry written in `_quarto.yml` resolves against the
+        // project root even when the consuming document is in `docs/`.
+        let mut sc = quarto_source_map::SourceContext::new();
+        let quarto_yml = sc.add_file("/project/_quarto.yml".into(), Some(String::new()));
+        let span = SourceInfo::Original {
+            file_id: quarto_yml,
+            start_offset: 0,
+            end_offset: 1,
+        };
+        let entry = ConfigValue::new_string("my-filter.lua", span);
+        let meta = meta_with_filters(cv_array(vec![entry]));
+        let project_dir = PathBuf::from("/project");
+        let document_dir = doc_dir();
+        let ctx = PathCtx {
+            source_context: Some(&sc),
+            project_dir: &project_dir,
+            document_dir: &document_dir,
+        };
+        let result = resolve_filters(&meta, &ctx, &no_extensions(), &TestRuntime::new());
+        assert_eq!(
+            result.pre[0],
+            FilterSpec::Lua(PathBuf::from("/project/my-filter.lua"))
+        );
+    }
+
+    #[test]
+    fn map_form_path_resolves_against_the_declaring_file() {
+        let mut sc = quarto_source_map::SourceContext::new();
+        let quarto_yml = sc.add_file("/project/_quarto.yml".into(), Some(String::new()));
+        let span = SourceInfo::Original {
+            file_id: quarto_yml,
+            start_offset: 0,
+            end_offset: 1,
+        };
+        let path = ConfigValue::new_string("f.lua", span);
+        let meta = meta_with_filters(cv_array(vec![cv_map(vec![("path", path)])]));
+        let project_dir = PathBuf::from("/project");
+        let document_dir = doc_dir();
+        let ctx = PathCtx {
+            source_context: Some(&sc),
+            project_dir: &project_dir,
+            document_dir: &document_dir,
+        };
+        let result = resolve_filters(&meta, &ctx, &no_extensions(), &TestRuntime::new());
+        assert_eq!(
+            result.pre[0],
+            FilterSpec::Lua(PathBuf::from("/project/f.lua"))
+        );
+    }
+
+    #[test]
+    fn marked_path_entry_is_joined_onto_the_document_dir() {
+        // An explicit `!path` (or a merge-marked entry) arrives already
+        // document-relative; the resolver honours that form.
+        let entry = ConfigValue {
+            value: quarto_pandoc_types::ConfigValueKind::Path("../hello.lua".into()),
+            source_info: SourceInfo::for_test(),
+            merge_op: Default::default(),
+        };
+        let meta = meta_with_filters(cv_array(vec![entry]));
+        let result = resolve(&meta, &no_extensions(), &TestRuntime::new());
+        assert_eq!(
+            result.pre[0],
+            FilterSpec::Lua(PathBuf::from("/project/hello.lua"))
         );
     }
 
@@ -822,7 +929,7 @@ mod tests {
     fn no_sentinel_means_all_pre() {
         let meta = meta_with_filters(cv_array(vec![cv_str("a.lua"), cv_str("b.lua")]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert_eq!(result.pre.len(), 2);
         assert_eq!(result.post.len(), 0);
     }
@@ -831,7 +938,7 @@ mod tests {
     fn citeproc_path_not_resolved() {
         let meta = meta_with_filters(cv_array(vec![cv_str("citeproc")]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert_eq!(result.pre.len(), 1);
         assert_eq!(result.pre[0], FilterSpec::Citeproc);
     }
@@ -840,7 +947,7 @@ mod tests {
     fn json_filter_detected_by_extension() {
         let meta = meta_with_filters(cv_array(vec![cv_str("filter.py")]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert_eq!(result.pre[0], FilterSpec::Json(doc_dir().join("filter.py")));
     }
 
@@ -851,7 +958,7 @@ mod tests {
             ("path", cv_str("my-filter")),
         ])]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert_eq!(result.pre[0], FilterSpec::Json(doc_dir().join("my-filter")));
     }
 
@@ -865,7 +972,7 @@ mod tests {
             ]),
         ]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert_eq!(result.pre.len(), 1);
         assert_eq!(result.post.len(), 0);
         assert_eq!(result.pre[0], FilterSpec::Lua(doc_dir().join("x.lua")));
@@ -887,7 +994,7 @@ mod tests {
             ]),
         ]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
 
         assert_eq!(result.pre.len(), 2);
         assert_eq!(result.pre[0], FilterSpec::Lua(doc_dir().join("early.lua")));
@@ -917,7 +1024,7 @@ mod tests {
         );
         let meta = meta_with_filters(cv_array(vec![cv_str("lightbox")]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &[ext], &rt);
+        let result = resolve(&meta, &[ext], &rt);
         assert_eq!(result.pre.len(), 1);
         assert_eq!(
             result.pre[0],
@@ -942,7 +1049,7 @@ mod tests {
         );
         let meta = meta_with_filters(cv_array(vec![cv_str("multi")]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &[ext], &rt);
+        let result = resolve(&meta, &[ext], &rt);
         assert_eq!(result.pre.len(), 2);
         assert_eq!(result.pre[0], FilterSpec::Lua(PathBuf::from("/ext/a.lua")));
         assert_eq!(result.pre[1], FilterSpec::Lua(PathBuf::from("/ext/b.lua")));
@@ -959,7 +1066,7 @@ mod tests {
         );
         let meta = meta_with_filters(cv_array(vec![cv_str("myext")]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &[ext], &rt);
+        let result = resolve(&meta, &[ext], &rt);
         // Extension filter's own at: post-render overrides position default
         assert_eq!(result.pre.len(), 0);
         assert_eq!(result.post.len(), 1);
@@ -991,7 +1098,7 @@ mod tests {
             cv_str("user.lua"),
         ]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &[ext], &rt);
+        let result = resolve(&meta, &[ext], &rt);
         // a.lua: no own at, before sentinel → pre-quarto (Pre)
         // b.lua: own at: post-render → Post
         // user.lua: after sentinel → post-render (Post)
@@ -1014,7 +1121,7 @@ mod tests {
         );
         let meta = meta_with_filters(cv_array(vec![cv_map(vec![("path", cv_str("lightbox"))])]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &[ext], &rt);
+        let result = resolve(&meta, &[ext], &rt);
         assert_eq!(result.pre.len(), 1);
         assert_eq!(
             result.pre[0],
@@ -1043,7 +1150,7 @@ mod tests {
             ("at", cv_str("post-render")),
         ])]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &[ext], &rt);
+        let result = resolve(&meta, &[ext], &rt);
         // Both filters forced to post-render by map at override
         assert_eq!(result.pre.len(), 0);
         assert_eq!(result.post.len(), 2);
@@ -1056,7 +1163,7 @@ mod tests {
         // Name with no matching extension → treated as file path
         let meta = meta_with_filters(cv_array(vec![cv_str("nonexistent")]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &no_extensions(), &rt);
+        let result = resolve(&meta, &no_extensions(), &rt);
         assert_eq!(result.pre.len(), 1);
         // Falls through to FilterSpec::parse which treats it as Json (no .lua extension)
         assert_eq!(
@@ -1077,7 +1184,7 @@ mod tests {
         // The file exists on disk → file wins over extension
         let rt = TestRuntime::with_existing(vec![doc_dir().join("filter.lua")]);
         let meta = meta_with_filters(cv_array(vec![cv_str("filter.lua")]));
-        let result = resolve_filters(&meta, &doc_dir(), &[ext], &rt);
+        let result = resolve(&meta, &[ext], &rt);
         assert_eq!(result.pre.len(), 1);
         // File path, not extension path
         assert_eq!(result.pre[0], FilterSpec::Lua(doc_dir().join("filter.lua")));
@@ -1094,7 +1201,7 @@ mod tests {
         );
         let meta = meta_with_filters(cv_array(vec![cv_str("myext")]));
         let rt = TestRuntime::new();
-        let result = resolve_filters(&meta, &doc_dir(), &[ext], &rt);
+        let result = resolve(&meta, &[ext], &rt);
         assert_eq!(result.pre.len(), 1);
         // Path is absolute — not joined with document_dir
         assert_eq!(
