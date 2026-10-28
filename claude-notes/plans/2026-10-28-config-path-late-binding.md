@@ -421,7 +421,7 @@ the same strand sequence without coupling it to the `filters` pilot.
       the resolver. Unit tests in `filter_resolve.rs` updated: the
       `relative_paths_resolved_against_document_dir` test becomes
       "…against the declaring dir; document dir when no span".
-- [ ] 0.4 Real-binary E2E on the four fixtures; record output in the triage
+- [x] 0.4 Real-binary E2E on the four fixtures; record output in the triage
       doc. `cargo xtask verify --skip-hub-build`; wasm `cargo check` for
       `wasm-quarto-hub-client` (quarto-core is in its closure).
 - [x] 0.5 Contract: move the `filters` row from VIOLATIONS to conforming
@@ -470,6 +470,40 @@ Include-shortcode nested retargeting (bd-udrn0q47; markdown space), listing
 record `path:` emission (bd-yghnqcfg; URL-space emission question), schema-
 driven interpretation (the `meta_annotations.rs` "delete me when schemas
 land" note stands; with B, schemas are for validation/LSP, not resolution).
+
+### Phase 0 handoff (2026-10-28)
+
+- Branch `issue-945` (remote `bugfix/issue-945`), commits: triage record,
+  plan, implementation. Resolver: `crates/quarto-core/src/config_paths.rs`
+  (`resolve_config_path`, `resolve_config_file`, `declaring_dir`,
+  `PathCtx`). First consumer: `filter_resolve.rs`, both call sites.
+- Failing-first evidence: the four bug tests in
+  `tests/integration/filter_paths.rs` failed at branch base for the
+  reported reason; the four guards passed; all eight pass after.
+- Two things the plan did not anticipate, both now in the resolver's
+  docs and the contract: (1) a `Path`-kind value with a leading `/` is
+  OS-absolute, because `adjust_paths_to_document_dir` stores absolute
+  paths for files outside the project (the orange-book built-in
+  extension, extracted to a temp dir, broke the first cut); anchoring an
+  authored `!path /x` at the project root belongs to the marking site
+  (Phase 1b). (2) An authored OS-absolute filter path (`quarto::integration
+  lua_host_context_cli` writes one) must keep working: `resolve_config_file`
+  adds the existence policy (rule-2 candidate if it exists, else the
+  OS-absolute reading if that exists, else the rule-2 candidate for the
+  diagnostic), which is the effective behaviour mechanism 3 already has
+  for its existence-driven keys. Phase 1 consumers with name/path
+  namespaces (`theme`) should use `resolve_config_file`; always-path keys
+  use `resolve_config_path`.
+- Gates: `cargo xtask verify --skip-hub-build` green (17,463 Rust tests;
+  hub-client unit 1,741, integration 229, wasm 462 after
+  `npm run build:wasm`); E2E on the four fixtures renders 2 of 2 each.
+  Windows cross-check of quarto-core is not possible from macOS (C build
+  scripts); the one `#[cfg(windows)]` unit test is unverified.
+- Environment notes for the next phase: `cargo xtask verify
+  --skip-hub-build` runs `test:wasm` against the *existing* `pkg/`
+  artifact, so rebuild it first when quarto-core changed; a stale
+  `node_modules` (missing `@types/jsdom`) fails the preview-renderer
+  typecheck step and is fixed by `fnm exec --using=24 npm install`.
 
 ## 6. Review decisions (2026-10-28, with the user)
 
