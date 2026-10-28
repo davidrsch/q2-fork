@@ -129,6 +129,7 @@ async fn fetch_and_mount(
     runtime
         .dir_create(remote_dir, true)
         .map_err(|e| format!("could not create {}: {e}", remote_dir.display()))?;
+    // lint:allow(config-path-base) — `url` is a remote image URL; the joined name is generated from it, not a YAML path
     let path = remote_dir.join(mounted_name(url, ext));
     runtime
         .file_write(&path, &bytes)

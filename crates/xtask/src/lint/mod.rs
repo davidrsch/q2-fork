@@ -6,6 +6,7 @@
 mod add_file_with_id;
 mod ci_test_wiring;
 mod committed_render_output;
+mod config_path_base;
 mod error_docs;
 mod error_docs_sidebar;
 mod external_sources;
@@ -246,6 +247,7 @@ fn check_file(path: &Path) -> Result<Vec<Violation>> {
 
     // Run each lint rule
     violations.extend(add_file_with_id::check(path, &content)?);
+    violations.extend(config_path_base::check(path, &content)?);
     violations.extend(external_sources::check(path, &content)?);
     violations.extend(metadata_as_str::check(path, &content)?);
 

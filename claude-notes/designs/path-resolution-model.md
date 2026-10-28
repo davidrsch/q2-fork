@@ -184,7 +184,17 @@ unifying the four scattered tables plus the annotation table
 is currently unused), so values arrive at consumers already marked and
 declaration-dir-resolved, and consumers\' existing `doc_dir.join` reads
 become correct as written. Enforcement: the `config-path-base` xtask lint
-(see strand reference in the inventory's gap list).
+(`crates/xtask/src/lint/config_path_base.rs`, bd-40luf359, 2026-10-28):
+in `quarto-core/src/{stage,transforms}/` a string that flows from a
+metadata read, a string parameter beside a directory parameter, or a
+closure over either may not reach `.join(..)`, `Path::new` /
+`PathBuf::from`, or a filesystem probe; a `let` through a `resolve*`
+function (or `pivot_form`, `declaring_dir`, `page_url_for`,
+`base_dir_for`, `file_base_dir`) clears it. Intra-procedural and
+name-based by design; the module doc lists the limits. Four sites carry
+`lint:allow(config-path-base)` with reasons (include targets — markdown
+space; a remote image's generated file name; an ES-module import
+specifier).
 
 ## Inventory of consumption sites (living — keep current)
 

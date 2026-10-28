@@ -556,6 +556,49 @@ The `config-path-base` xtask lint with the blessed-module list
 `project/mod.rs` rebase, `glob/provenance.rs`). First cut restricted to
 `stage/` and `transforms/`.
 
+#### Phase 2 handoff (2026-10-28, branch `braid/bd-40luf359-xtask-lint-config-path`, stacked on PR #959)
+
+- [x] 2.1 `crates/xtask/src/lint/config_path_base.rs`, wired into
+      `check_file`. Scope: `quarto-core/src/{stage,transforms}/`;
+      `metadata_merge.rs` blessed; test code skipped. Taint sources: a
+      `let` from a metadata read (`<meta>.get(..)`, `as_plain_text()`,
+      `as_str()`), a string-typed parameter of a function that also
+      takes a `Path`/`PathBuf` (the ad-hoc helper shape:
+      `fn probe(raw: &str, doc_dir: &Path)`), and the parameters of a
+      closure over a tainted receiver (`v.as_plain_text().map(|s|
+      dir.join(s))`). Closure-parameter taint is scoped to the closure
+      (a shared name like `p` elsewhere is not contaminated); `let`
+      names are function-wide. Sanitizers: a `let` through a
+      `resolve*` call or `pivot_form` / `declaring_dir` / `page_url_for`
+      / `base_dir_for` / `file_base_dir`. Sinks: `.join(..)`,
+      `Path::new`, `PathBuf::from`, `std::fs::*` and runtime probes
+      (`is_file`, `path_exists`, `file_read_string`, …).
+- [x] 2.2 Recall check: the pre-Phase-0 versions of the migrated
+      consumers (main before #954) copied into scope flag
+      `include_resolve`, `language_resolve`, `pandoc_write` (5),
+      `components_resolve`, `shortcode_resolve`, `title_banner` —
+      every shape the consumer sweep fixed by hand. Misses:
+      `apply_template` (the string reaches the join through a struct
+      field), `typst_compile`, `listing_render`, `compile_theme_css`,
+      `user_filters` (strings arrive via helper fns that take no
+      directory, or via struct fields) — the intra-procedural limit,
+      documented in the module.
+- [x] 2.3 On the current tree the lint found one real violator the
+      sweep missed — `transforms/book_cover_image.rs` hand-rolled
+      `resolve_declared_path` — now routed through
+      `resolve_config_path` (`book.cover-image` keeps the project root
+      as its fallback). Four sites are allowed with reasons:
+      `include_expansion::resolve_include_target` (2; markdown-space
+      include targets are relative to the including file by the
+      shortcode's contract, bd-udrn0q47), `prefetch_remote_images`
+      (a generated file name from a URL), `components_resolve::
+      resolve_relative_import` (an ES-module specifier).
+- [ ] 2.4 The stronger form (a distinctively named raw accessor on
+      `Path`-kind values) and widening the scope beyond `stage/` and
+      `transforms/` (to `project/`, `pandoc_filters/`, `revealjs/`)
+      are follow-ups once the mechanism-3 row review (§4.5) shrinks the
+      blessed list; the scope constant is `SCOPE_SUBSTRINGS`.
+
 ### Phase 3: bd-0x1znhgb (§4.4 option a) and the mechanism-3 row review (§4.5)
 
 Separate strands, after Phase 1 shows which rows still earn their place.

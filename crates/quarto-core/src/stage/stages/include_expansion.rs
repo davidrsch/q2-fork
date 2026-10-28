@@ -774,8 +774,10 @@ fn resolve_include_target(base_dir: &Path, project_dir: &Path, raw: &str) -> Pat
         // Normalize separators before anchoring so a Windows-authored
         // `\a\b.qmd` behaves identically everywhere.
         let normalized = raw.replace('\\', "/");
+        // lint:allow(config-path-base) — markdown space: an include target is relative to the including file, by the shortcode's own contract (bd-udrn0q47), not a YAML-declared path
         project_dir.join(normalized.trim_start_matches('/'))
     } else {
+        // lint:allow(config-path-base) — same: `base_dir` is the including file's directory, the contract's base
         base_dir.join(raw)
     }
 }

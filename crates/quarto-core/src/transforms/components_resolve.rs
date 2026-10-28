@@ -320,6 +320,7 @@ impl Shipper<'_, '_> {
 /// TypeScript convention of importing `./x.js` when the file on disk is
 /// `x.ts` or `x.tsx`.
 fn resolve_relative_import(dir: &Path, spec: &str) -> Option<PathBuf> {
+    // lint:allow(config-path-base) — an ES-module import specifier inside a component's source file, relative to that file's directory by the module system's rule; not a YAML path
     let direct = lexically_normalize(&dir.join(spec));
     if direct.is_file() {
         return Some(direct);

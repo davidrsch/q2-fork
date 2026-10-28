@@ -642,6 +642,14 @@ do when authoring code:
   `as_str()` — a bare YAML string is `PandocInlines`, for which `as_str()`
   returns `None`. Suppress deliberate scalar-only reads with
   `// lint:allow(metadata-as-str)`.
+- **config-path-base**: never pick a base directory for a path string read
+  from metadata (`doc_dir.join(raw)`, `Path::new(&raw)`, a runtime probe of
+  the bare string) in `quarto-core/src/{stage,transforms}/`; resolve the
+  `ConfigValue` with `crate::config_paths::resolve_config_path`, which reads
+  the value's own provenance (relative to the declaring file; leading `/` =
+  project root). A string that is not a YAML path (an artifact name, a
+  markdown-space include target, an import specifier) gets
+  `// lint:allow(config-path-base)` + reason.
 - **ci-test-suite-unwired**: when you add a `test` script to a workspace
   package, wire it into `.github/workflows/ts-test-suite.yml` or
   `hub-client-e2e.yml` — or add it to `EXCUSED` in
