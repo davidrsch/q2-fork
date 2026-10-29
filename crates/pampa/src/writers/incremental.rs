@@ -347,6 +347,19 @@ fn assemble(
         prev_entry = Some(entry);
     }
 
+    // 2d. Trailing suffix: bytes after the end of the original document's
+    // last block (trailing blank lines, trailing whitespace) are not part
+    // of any block's source span, so nothing above copies them. Anchor on
+    // the *original* last block's end, not the last coarsened entry's —
+    // that suffix exists regardless of whether the last block was kept,
+    // spliced, or rewritten.
+    if let Some(last_block) = original_ast.blocks.last()
+        && let Some(span) = last_block.source_info().preimage_in(target_file_id)
+        && let Some(tail) = original_qmd.get(span.end..)
+    {
+        result.push_str(tail);
+    }
+
     Ok(result)
 }
 
@@ -365,10 +378,16 @@ fn emit_metadata_prefix(
     // entry's offset — when blocks are removed from the beginning, the
     // first coarsened block may reference a later original block whose
     // start > 0, falsely triggering the metadata prefix logic.
+    //
+    // When there are no blocks at all (e.g. a front-matter-only document),
+    // there is no block to anchor on, but the document can still consist
+    // entirely of a metadata region: treat the whole input as the
+    // candidate prefix so a front-matter-only document is copied (or
+    // rewritten) instead of silently dropped.
     let first_block_start = if !original_ast.blocks.is_empty() {
         Some(block_source_span(&original_ast.blocks[0]).start)
     } else {
-        None
+        Some(original_qmd.len())
     };
 
     // Check if there's a metadata region before the first block
