@@ -7,7 +7,7 @@
  * Copyright (c) 2026 Posit, PBC
  */
 
-use pampa::pandoc::Pandoc;
+use pampa::pandoc::{Block, Inline, Pandoc};
 use pampa::writers;
 use proptest::prelude::*;
 use quarto_ast_reconcile::compute_reconciliation;
@@ -288,6 +288,55 @@ A paragraph.
         result, original_qmd,
         "Idempotence violated when AST goes through JSON round-trip!\nExpected:\n{:?}\nGot:\n{:?}",
         original_qmd, result
+    );
+}
+
+// =============================================================================
+// Editorial-mark attribute preservation
+// =============================================================================
+//
+// An editorial mark's explicit attribute (`[++ text]{author="Bob"}`) follows
+// its closing delimiter. When some other inline in the same paragraph is
+// edited, the unedited editorial mark is kept verbatim by copying its own
+// source span — if that span stops at the closing delimiter instead of the
+// attribute, the attribute is silently dropped from the output.
+
+/// Parses `original_qmd`, appends `suffix` to the first `Str` of the first
+/// paragraph, and returns the incremental-write result.
+fn edit_first_word_of_first_paragraph(original_qmd: &str, suffix: &str) -> String {
+    let original_ast = parse_qmd(original_qmd);
+    let mut edited = original_ast.clone();
+    let Some(Block::Paragraph(p)) = edited.blocks.first_mut() else {
+        panic!("expected the first block to be a paragraph");
+    };
+    let Some(Inline::Str(word)) = p.content.first_mut() else {
+        panic!("expected the paragraph to start with a Str");
+    };
+    word.text.push_str(suffix);
+    let plan = compute_reconciliation(&original_ast, &edited);
+    writers::incremental::incremental_write(original_qmd, &original_ast, &edited, &plan)
+        .expect("incremental_write failed")
+}
+
+#[test]
+fn editing_an_earlier_word_preserves_insert_mark_attribute() {
+    let original_qmd = "Last [++ added]{author=\"Bob\"} text.\n";
+    let result = edit_first_word_of_first_paragraph(original_qmd, "Z");
+    assert_eq!(
+        result, "LastZ [++ added]{author=\"Bob\"} text.\n",
+        "The Insert mark's attribute was dropped!\nGot:\n{:?}",
+        result
+    );
+}
+
+#[test]
+fn editing_an_earlier_word_preserves_delete_mark_attribute() {
+    let original_qmd = "Last [-- removed]{author=\"Bob\" date=\"2026-01-01\"} text.\n";
+    let result = edit_first_word_of_first_paragraph(original_qmd, "Z");
+    assert_eq!(
+        result, "LastZ [-- removed]{author=\"Bob\" date=\"2026-01-01\"} text.\n",
+        "The Delete mark's attributes were dropped!\nGot:\n{:?}",
+        result
     );
 }
 
