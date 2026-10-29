@@ -7,7 +7,7 @@
  * Copyright (c) 2026 Posit, PBC
  */
 
-use pampa::pandoc::Pandoc;
+use pampa::pandoc::{Block, Inline, Pandoc};
 use pampa::writers;
 use proptest::prelude::*;
 use quarto_ast_reconcile::compute_reconciliation;
@@ -341,6 +341,52 @@ fn idempotent_single_header_no_trailing_newline() {
     // Some documents might not have trailing newlines after the last block
     // but the parser requires them, so test with trailing newline
     assert_idempotent("# Title\n");
+}
+
+#[test]
+fn idempotent_front_matter_only() {
+    // A document consisting only of YAML front matter has no blocks at all.
+    // `assemble` must still copy the front matter: there is no first block
+    // to anchor the metadata-prefix region on.
+    assert_idempotent("---\ntitle: Only front matter\n---\n");
+}
+
+#[test]
+fn idempotent_trailing_blank_lines() {
+    // Blank lines after the last block are not part of any block's source
+    // span, so they must be copied as a trailing region of their own.
+    assert_idempotent("First paragraph.\n\nLast paragraph.\n\n\n");
+}
+
+#[test]
+fn idempotent_trailing_whitespace() {
+    assert_idempotent("A paragraph.\n   \n");
+}
+
+#[test]
+fn trailing_blank_lines_survive_an_edit() {
+    // The trailing region is anchored on the *original* last block's end
+    // offset, so it must be preserved even when some other block changes.
+    let original_qmd = "First paragraph.\n\nLast paragraph.\n\n\n";
+    let mut ast = parse_qmd(original_qmd);
+    if let Block::Paragraph(p) = &mut ast.blocks[0]
+        && let Some(Inline::Str(word)) = p.content.first_mut()
+    {
+        word.text.push('Z');
+    }
+    let plan = compute_reconciliation(&parse_qmd(original_qmd), &ast);
+    let result = writers::incremental::incremental_write(
+        original_qmd,
+        &parse_qmd(original_qmd),
+        &ast,
+        &plan,
+    )
+    .expect("incremental_write failed");
+    assert_eq!(
+        result, "FirstZ paragraph.\n\nLast paragraph.\n\n\n",
+        "Trailing blank lines were lost when an earlier block was edited!\nGot:\n{:?}",
+        result
+    );
 }
 
 // =============================================================================
