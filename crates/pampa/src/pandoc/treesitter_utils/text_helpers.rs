@@ -532,17 +532,34 @@ pub fn extract_delimiter_space_info(
     let adjusted_range = if let (Some(first_delim), Some(last_delim)) =
         (&first_delimiter_range, &last_delimiter_range)
     {
+        // `fallback_range` (= `node_location(node)`) is the full grammar
+        // node's span, which includes any trailing explicit attribute
+        // (`[++ text]{author="Bob"}`) after the closing delimiter. When
+        // the node extends past the closing delimiter, keep that true end
+        // instead of shrinking to the delimiter's end minus trailing
+        // whitespace — otherwise the attribute falls outside this node's
+        // source span and a verbatim copy of the node (e.g. the
+        // incremental writer keeping it unchanged) drops the attribute.
+        let end = if fallback_range.end.offset > last_delim.end.offset {
+            quarto_source_map::Location {
+                offset: fallback_range.end.offset,
+                row: fallback_range.end.row,
+                column: fallback_range.end.column,
+            }
+        } else {
+            quarto_source_map::Location {
+                offset: last_delim.end.offset - trailing_ws_count,
+                row: last_delim.end.row,
+                column: last_delim.end.column - trailing_ws_count,
+            }
+        };
         quarto_source_map::Range {
             start: quarto_source_map::Location {
                 offset: first_delim.start.offset + leading_ws_count,
                 row: first_delim.start.row,
                 column: first_delim.start.column + leading_ws_count,
             },
-            end: quarto_source_map::Location {
-                offset: last_delim.end.offset - trailing_ws_count,
-                row: last_delim.end.row,
-                column: last_delim.end.column - trailing_ws_count,
-            },
+            end,
         }
     } else {
         fallback_range
