@@ -1548,10 +1548,24 @@ pub fn postprocess(
                 // Move the inlines through rather than cloning them: this
                 // closure runs on every inline vector in the document, and
                 // a deep clone here was paid once per ancestor level.
+                //
+                // The SoftBreak's source span covers the newline byte that follows
+                // the backslash; dropping the node must not drop that byte's
+                // ownership too, or a consumer that copies inline source spans
+                // verbatim (the incremental writer's inline splicing) sees a gap
+                // between the kept LineBreak and whatever comes after it and
+                // silently loses the newline. Fold the removed span into the
+                // LineBreak we keep, the same way `merge_strs` folds a merged-away
+                // Str's span into the Str it merges into.
                 let mut break_cleaned = Vec::with_capacity(inlines.len());
                 let mut skip_next_softbreak = false;
                 for inline in inlines {
-                    if skip_next_softbreak && matches!(inline, Inline::SoftBreak(_)) {
+                    if skip_next_softbreak
+                        && let Inline::SoftBreak(soft_break) = &inline
+                    {
+                        if let Some(Inline::LineBreak(lb)) = break_cleaned.last_mut() {
+                            lb.source_info = lb.source_info.combine(&soft_break.source_info);
+                        }
                         skip_next_softbreak = false;
                         continue;
                     }
