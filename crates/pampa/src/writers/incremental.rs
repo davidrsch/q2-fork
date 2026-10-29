@@ -337,7 +337,7 @@ fn assemble(
                 original_qmd[byte_range.clone()].to_string()
             }
             CoarsenedEntry::Rewrite { new_idx } => {
-                write_block_to_string(&new_ast.blocks[*new_idx])?
+                write_block_to_string(&new_ast.blocks[*new_idx], line_ending(original_qmd))?
             }
             CoarsenedEntry::InlineSplice { block_text, .. } => block_text.clone(),
         };
@@ -462,14 +462,31 @@ fn compute_separator<'a>(
         return gap;
     }
 
-    // Standard separator — but check if previous block already ends with \n\n
+    // Standard separator — but check if previous block already ends with a
+    // blank line, in either line-ending convention (a freshly rewritten
+    // block uses `line_ending(original_qmd)`, not necessarily "\n").
+    let eol = line_ending(original_qmd);
+    let double_eol = format!("{eol}{eol}");
     if let Some(text) = prev_block_text
-        && text.ends_with("\n\n")
+        && (text.ends_with("\n\n") || text.ends_with(double_eol.as_str()))
     {
         return "";
     }
 
-    "\n"
+    eol
+}
+
+/// The document's line-ending convention, detected once from the original
+/// source. A freshly rewritten block or a synthesized separator must match
+/// it instead of always emitting a bare `\n` — otherwise a document that
+/// uses `\r\n` throughout ends up with a stray `\n`-only block or gap where
+/// the incremental writer had to generate text instead of copying it.
+fn line_ending(original_qmd: &str) -> &'static str {
+    if original_qmd.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    }
 }
 
 // =============================================================================
@@ -553,18 +570,30 @@ fn block_source_span(block: &Block) -> Range<usize> {
 }
 
 /// Write a single block to a string using the standard QMD writer.
+///
+/// The standard writer always emits bare `\n`. When `eol` is `"\r\n"` (the
+/// original document uses CRLF line endings), convert the freshly written
+/// text to match — otherwise a rewritten block sticks out as the only `\n`
+/// region in an otherwise all-`\r\n` document. The writer never emits `\r`
+/// itself, so a plain `\n` -> `eol` replacement cannot double up a `\r`.
 fn write_block_to_string(
     block: &Block,
+    eol: &str,
 ) -> Result<String, Vec<quarto_error_reporting::DiagnosticMessage>> {
     let mut buf = Vec::new();
     qmd::write_single_block(block, &mut buf)?;
-    String::from_utf8(buf).map_err(|e| {
+    let text = String::from_utf8(buf).map_err(|e| {
         vec![
             quarto_error_reporting::DiagnosticMessageBuilder::error("UTF-8 error during write")
                 .with_code("Q-3-2")
                 .problem(format!("Block writer produced invalid UTF-8: {}", e))
                 .build(),
         ]
+    })?;
+    Ok(if eol == "\n" {
+        text
+    } else {
+        text.replace('\n', eol)
     })
 }
 
