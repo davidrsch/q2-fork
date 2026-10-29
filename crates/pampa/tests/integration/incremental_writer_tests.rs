@@ -7,7 +7,7 @@
  * Copyright (c) 2026 Posit, PBC
  */
 
-use pampa::pandoc::Pandoc;
+use pampa::pandoc::{Block, Inline, Pandoc};
 use pampa::writers;
 use proptest::prelude::*;
 use quarto_ast_reconcile::compute_reconciliation;
@@ -288,6 +288,53 @@ A paragraph.
         result, original_qmd,
         "Idempotence violated when AST goes through JSON round-trip!\nExpected:\n{:?}\nGot:\n{:?}",
         original_qmd, result
+    );
+}
+
+// =============================================================================
+// CRLF line-ending preservation
+// =============================================================================
+//
+// When a document uses CRLF throughout, a block that must be rewritten (or
+// a separator that must be synthesized, rather than copied verbatim from
+// the original) should still come out as CRLF — not bare LF, which would
+// leave a rewritten region using a different line ending than the rest of
+// the file.
+
+#[test]
+fn rewritten_block_keeps_crlf_line_endings() {
+    // Append a brand-new paragraph (no original counterpart), which forces
+    // `BlockAlignment::UseAfter` and therefore the block-rewrite path —
+    // deterministically, unlike editing a word in place, which the
+    // incremental writer may instead handle via inline splicing (and
+    // splicing already preserves CRLF correctly, since it copies original
+    // bytes rather than writing fresh text).
+    let original_qmd = "First paragraph.\r\n\r\nLast paragraph.\r\n";
+    let original_ast = parse_qmd(original_qmd);
+    let mut edited = original_ast.clone();
+    edited
+        .blocks
+        .push(Block::Paragraph(pampa::pandoc::Paragraph {
+            content: vec![Inline::Str(pampa::pandoc::Str {
+                text: "New paragraph.".to_string(),
+                source_info: quarto_source_map::SourceInfo::for_test(),
+            })],
+            source_info: quarto_source_map::SourceInfo::for_test(),
+        }));
+    let plan = compute_reconciliation(&original_ast, &edited);
+    let result =
+        writers::incremental::incremental_write(original_qmd, &original_ast, &edited, &plan)
+            .expect("incremental_write failed");
+    assert_eq!(
+        result, "First paragraph.\r\n\r\nLast paragraph.\r\n\r\nNew paragraph.\r\n",
+        "The rewritten block or its separator used LF in a CRLF document!\nGot:\n{:?}",
+        result
+    );
+    assert_eq!(
+        result.matches("\r\n").count(),
+        result.matches('\n').count(),
+        "Every newline should be part of a \\r\\n pair.\nGot:\n{:?}",
+        result
     );
 }
 
